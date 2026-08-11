@@ -4,9 +4,17 @@
 @config "../tailwind.config.js";
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
     @apply font-poppins bg-bg text-text antialiased min-h-screen;
     line-height: 1.6;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
   }
   
   /* Apply input/button custom defaults */
@@ -15,7 +23,7 @@
   }
   
   button {
-    @apply rounded-button transition-all duration-200;
+    @apply rounded-button transition-all duration-200 touch-manipulation;
   }
 }
 

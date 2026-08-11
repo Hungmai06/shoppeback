@@ -135,18 +135,28 @@ Dán nội dung sau vào:
 server {
     server_name shoppe.khoahocdrivemh.pro.vn;
 
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+    gzip_min_length 256;
+
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Performance optimizations
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffers 8 16k;
+        proxy_buffer_size 32k;
     }
 }
 ```
 Kích hoạt config và reload Nginx:
 ```bash
-sudo ln -s /etc/nginx/sites-available/shoppeback /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/shoppeback /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```

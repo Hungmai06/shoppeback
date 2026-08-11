@@ -28,6 +28,7 @@ if (isClusterEnabled && cluster.isPrimary) {
   });
 } else {
   const app = express();
+  app.set('trust proxy', 1); // Trust first proxy (Nginx)
 
   // 1. Enable GZIP Response Compression for high bandwidth efficiency
   app.use(compression({
