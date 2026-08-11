@@ -10,14 +10,14 @@ services:
       MYSQL_USER: shoppe_user
       MYSQL_PASSWORD: shoppe_password_123
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
-      interval: 5s
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-proot_secure_password_123"]
+      interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 10
       start_period: 30s
 
   # 2. Node.js Backend API Container
@@ -44,8 +44,7 @@ services:
     volumes:
       - ./Backend/uploads:/app/uploads
     depends_on:
-      db:
-        condition: service_healthy
+      - db
 
   # 3. React Frontend Nginx Web Server Container
   frontend:
