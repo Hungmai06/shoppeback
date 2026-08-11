@@ -9,8 +9,6 @@ services:
       MYSQL_DATABASE: affiliateshoppe
       MYSQL_USER: shoppe_user
       MYSQL_PASSWORD: shoppe_password_123
-    ports:
-      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
 
