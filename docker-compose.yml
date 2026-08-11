@@ -1,10 +1,9 @@
 services:
-  # 1. MySQL 8.0 Database Container
+  # 1. MariaDB Database Container (MySQL 8.0 Compatible)
   db:
-    image: mysql:8.0
+    image: mariadb:10.11
     container_name: hoantien_mysql
     restart: always
-    command: --innodb-use-native-aio=0 --innodb-buffer-pool-size=64M --max-connections=50 --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: root_secure_password_123
       MYSQL_DATABASE: affiliateshoppe
