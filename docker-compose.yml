@@ -4,6 +4,7 @@ services:
     image: mysql:8.0
     container_name: hoantien_mysql
     restart: always
+    command: mysqld --innodb-use-native-aio=0 --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: root_secure_password_123
       MYSQL_DATABASE: affiliateshoppe
