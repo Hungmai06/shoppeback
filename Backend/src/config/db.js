@@ -437,7 +437,18 @@ async function initializeDatabase() {
 
 async function getDatabase() {
   if (!dbInstance) {
-    dbInstance = await initializeDatabase();
+    let retries = 15;
+    while (retries > 0) {
+      try {
+        dbInstance = await initializeDatabase();
+        break;
+      } catch (err) {
+        retries--;
+        console.error(`⚠️ Database connection error: ${err.message}. Retrying in 3 seconds... (${retries} retries remaining)`);
+        if (retries === 0) throw err;
+        await new Promise(res => setTimeout(res, 3000));
+      }
+    }
   }
   return dbInstance;
 }
