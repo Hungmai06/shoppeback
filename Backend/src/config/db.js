@@ -437,10 +437,11 @@ async function initializeDatabase() {
 
 async function getDatabase() {
   if (!dbInstance) {
-    let retries = 15;
+    let retries = 60;
     while (retries > 0) {
       try {
         dbInstance = await initializeDatabase();
+        console.log('✅ Database successfully initialized and connected!');
         break;
       } catch (err) {
         retries--;
