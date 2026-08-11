@@ -169,7 +169,7 @@ interface AppState {
   toggleUserStatus: (id: string) => Promise<'active' | 'locked' | null>;
 }
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');

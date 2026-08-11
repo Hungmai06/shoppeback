@@ -87,8 +87,8 @@ export default function UserDashboard() {
         try {
           const token = localStorage.getItem('token');
           const [statsRes, historyRes] = await Promise.all([
-            fetch('http://localhost:5000/api/referrals/stats', { headers: { Authorization: `Bearer ${token}` } }),
-            fetch('http://localhost:5000/api/referrals/history', { headers: { Authorization: `Bearer ${token}` } })
+            fetch('/api/referrals/stats', { headers: { Authorization: `Bearer ${token}` } }),
+            fetch('/api/referrals/history', { headers: { Authorization: `Bearer ${token}` } })
           ]);
 
           if (statsRes.ok) {
