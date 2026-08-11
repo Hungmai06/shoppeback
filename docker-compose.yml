@@ -1,6 +1,28 @@
 version: '3.8'
 
 services:
+  # 1. MySQL 8.0 Database Container
+  db:
+    image: mysql:8.0
+    container_name: hoantien_mysql
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: root_secure_password_123
+      MYSQL_DATABASE: affiliateshoppe
+      MYSQL_USER: shoppe_user
+      MYSQL_PASSWORD: shoppe_password_123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_secure_password_123"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 2. Node.js Backend API Container
   backend:
     build:
       context: ./Backend
@@ -12,15 +34,22 @@ services:
     environment:
       - PORT=5000
       - NODE_ENV=production
-      - JWT_SECRET=change_this_to_your_secure_secret_key_12345
+      - DB_TYPE=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=shoppe_user
+      - DB_PASSWORD=shoppe_password_123
+      - DB_NAME=affiliateshoppe
+      - JWT_SECRET=supersecretjwtkey_123456789_shoppe
       - SHOPEE_AFFILIATE_ID=173401900099
-      - DB_TYPE=sqlite
-      - DB_FILE=database.sqlite
       - CLUSTER_MODE=false
     volumes:
-      - ./Backend/database.sqlite:/app/database.sqlite
       - ./Backend/uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
 
+  # 3. React Frontend Nginx Web Server Container
   frontend:
     build:
       context: ./Frontend
@@ -31,3 +60,7 @@ services:
       - "80:80"
     depends_on:
       - backend
+
+volumes:
+  mysql_data:
+    driver: local
