@@ -122,13 +122,37 @@ docker compose logs -f frontend
 
 ---
 
-## 🔒 BƯỚC 6: Cài Đặt SSL HTTPS Cho Subdomain `shoppe.khoahocdrivemh.pro.vn`
+## 🔒 BƯỚC 6: Cấu Hình Nginx Host & SSL HTTPS Cho Subdomain `shoppe.khoahocdrivemh.pro.vn`
 
-Trỏ bản ghi DNS **A Record** của subdomain **`shoppe.khoahocdrivemh.pro.vn`** về IP VPS của bạn.
+Vì VPS đang chạy web khác trên cổng 80, Frontend Docker sẽ chạy tại cổng **8080** (`http://127.0.0.1:8080`).
 
-### Cài đặt Certbot & Đăng ký SSL Miễn Phí:
+### 6.1 Tạo file cấu hình Nginx Reverse Proxy trên VPS:
 ```bash
-sudo apt install -y certbot python3-certbot-nginx
+sudo nano /etc/nginx/sites-available/shoppeback
+```
+Dán nội dung sau vào:
+```nginx
+server {
+    server_name shoppe.khoahocdrivemh.pro.vn;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+Kích hoạt config và reload Nginx:
+```bash
+sudo ln -s /etc/nginx/sites-available/shoppeback /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 6.2 Cài đặt SSL HTTPS miễn phí với Certbot:
+```bash
 sudo certbot --nginx -d shoppe.khoahocdrivemh.pro.vn
 ```
 
