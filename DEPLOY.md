@@ -29,7 +29,7 @@ git push origin main
 
 Đăng nhập vào VPS qua SSH:
 ```bash
-ssh root@your_server_ip
+ssh root@161.248.4.83
 ```
 
 ### 2.1 Cài đặt Docker & Docker Compose Plugin (Ubuntu/Debian):
@@ -80,6 +80,13 @@ docker compose up -d --build
 > - MySQL 8.0 khởi chạy và tự động khởi tạo Database `affiliateshoppe`.
 > - Node.js Backend đợi MySQL sẵn sàng (`service_healthy`) rồi tự động chạy Migrations/Seeds.
 > - Frontend Nginx sẵn sàng đón nhận truy cập tại subdomain **`shoppe.khoahocdrivemh.pro.vn`**.
+
+> 💡 **Mẹo xử lý nếu VPS thiếu RAM khi build (Lỗi exit code 1 / OOM):**
+> Nếu VPS có RAM 1GB - 2GB, hãy tạo bộ nhớ ảo (Swap) trước khi build để tránh bị tràn RAM:
+> ```bash
+> sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+> echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+> ```
 
 ---
 
