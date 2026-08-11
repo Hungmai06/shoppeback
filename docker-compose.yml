@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: hoantien_backend
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - JWT_SECRET=change_this_to_your_secure_secret_key_12345
+      - SHOPEE_AFFILIATE_ID=173401900099
+      - DB_TYPE=sqlite
+      - DB_FILE=database.sqlite
+      - CLUSTER_MODE=false
+    volumes:
+      - ./Backend/database.sqlite:/app/database.sqlite
+      - ./Backend/uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: hoantien_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend

@@ -1,0 +1,24 @@
+{
+  "short_name": "Hũ tài lộc",
+  "name": "Hũ tài lộc - Hoàn Tiền Mua Sắm Shopee",
+  "description": "Trang web hoàn tiền mua sắm tự động. Dán link sản phẩm Shopee, nhận tiền hoàn hoa hồng cực cao trực tiếp vào ví.",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#FFFFFF",
+  "theme_color": "#F97316",
+  "display": "standalone",
+  "orientation": "portrait"
+}

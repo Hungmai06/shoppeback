@@ -1,0 +1,3 @@
+OrderID,SubID,ProductName,OrderValue,Commission,Status,PurchaseTime
+HD1002,USR101,Điện thoại Apple iPhone 15 Pro Max,29990000,2099300,approved,2026-07-08 10:00:00
+HD1003,USR101,Nước hoa nam Chanel Bleu De Chanel EDP,3750000,262500,approved,2026-07-08 11:00:00
