@@ -112,6 +112,14 @@ docker compose logs -f db
 docker compose logs -f frontend
 ```
 
+> 🛠️ **Nếu bị lỗi `container hoantien_mysql is unhealthy`:**
+> 1. Xem nguyên nhân log MySQL: `docker compose logs db`
+> 2. Nếu dữ liệu kho volume bị lỗi do lần khởi động đầu tiên ngắt đột ngột, hãy xóa volume và khởi chạy lại từ đầu:
+>    ```bash
+>    docker compose down -v
+>    docker compose up -d --build
+>    ```
+
 ---
 
 ## 🔒 BƯỚC 6: Cài Đặt SSL HTTPS Cho Subdomain `shoppe.khoahocdrivemh.pro.vn`
