@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -430,22 +430,46 @@ export default function AdminPanel() {
     }
   };
 
-  // Chart Monthly Analytics from backend
-  const revenueChartData = adminStats && adminStats.monthlyAnalytics && adminStats.monthlyAnalytics.length > 0
-    ? adminStats.monthlyAnalytics.map(a => ({
-      month: a.name,
-      DoanhThu: a.revenue,
-      HoaHongChi: a.cashback,
-      LoiNhuan: a.profit
-    }))
-    : [
-      { month: 'T2', DoanhThu: 12000000, HoaHongChi: 8400000, LoiNhuan: 3600000 },
-      { month: 'T3', DoanhThu: 18000000, HoaHongChi: 12600000, LoiNhuan: 5400000 },
-      { month: 'T4', DoanhThu: 15000000, HoaHongChi: 10500000, LoiNhuan: 4500000 },
-      { month: 'T5', DoanhThu: 24000000, HoaHongChi: 16800000, LoiNhuan: 7200000 },
-      { month: 'T6', DoanhThu: 32000000, HoaHongChi: 22400000, LoiNhuan: 9600000 },
-      { month: 'T7', DoanhThu: totalEstimatedRevenue * 1.5, HoaHongChi: totalEstimatedRevenue, LoiNhuan: totalEstimatedRevenue * 0.5 },
-    ];
+  // Chart Monthly Analytics computed dynamically from real database/orders
+  const revenueChartData = useMemo(() => {
+    if (adminStats && adminStats.monthlyAnalytics && adminStats.monthlyAnalytics.length > 0) {
+      return adminStats.monthlyAnalytics.map(a => ({
+        month: a.name,
+        DoanhThu: a.revenue,
+        HoaHongChi: a.cashback,
+        LoiNhuan: a.profit
+      }));
+    }
+
+    const monthlyMap: Record<string, { month: string; DoanhThu: number; HoaHongChi: number; LoiNhuan: number }> = {};
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthlyMap[key] = {
+        month: `T${d.getMonth() + 1}`,
+        DoanhThu: 0,
+        HoaHongChi: 0,
+        LoiNhuan: 0
+      };
+    }
+
+    orders.forEach(o => {
+      const cb = o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0);
+      const comm = (o as any).shopeeCommission || (cb * 2);
+      const dateStr = o.createdTime || '';
+      if (dateStr.length >= 7) {
+        const key = dateStr.substring(0, 7);
+        if (monthlyMap[key]) {
+          monthlyMap[key].DoanhThu += comm;
+          monthlyMap[key].HoaHongChi += cb;
+          monthlyMap[key].LoiNhuan += (comm - cb);
+        }
+      }
+    });
+
+    return Object.values(monthlyMap);
+  }, [adminStats, orders]);
   return (
     <div className="min-h-screen bg-bg flex flex-col font-poppins">
 

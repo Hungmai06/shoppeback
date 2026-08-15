@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -16,7 +16,7 @@ import { SAMPLE_SHOPEE_PRODUCTS } from '../../store/mockData';
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const { currentUser, addOrder, toggleFavorite, favorites, settings } = useAppStore();
+  const { currentUser, addOrder, toggleFavorite, favorites, openAuthModal } = useAppStore();
   const [shopeeLink, setShopeeLink] = useState('');
   const [checkedProduct, setCheckedProduct] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -79,42 +79,103 @@ export default function LandingPage() {
     }
   };
 
-  const handleCreateAffiliateLink = () => {
+  // Auto-resume pending link conversion after user logs in
+  useEffect(() => {
+    if (currentUser) {
+      const pendingUrl = sessionStorage.getItem('pending_shopee_url');
+      if (pendingUrl) {
+        sessionStorage.removeItem('pending_shopee_url');
+        const pendingName = sessionStorage.getItem('pending_shopee_name') || 'Sản phẩm Shopee';
+        const pendingPrice = Number(sessionStorage.getItem('pending_shopee_price')) || 0;
+        sessionStorage.removeItem('pending_shopee_name');
+        sessionStorage.removeItem('pending_shopee_price');
+
+        // Automatically convert link for newly logged-in user
+        const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+        const token = localStorage.getItem('access_token');
+
+        fetch(`${API_BASE}/shopee/convert`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ url: pendingUrl })
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.success && data.affiliateLink) {
+              const newOrder: Order = {
+                id: data.clickId || `HD${Math.floor(1000 + Math.random() * 9000)}`,
+                productName: pendingName,
+                productImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400',
+                orderAmount: pendingPrice,
+                estimatedCashback: Math.round(pendingPrice * 0.035),
+                status: 'pending',
+                createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+                userId: currentUser.id
+              };
+              addOrder(newOrder);
+
+              toast.success('Đăng nhập thành công! Đang tự động mở link mua hàng Shopee...');
+              window.open(data.affiliateLink, '_blank');
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [currentUser, addOrder]);
+
+  const handleCreateAffiliateLink = async () => {
+    if (!checkedProduct) return;
+
     if (!currentUser) {
-      toast.warning('Vui lòng đăng nhập để mua hàng nhận hoàn tiền');
-      navigate('/auth/login');
+      // Save pending product details in sessionStorage so user doesn't lose their checked product
+      sessionStorage.setItem('pending_shopee_url', checkedProduct.url);
+      sessionStorage.setItem('pending_shopee_name', checkedProduct.name);
+      sessionStorage.setItem('pending_shopee_price', String(checkedProduct.price));
+
+      toast.info('Vui lòng đăng nhập. Hệ thống sẽ tự động chuyển hướng tới link Shopee ngay sau khi bạn đăng nhập!');
+      openAuthModal('login');
       return;
     }
 
-    if (!checkedProduct) return;
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+      const token = localStorage.getItem('access_token');
 
-    // 1. Mã định danh Affiliate của bạn
-    const myAffiliateId = settings.shopeeAffiliateId || "173401900099";
+      const res = await fetch(`${API_BASE}/shopee/convert`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ url: checkedProduct.url })
+      });
 
-    // 2. Sử dụng hàm mã hóa URL link gốc do người dùng nhập vào
-    const encodedProductLink = encodeURIComponent(checkedProduct.url);
+      const data = await res.json();
 
-    // 3. Tự động gắn ID của người dùng đang đăng nhập làm Sub ID để đối soát
-    const subId = currentUser ? currentUser.id : "web_visitor";
+      if (data && data.success && data.affiliateLink) {
+        const newOrder: Order = {
+          id: data.clickId || `HD${Math.floor(1000 + Math.random() * 9000)}`,
+          productName: checkedProduct.name,
+          productImage: checkedProduct.image,
+          orderAmount: checkedProduct.price,
+          estimatedCashback: Math.round((checkedProduct.commission || 0) * 0.5) || Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
+          status: 'pending',
+          createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          userId: currentUser.id
+        };
+        addOrder(newOrder);
 
-    // 4. Ráp thành đường link Affiliate hoàn chỉnh để chuyển hướng (Sử dụng cổng chuyển hướng an_redir chính thức của Shopee)
-    const finalAffiliateLink = `https://s.shopee.vn/an_redir?origin_link=${encodedProductLink}&affiliate_id=${myAffiliateId}&sub_id=${subId}`;
-
-    // Lưu thông tin click/đơn hàng vào hệ thống
-    const newOrder: Order = {
-      id: `HD${Math.floor(1000 + Math.random() * 9000)}`,
-      productName: checkedProduct.name,
-      productImage: checkedProduct.image,
-      orderAmount: checkedProduct.price,
-      estimatedCashback: Math.round((checkedProduct.commission || 0) * 0.5) || Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
-      status: 'pending',
-      createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-      userId: currentUser.id
-    };
-    addOrder(newOrder);
-
-    // Mở trang Shopee với link affiliate trong tab mới
-    window.open(finalAffiliateLink, '_blank');
+        toast.success('Đã tạo link hoàn tiền! Đang chuyển hướng tới Shopee...');
+        window.open(data.affiliateLink, '_blank');
+      } else {
+        toast.error(data.message || data.error || 'Tạo link hoàn tiền thất bại');
+      }
+    } catch (err: any) {
+      toast.error('Có lỗi xảy ra khi tạo link hoàn tiền');
+    }
   };
 
   const copyToClipboard = (text: string) => {

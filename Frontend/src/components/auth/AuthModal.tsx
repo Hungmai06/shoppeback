@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShoppingBag, UserCheck, ArrowRight } from 'lucide-react';
+import { X, ShoppingBag, UserCheck, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { Button, Input } from '../ui/core';
 import { useAppStore } from '../../store/appStore';
 import { toast } from 'sonner';
@@ -24,6 +24,8 @@ export default function AuthModal() {
   const [referralCode, setReferralCode] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   if (!isAuthModalOpen) return null;
 
@@ -228,14 +230,25 @@ export default function AuthModal() {
                         Quên mật khẩu?
                       </button>
                     </div>
-                    <input
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
-                      required
-                    />
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-text-secondary hover:text-primary transition-colors focus:outline-none"
+                        tabIndex={-1}
+                        title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -298,25 +311,47 @@ export default function AuthModal() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-semibold text-text/80">Mật khẩu</label>
-                      <input
-                        type="password"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 font-semibold"
-                        required
-                      />
+                      <div className="relative">
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full px-3 py-2.5 pr-8 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 font-semibold"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-text-secondary hover:text-primary transition-colors focus:outline-none"
+                          tabIndex={-1}
+                          title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                        >
+                          {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-semibold text-text/80">Nhập lại MK</label>
-                      <input
-                        type="password"
-                        placeholder="••••••••"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 font-semibold"
-                        required
-                      />
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="••••••••"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="w-full px-3 py-2.5 pr-8 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 font-semibold"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-text-secondary hover:text-primary transition-colors focus:outline-none"
+                          tabIndex={-1}
+                          title={showConfirmPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -455,26 +490,48 @@ export default function AuthModal() {
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-text/80">Mật khẩu mới</label>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-text-secondary hover:text-primary transition-colors focus:outline-none"
+                      tabIndex={-1}
+                      title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-text/80">Xác nhận mật khẩu mới</label>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-text-secondary hover:text-primary transition-colors focus:outline-none"
+                      tabIndex={-1}
+                      title={showConfirmPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                    >
+                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <Button type="submit" className="w-full py-3.5 font-bold mt-2">

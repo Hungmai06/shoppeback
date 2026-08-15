@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const AFFILIATE_ID = process.env.SHOPEE_AFFILIATE_ID || '173401900099';
 
 /**
  * Ensures the given ID is in UUID v4 format (8-4-4-4-12 hex).
@@ -21,50 +22,72 @@ function ensureUuid(idInput) {
     return str;
   }
 
-  // Deterministically generate standard UUID layout from MD5 hash
   const hash = crypto.createHash('md5').update(str).digest('hex');
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
 /**
- * Generates a Shopee Affiliate Link with encoded originUrl, SHOPEE_AFFILIATE_ID, and sub_id (UUID format).
- *
- * @param {string} originUrl - Original Shopee product or page URL
- * @param {object|string} user - User object containing affiliate_sub_id or id, or user ID string
- * @returns {string} Generated Shopee affiliate link
+ * Kiểm tra và validate URL có phải thuộc Shopee Việt Nam hay không
+ * @param {string} inputUrl 
+ * @returns {URL} parsed URL object
  */
-function generateShopeeAffiliateLink(originUrl, user) {
-  if (!originUrl) {
-    throw new Error('originUrl là bắt buộc');
+function validateShopeeUrl(inputUrl) {
+  if (!inputUrl || typeof inputUrl !== 'string') {
+    throw new Error('Thiếu URL Shopee');
   }
 
-  const SHOPEE_AFFILIATE_ID = process.env.SHOPEE_AFFILIATE_ID;
-  if (!SHOPEE_AFFILIATE_ID) {
-    throw new Error('SHOPEE_AFFILIATE_ID chưa được cấu hình trong biến môi trường (environment variable)');
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(inputUrl.trim());
+  } catch (err) {
+    throw new Error('URL không hợp lệ');
   }
 
-  const encodedOrigin = encodeURIComponent(originUrl);
+  const hostname = parsedUrl.hostname.toLowerCase();
+  const validDomains = ['shopee.vn', 'www.shopee.vn', 'vn.shp.ee', 's.shopee.vn'];
 
-  // Extract affiliate_sub_id or id from user parameter
-  let rawSubId;
-  if (typeof user === 'object' && user !== null) {
-    rawSubId = user.affiliate_sub_id || user.id;
-  } else {
-    rawSubId = user;
+  const isValidShopee = validDomains.includes(hostname) || hostname.endsWith('.shopee.vn');
+  if (!isValidShopee) {
+    throw new Error('Chỉ hỗ trợ link Shopee Việt Nam');
   }
 
-  const subId = ensureUuid(rawSubId);
+  return parsedUrl;
+}
 
-  const affiliateLink =
-    `https://s.shopee.vn/an_redir` +
-    `?origin_link=${encodedOrigin}` +
-    `&affiliate_id=${SHOPEE_AFFILIATE_ID}` +
-    `&sub_id=${subId}`;
+/**
+ * Sinh mã tracking clickId độc nhất cho hệ thống
+ * @returns {string}
+ */
+function generateClickId() {
+  return 'CLK' + Date.now() + Math.random().toString(36).substring(2, 8);
+}
 
-  return affiliateLink;
+/**
+ * Tạo link Shopee Affiliate dạng deeplink an_redir chuẩn
+ * @param {string} originUrl - Link sản phẩm/trang Shopee gốc
+ * @param {string} subId - Mã tracking sub_id của hệ thống (ví dụ clickId)
+ * @returns {string} Link affiliate an_redir
+ */
+function createShopeeAffiliateLink(originUrl, subId = '') {
+  validateShopeeUrl(originUrl);
+
+  const affiliateId = process.env.SHOPEE_AFFILIATE_ID || AFFILIATE_ID;
+  const affiliateParams = new URLSearchParams();
+
+  affiliateParams.set('origin_link', originUrl.trim());
+  affiliateParams.set('affiliate_id', affiliateId);
+
+  if (subId) {
+    affiliateParams.set('sub_id', subId);
+  }
+
+  return `https://s.shopee.vn/an_redir?${affiliateParams.toString()}`;
 }
 
 module.exports = {
-  generateShopeeAffiliateLink,
-  ensureUuid
+  ensureUuid,
+  validateShopeeUrl,
+  generateClickId,
+  createShopeeAffiliateLink,
+  generateShopeeAffiliateLink: createShopeeAffiliateLink // alias for backwards compatibility
 };

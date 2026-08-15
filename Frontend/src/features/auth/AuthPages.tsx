@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ShoppingBag, ArrowLeft } from 'lucide-react';
+import { ShoppingBag, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, CardDescription, Input } from '../../components/ui/core';
 import { useAppStore } from '../../store/appStore';
 import { toast } from 'sonner';
@@ -20,6 +20,8 @@ export default function AuthPages() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [referralCode, setReferralCode] = useState(searchParams.get('ref') || '');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
 
   const setMode = (newMode: string) => {
@@ -159,14 +161,25 @@ export default function AuthPages() {
                         Quên mật khẩu?
                       </button>
                     </div>
-                    <input
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-                      required
-                    />
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-text-secondary hover:text-primary transition-colors focus:outline-none"
+                        tabIndex={-1}
+                        title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
 
                   <Button type="submit" className="w-full py-3 font-bold mt-2">
@@ -209,22 +222,50 @@ export default function AuthPages() {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                   />
-                  <Input
-                    label="Mật khẩu"
-                    placeholder="Tối thiểu 6 ký tự"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                  <Input
-                    label="Xác nhận mật khẩu"
-                    placeholder="Nhập lại mật khẩu"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                  />
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-text/80">Mật khẩu</label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Tối thiểu 6 ký tự"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-text-secondary hover:text-primary transition-colors focus:outline-none"
+                        tabIndex={-1}
+                        title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-text/80">Xác nhận mật khẩu</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Nhập lại mật khẩu"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-text-secondary hover:text-primary transition-colors focus:outline-none"
+                        tabIndex={-1}
+                        title={showConfirmPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
 
                   <Input
                     label="Mã giới thiệu (Không bắt buộc)"

@@ -19,6 +19,10 @@ function generateRefreshToken(id) {
 async function register(req, res) {
   const { name, email, password, referralCode } = req.body;
 
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: 'Vui lòng điền đầy đủ thông tin: họ tên, email và mật khẩu' });
+  }
+
   try {
     const db = await getDatabase();
 

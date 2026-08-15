@@ -95,17 +95,22 @@ async function adminGetStats(req, res) {
     const totalPaidWithdrawalsResult = await db.get("SELECT SUM(amount) as total FROM withdrawals WHERE status = 'approved'");
     const totalPaidWithdrawals = totalPaidWithdrawalsResult.total || 0;
 
-    // Calculate revenue & profits
-    // Total original commission Shopee paid us (sum of real_cashback for approved/paid or estimated_cashback)
-    const ordersList = await db.all("SELECT status, real_cashback, estimated_cashback, created_at FROM orders");
+    // Calculate revenue & profits from database orders
+    const ordersList = await db.all("SELECT id, status, real_cashback, estimated_cashback, shopee_commission, created_at FROM orders");
     
-    let platformTotalRevenue = 0; // Total Shopee commission received
-    let platformTotalCashbackOwed = 0; // Total cashback we owe to users (50% of shopee commission)
+    let platformTotalRevenue = 0; // Total 100% Shopee commission
+    let platformTotalCashbackOwed = 0; // Total 50% user cashback
 
     ordersList.forEach(o => {
+      const userCb = (o.real_cashback !== null && o.real_cashback !== undefined)
+        ? o.real_cashback
+        : (o.estimated_cashback || 0);
+
+      const shopeeComm = (o.shopee_commission !== null && o.shopee_commission !== undefined)
+        ? o.shopee_commission
+        : (userCb * 2);
+
       if (o.status === 'approved' || o.status === 'paid') {
-        const userCb = o.real_cashback || o.estimated_cashback || 0;
-        const shopeeComm = userCb * 2; // raw 100% Shopee commission
         platformTotalRevenue += shopeeComm;
         platformTotalCashbackOwed += userCb;
       }
@@ -122,17 +127,14 @@ async function adminGetStats(req, res) {
     });
 
     // Monthly chart data (last 6 months)
-    // We group orders by month
     const monthlyStatsMap = {};
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
 
-    // Initialize last 6 months
     for (let i = 5; i >= 0; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       monthlyStatsMap[monthKey] = {
-        name: `${monthNames[d.getMonth()]} ${d.getFullYear().toString().substring(2)}`,
+        name: `T${d.getMonth() + 1}`,
         revenue: 0,
         cashback: 0,
         profit: 0
@@ -140,17 +142,21 @@ async function adminGetStats(req, res) {
     }
 
     ordersList.forEach(o => {
-      if (o.status === 'approved' || o.status === 'paid') {
-        const userCb = o.real_cashback || o.estimated_cashback || 0;
-        const shopeeComm = userCb * 2;
-        const dateStr = o.created_at || '';
-        if (dateStr.length >= 7) {
-          const monthKey = dateStr.substring(0, 7); // YYYY-MM
-          if (monthlyStatsMap[monthKey]) {
-            monthlyStatsMap[monthKey].revenue += shopeeComm;
-            monthlyStatsMap[monthKey].cashback += userCb;
-            monthlyStatsMap[monthKey].profit += (shopeeComm - userCb);
-          }
+      const userCb = (o.real_cashback !== null && o.real_cashback !== undefined)
+        ? o.real_cashback
+        : (o.estimated_cashback || 0);
+
+      const shopeeComm = (o.shopee_commission !== null && o.shopee_commission !== undefined)
+        ? o.shopee_commission
+        : (userCb * 2);
+
+      const dateStr = o.created_at || '';
+      if (dateStr.length >= 7) {
+        const monthKey = dateStr.substring(0, 7); // YYYY-MM
+        if (monthlyStatsMap[monthKey]) {
+          monthlyStatsMap[monthKey].revenue += shopeeComm;
+          monthlyStatsMap[monthKey].cashback += userCb;
+          monthlyStatsMap[monthKey].profit += (shopeeComm - userCb);
         }
       }
     });

@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/auth');
-const { createAffiliateLink } = require('../controllers/shopeeController');
+const { optionalAuth } = require('../middleware/auth');
+const { convertShopeeLink } = require('../controllers/shopeeController');
 
-router.post('/generate-link', protect, createAffiliateLink);
+// Hỗ trợ cả /api/shopee/convert và /api/shopee/generate-link
+router.post('/convert', optionalAuth, convertShopeeLink);
+router.post('/generate-link', optionalAuth, convertShopeeLink);
 
 module.exports = router;

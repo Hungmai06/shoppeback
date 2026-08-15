@@ -354,9 +354,21 @@ async function uploadAndAnalyze(req, res) {
   };
 
   try {
-    // Read all users to validate sub_id (userId)
-    const allUsers = await db.all('SELECT id FROM users');
+    // Read all users to validate sub_id (userId or affiliate_sub_id)
+    const allUsers = await db.all('SELECT id, affiliate_sub_id FROM users');
     const userIds = new Set(allUsers.map(u => u.id));
+    const affiliateSubIdToUserIdMap = new Map();
+    for (const u of allUsers) {
+      if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id, u.id);
+    }
+
+    // Read all click_logs to map random clickId/sub_id -> user_id
+    const allClickLogs = await db.all('SELECT id, user_id, sub_id FROM click_logs WHERE user_id IS NOT NULL');
+    const clickSubIdToUserIdMap = new Map();
+    for (const log of allClickLogs) {
+      if (log.id && log.user_id) clickSubIdToUserIdMap.set(log.id, log.user_id);
+      if (log.sub_id && log.user_id) clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
+    }
 
     // Read all existing orders
     const allOrders = await db.all('SELECT id, status, user_id, order_amount, real_cashback, estimated_cashback FROM orders');
@@ -425,9 +437,17 @@ async function uploadAndAnalyze(req, res) {
       // - If CSV has no subId but order exists → keep existing user_id
       // - If CSV has no subId and order is new → import with null user_id (unassigned)
       let targetUserId = null;
-      if (cleanSubId && userIds.has(cleanSubId)) {
-        targetUserId = cleanSubId;
-      } else {
+      if (cleanSubId) {
+        if (clickSubIdToUserIdMap.has(cleanSubId)) {
+          targetUserId = clickSubIdToUserIdMap.get(cleanSubId);
+        } else if (userIds.has(cleanSubId)) {
+          targetUserId = cleanSubId;
+        } else if (affiliateSubIdToUserIdMap.has(cleanSubId)) {
+          targetUserId = affiliateSubIdToUserIdMap.get(cleanSubId);
+        }
+      }
+
+      if (!targetUserId) {
         if (exists) {
           targetUserId = currentDbUserId || null; // keep existing
         } else {
@@ -534,9 +554,27 @@ async function applyReconciliation(req, res) {
   try {
     const db = await getDatabase();
     
-    // Fetch users, orders for sync
-    const allUsers = await db.all('SELECT id FROM users');
+    // Fetch users, click_logs, orders for sync
+    const allUsers = await db.all('SELECT id, affiliate_sub_id FROM users');
     const userIds = new Set(allUsers.map(u => u.id));
+    const affiliateSubIdToUserIdMap = new Map();
+    for (const u of allUsers) {
+      if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id, u.id);
+    }
+
+    const allClickLogs = await db.all('SELECT id, user_id, sub_id FROM click_logs WHERE user_id IS NOT NULL');
+    const clickSubIdToUserIdMap = new Map();
+    const clickIdMap = new Map();
+    for (const log of allClickLogs) {
+      if (log.id && log.user_id) {
+        clickSubIdToUserIdMap.set(log.id, log.user_id);
+        clickIdMap.set(log.id, log.id);
+      }
+      if (log.sub_id && log.user_id) {
+        clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
+        clickIdMap.set(log.sub_id, log.id);
+      }
+    }
 
     const allOrders = await db.all('SELECT id, status, user_id, order_amount, real_cashback, estimated_cashback FROM orders');
     const existingOrdersMap = new Map(allOrders.map(o => [
@@ -589,9 +627,19 @@ async function applyReconciliation(req, res) {
       const currentDbUserId = dbOrder ? dbOrder.userId : null;
 
       let targetUserId = null;
-      if (cleanSubId && userIds.has(cleanSubId)) {
-        targetUserId = cleanSubId;
-      } else {
+      let targetClickId = null;
+      if (cleanSubId) {
+        if (clickSubIdToUserIdMap.has(cleanSubId)) {
+          targetUserId = clickSubIdToUserIdMap.get(cleanSubId);
+          targetClickId = clickIdMap.get(cleanSubId) || null;
+        } else if (userIds.has(cleanSubId)) {
+          targetUserId = cleanSubId;
+        } else if (affiliateSubIdToUserIdMap.has(cleanSubId)) {
+          targetUserId = affiliateSubIdToUserIdMap.get(cleanSubId);
+        }
+      }
+
+      if (!targetUserId) {
         if (exists) {
           targetUserId = currentDbUserId || null; // keep existing user
         } else {
@@ -625,14 +673,14 @@ async function applyReconciliation(req, res) {
            SET status = ?,
                user_id = ?,
                real_cashback = ?,
+               shopee_commission = ?,
                order_amount = ?,
                product_name = ?,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [mappedStatus, targetUserId, userCashback, orderAmount, productName, dbOrder.id]
+          [mappedStatus, targetUserId, userCashback, commission, orderAmount, productName, dbOrder.id]
         );
 
-        // Calculate and add money to user if status transitioned to approved
         // Calculate and add money to user if status transitioned to approved
         if (targetUserId && mappedStatus === 'approved' && currentDbStatus !== 'approved') {
           const userCashback = commission * cashbackRate;
@@ -644,7 +692,7 @@ async function applyReconciliation(req, res) {
             [userCashback, userCashback, targetUserId]
           );
 
-          // Check for referral bonus (20%)
+          // Check for referral bonus (20% of user cashback)
           const targetUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
           if (targetUserObj && targetUserObj.referred_by) {
             const refBonus = userCashback * 0.20;
@@ -659,7 +707,7 @@ async function applyReconciliation(req, res) {
             await db.run(
               `INSERT INTO notifications (id, user_id, title, content, type)
                VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
-              [refNotifId, targetUserObj.referred_by, `Bạn nhận được +${Math.round(refBonus).toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
+              [refNotifId, targetUserObj.referred_by, `Bạn nhận được +${Math.round(refBonus).toLocaleString('vi-VN')}đ hoa hồng giới thiệu từ giao dịch của thành viên.`]
             );
           }
         }
@@ -686,16 +734,18 @@ async function applyReconciliation(req, res) {
         const orderTime = purchaseTime || new Date().toISOString().replace('T', ' ').substring(0, 19);
 
         await db.run(
-          `INSERT INTO orders (id, user_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
           [
             orderId,
             targetUserId,
+            targetClickId,
             productName,
             'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=200', // default shopee image placeholder
             orderAmount,
             userCashback, // 50% cashback for user
             userCashback, // 50% cashback for user
+            commission,   // 100% total shopee commission for admin
             mappedStatus,
             orderTime
           ]

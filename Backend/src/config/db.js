@@ -118,22 +118,32 @@ async function initializeDatabase() {
     await wrapper.exec(`
       CREATE TABLE IF NOT EXISTS click_logs (
         id VARCHAR(255) PRIMARY KEY,
-        user_id VARCHAR(255) NOT NULL,
+        user_id VARCHAR(255) NULL,
         product_url TEXT NOT NULL,
+        sub_id VARCHAR(255) NULL,
         click_time DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
+    try {
+      await wrapper.exec('ALTER TABLE click_logs ADD COLUMN sub_id VARCHAR(255)');
+    } catch (e) { }
+    try {
+      await wrapper.exec('ALTER TABLE click_logs MODIFY COLUMN user_id VARCHAR(255) NULL');
+    } catch (e) { }
+
     await wrapper.exec(`
       CREATE TABLE IF NOT EXISTS orders (
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NULL,
+        click_id VARCHAR(255) NULL,
         product_name VARCHAR(255) NOT NULL,
         product_image TEXT,
         order_amount REAL NOT NULL,
         estimated_cashback REAL NOT NULL,
         real_cashback REAL,
+        shopee_commission REAL,
         status VARCHAR(50) DEFAULT 'pending',
         screenshot TEXT,
         notes TEXT,
@@ -141,6 +151,13 @@ async function initializeDatabase() {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
+
+    try {
+      await wrapper.exec('ALTER TABLE orders ADD COLUMN click_id VARCHAR(255)');
+    } catch (e) { }
+    try {
+      await wrapper.exec('ALTER TABLE orders ADD COLUMN shopee_commission REAL');
+    } catch (e) { }
 
     await wrapper.exec(`
       CREATE TABLE IF NOT EXISTS withdrawals (
@@ -301,29 +318,43 @@ async function initializeDatabase() {
     await db.exec(`
       CREATE TABLE IF NOT EXISTS click_logs (
         id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
+        user_id TEXT NULL,
         product_url TEXT NOT NULL,
+        sub_id TEXT NULL,
         click_time DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
+    try {
+      await db.exec('ALTER TABLE click_logs ADD COLUMN sub_id TEXT');
+    } catch (e) { }
+
     await db.exec(`
       CREATE TABLE IF NOT EXISTS orders (
         id TEXT PRIMARY KEY,
         user_id TEXT,
+        click_id TEXT,
         product_name TEXT NOT NULL,
         product_image TEXT,
         order_amount REAL NOT NULL,
         estimated_cashback REAL NOT NULL,
         real_cashback REAL,
-        status TEXT CHECK(status IN ('pending', 'approved', 'rejected', 'paid')) DEFAULT 'pending',
+        shopee_commission REAL,
+        status TEXT CHECK(status IN ('pending', 'approved', 'rejected', 'paid', 'returned')) DEFAULT 'pending',
         screenshot TEXT,
         notes TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    try {
+      await db.exec('ALTER TABLE orders ADD COLUMN click_id TEXT');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE orders ADD COLUMN shopee_commission REAL');
+    } catch (e) { }
 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS withdrawals (
