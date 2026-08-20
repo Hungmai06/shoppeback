@@ -1,6 +1,6 @@
 # 🚀 Hướng Dẫn Đóng Gói & Deploy Máy Chủ (Git & Docker)
 
-Tài liệu này hướng dẫn chi tiết từng bước để đẩy mã nguồn dự án **Hũ Tài Lộc (Shopee Cashback Affiliate)** lên Git và triển khai tự động bằng Docker & Docker Compose trên máy chủ VPS cho subdomain **`shoppe.khoahocdrivemh.pro.vn`**.
+Tài liệu này hướng dẫn chi tiết từng bước để đẩy mã nguồn dự án **Hũ Tài Lộc (Shopee Cashback Affiliate)** lên Git và triển khai tự động bằng Docker & Docker Compose trên máy chủ VPS cho tên miền chính thức **`hutailoc.shop`**.
 
 ---
 
@@ -9,7 +9,7 @@ Tài liệu này hướng dẫn chi tiết từng bước để đẩy mã ngu�
 Dự án đã được đóng gói thành **3 Container Docker** kết nối qua mạng nội bộ:
 1. **Database Container (`hoantien_mysql`)**: Chạy cơ sở dữ liệu **MySQL 8.0** độc lập. Toàn bộ dữ liệu tài khoản, đơn hàng và số dư được lưu trữ bền vững vào Docker Volume (`mysql_data`).
 2. **Backend Container (`hoantien_backend`)**: Chạy Node.js API (Cổng `5000`), kết nối trực tiếp với MySQL Container (`db:3306`) thông qua cơ chế `service_healthy`.
-3. **Frontend Container (`hoantien_frontend`)**: Chạy React Nginx Web Server (Cổng `80`), phục vụ subdomain **`shoppe.khoahocdrivemh.pro.vn`** và Reverse Proxy tất cả yêu cầu `/api/` về Backend.
+3. **Frontend Container (`hoantien_frontend`)**: Chạy React Nginx Web Server (Cổng `80`), phục vụ domain **`hutailoc.shop`** và Reverse Proxy tất cả yêu cầu `/api/` về Backend.
 
 ---
 
@@ -19,7 +19,7 @@ Thực hiện các lệnh sau trên máy tính cá nhân của bạn để đẩ
 
 ```bash
 git add .
-git commit -m "Update MySQL docker container & subdomain shoppe.khoahocdrivemh.pro.vn"
+git commit -m "Update MySQL docker container & domain hutailoc.shop"
 git push origin main
 ```
 
@@ -79,7 +79,7 @@ docker compose up -d --build
 > ⚡ **Kết quả mong đợi:**
 > - MySQL 8.0 khởi chạy và tự động khởi tạo Database `affiliateshoppe`.
 > - Node.js Backend đợi MySQL sẵn sàng (`service_healthy`) rồi tự động chạy Migrations/Seeds.
-> - Frontend Nginx sẵn sàng đón nhận truy cập tại subdomain **`shoppe.khoahocdrivemh.pro.vn`**.
+> - Frontend Nginx sẵn sàng đón nhận truy cập tại domain **`hutailoc.shop`**.
 
 > 💡 **Mẹo xử lý nếu VPS thiếu RAM khi build (Lỗi exit code 1 / OOM):**
 > Nếu VPS có RAM 1GB - 2GB, hãy tạo bộ nhớ ảo (Swap) trước khi build để tránh bị tràn RAM:
@@ -122,18 +122,18 @@ docker compose logs -f frontend
 
 ---
 
-## 🔒 BƯỚC 6: Cấu Hình Nginx Host & SSL HTTPS Cho Subdomain `shoppe.khoahocdrivemh.pro.vn`
+## 🔒 BƯỚC 6: Cấu Hình Nginx Host & SSL HTTPS Cho Domain `hutailoc.shop`
 
 Vì VPS đang chạy web khác trên cổng 80, Frontend Docker sẽ chạy tại cổng **8080** (`http://127.0.0.1:8080`).
 
 ### 6.1 Tạo file cấu hình Nginx Reverse Proxy trên VPS:
 ```bash
-sudo nano /etc/nginx/sites-available/shoppeback
+sudo nano /etc/nginx/sites-available/hutailoc.shop
 ```
 Dán nội dung sau vào:
 ```nginx
 server {
-    server_name shoppe.khoahocdrivemh.pro.vn;
+    server_name hutailoc.shop;
 
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
@@ -156,14 +156,14 @@ server {
 ```
 Kích hoạt config và reload Nginx:
 ```bash
-sudo ln -sf /etc/nginx/sites-available/shoppeback /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/hutailoc.shop /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
 ### 6.2 Cài đặt SSL HTTPS miễn phí với Certbot:
 ```bash
-sudo certbot --nginx -d shoppe.khoahocdrivemh.pro.vn
+sudo certbot --nginx -d hutailoc.shop -d www.hutailoc.shop
 ```
 
 ---

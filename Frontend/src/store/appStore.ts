@@ -84,11 +84,12 @@ export interface AdminStats {
     totalOrders: number;
     totalPaidWithdrawals: number;
     platformTotalRevenue: number;
-    platformTotalCashbackOwed: number;
+    platformTotalCashbackOwed?: number;
     netProfit: number;
   };
   statusDistribution: { name: string; value: number }[];
   monthlyAnalytics: { name: string; revenue: number; cashback: number; profit: number }[];
+  dailyUserRegistrations?: { date: string; fullDate: string; count: number }[];
 }
 
 interface AppState {
@@ -97,6 +98,8 @@ interface AppState {
   toggleTheme: () => void;
 
   // Auth state
+  isAuthLoading: boolean;
+  authInitialized: boolean;
   currentUser: UserProfile | null;
   users: UserProfile[];
   userStats: UserStats | null;
@@ -121,7 +124,7 @@ interface AppState {
 
   // Withdrawals state
   withdrawals: Withdrawal[];
-  addWithdrawalRequest: (amount: number, bankName: string, accountNumber: string, accountHolder: string) => Promise<boolean>;
+  addWithdrawalRequest: (amount: number, bankName: string, accountNumber: string, accountHolder: string) => Promise<{ success: boolean; message: string }>;
   updateWithdrawalStatus: (id: string, status: Withdrawal['status']) => Promise<void>;
 
   // Favorites state
@@ -191,6 +194,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { theme: nextTheme };
   }),
 
+  isAuthLoading: !!localStorage.getItem('token'),
+  authInitialized: false,
   currentUser: null,
   users: [],
   userStats: null,
@@ -209,57 +214,71 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentUser: (user) => set({ currentUser: user }),
 
   initializeAuth: async () => {
-    // 1. Fetch public system settings
-    try {
-      const res = await fetch(`${API_BASE}/settings`);
-      if (res.ok) {
-        const data = await res.json();
-        set({ settings: data });
-      }
-    } catch (error) {
-      console.error('Fetch settings failed:', error);
+    const token = localStorage.getItem('token');
+    if (token) {
+      set({ isAuthLoading: true });
     }
 
-    // 2. Fetch authenticated profile if token exists
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    // 1. Fetch public system settings & user profile concurrently if token exists
+    const settingsPromise = fetch(`${API_BASE}/settings`)
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          set({ settings: data });
+        }
+      })
+      .catch((error) => console.error('Fetch settings failed:', error));
+
+    if (!token) {
+      await settingsPromise;
+      set({ isAuthLoading: false, authInitialized: true });
+      return;
+    }
 
     try {
-      const res = await fetch(`${API_BASE}/auth/profile`, {
-        headers: getHeaders()
-      });
+      const [profileRes] = await Promise.all([
+        fetch(`${API_BASE}/auth/profile`, { headers: getHeaders() }),
+        settingsPromise
+      ]);
 
-      if (res.ok) {
-        const data = await res.json();
+      if (profileRes.ok) {
+        const data = await profileRes.json();
         set({
           currentUser: data.profile,
-          userStats: data.stats
+          userStats: data.stats,
+          isAuthLoading: false,
+          authInitialized: true
         });
 
-        // Load personal data
-        await get().fetchUserOrders();
-        await get().fetchUserWithdrawals();
-        await get().fetchNotifications();
+        // Load personal data & admin data in parallel without blocking UI
+        const loadPromises: Promise<any>[] = [
+          get().fetchUserOrders(),
+          get().fetchUserWithdrawals(),
+          get().fetchNotifications()
+        ];
 
-        // Load admin data if admin role
         if (data.profile.role === 'admin') {
-          await get().fetchAdminOrders();
-          await get().fetchAdminWithdrawals();
-          await get().fetchAdminUsers();
-          await get().fetchAdminStats();
-          await get().fetchReconciliationLogs();
+          loadPromises.push(
+            get().fetchAdminOrders(),
+            get().fetchAdminWithdrawals(),
+            get().fetchAdminUsers(),
+            get().fetchAdminStats(),
+            get().fetchReconciliationLogs()
+          );
         }
+
+        Promise.allSettled(loadPromises);
       } else {
         // Expired/Invalid token
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
-        set({ currentUser: null, userStats: null });
+        set({ currentUser: null, userStats: null, isAuthLoading: false, authInitialized: true });
       }
     } catch (error) {
       console.error('Initialize auth error:', error);
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
-      set({ currentUser: null, userStats: null });
+      set({ currentUser: null, userStats: null, isAuthLoading: false, authInitialized: true });
     }
   },
 
@@ -277,8 +296,41 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (data.refreshToken) {
           localStorage.setItem('refreshToken', data.refreshToken);
         }
-        set({ currentUser: data.user });
-        await get().initializeAuth();
+        
+        // Update user state immediately for instant UI response (<100ms)
+        set({
+          currentUser: data.user,
+          isAuthLoading: false,
+          authInitialized: true
+        });
+
+        // Background non-blocking sync of orders, wallet, notifications and stats
+        const bgPromises: Promise<any>[] = [
+          get().fetchUserOrders(),
+          get().fetchUserWithdrawals(),
+          get().fetchNotifications(),
+          fetch(`${API_BASE}/auth/profile`, { headers: { 'Authorization': `Bearer ${data.token}` } })
+            .then(r => r.ok ? r.json() : null)
+            .then(pData => {
+              if (pData) {
+                set({ currentUser: pData.profile, userStats: pData.stats });
+              }
+            })
+            .catch(() => {})
+        ];
+
+        if (data.user.role === 'admin') {
+          bgPromises.push(
+            get().fetchAdminOrders(),
+            get().fetchAdminWithdrawals(),
+            get().fetchAdminUsers(),
+            get().fetchAdminStats(),
+            get().fetchReconciliationLogs()
+          );
+        }
+
+        Promise.allSettled(bgPromises);
+
         return data.user as UserProfile;
       }
       return null;
@@ -302,8 +354,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (data.refreshToken) {
           localStorage.setItem('refreshToken', data.refreshToken);
         }
-        set({ currentUser: data.user });
-        await get().initializeAuth();
+        
+        set({
+          currentUser: data.user,
+          isAuthLoading: false,
+          authInitialized: true
+        });
+
+        // Trigger background initial data loading
+        Promise.allSettled([
+          get().fetchUserOrders(),
+          get().fetchUserWithdrawals(),
+          get().fetchNotifications()
+        ]);
+
         return true;
       }
       return false;
@@ -316,6 +380,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('admin_active_tab');
     set({
       currentUser: null,
       userStats: null,
@@ -324,7 +389,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       totalAdminOrders: 0,
       withdrawals: [],
       notifications: [],
-      users: []
+      users: [],
+      isAuthLoading: false,
+      authInitialized: true
     });
   },
 
@@ -374,17 +441,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addOrder: async (order) => {
-    // Record click log
     try {
-      await fetch(`${API_BASE}/orders/click-log`, {
+      await fetch(`${API_BASE}/orders/create`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ productUrl: order.productName })
+        body: JSON.stringify({
+          id: order.id,
+          productName: order.productName,
+          productImage: order.productImage,
+          orderAmount: order.orderAmount,
+          estimatedCashback: order.estimatedCashback,
+          clickId: order.id
+        })
       });
       // Visual feedback: temporarily append to state so it renders instantly
-      set((state) => ({ orders: [order, ...state.orders] }));
+      set((state) => {
+        const exists = state.orders.some(o => o.id === order.id);
+        return { orders: exists ? state.orders : [order, ...state.orders] };
+      });
+      // Refresh persistent list from server
+      await get().fetchUserOrders();
     } catch (error) {
-      console.error('Click log error:', error);
+      console.error('Add order error:', error);
+      set((state) => ({ orders: [order, ...state.orders] }));
     }
   },
 
@@ -433,15 +512,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         body: JSON.stringify({ amount, bankName, accountNumber, accountHolder })
       });
 
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         await get().fetchUserWithdrawals();
         await get().initializeAuth(); // refresh wallet stats
-        return true;
+        return { success: true, message: data.message || 'Yêu cầu rút tiền đã được gửi thành công' };
       }
-      return false;
-    } catch (error) {
+      return { success: false, message: data.message || 'Không thể tạo yêu cầu rút tiền' };
+    } catch (error: any) {
       console.error('Add withdrawal error:', error);
-      return false;
+      return { success: false, message: error.message || 'Lỗi kết nối máy chủ' };
     }
   },
 
@@ -557,28 +637,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Admin and reconciliation fetches
   fetchAdminOrders: async (page = 1, limit = 10, search = '', status = 'all') => {
     try {
-      const url = new URL(`${API_BASE}/orders/admin`);
-      url.searchParams.append('page', page.toString());
-      url.searchParams.append('limit', limit.toString());
-      if (search) url.searchParams.append('search', search);
-      if (status && status !== 'all') url.searchParams.append('status', status);
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString()
+      });
+      if (search) queryParams.append('search', search);
+      if (status && status !== 'all') queryParams.append('status', status);
 
-      const res = await fetch(url.toString(), { headers: getHeaders() });
+      const res = await fetch(`${API_BASE}/orders/admin?${queryParams.toString()}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
-        const mappedOrders = data.orders.map((o: any) => ({
-          id: o.id,
-          productName: o.product_name,
-          productImage: o.product_image,
-          orderAmount: o.order_amount,
-          estimatedCashback: o.estimated_cashback,
-          realCashback: o.real_cashback || undefined,
-          status: o.status,
-          createdTime: o.created_at,
-          userId: o.user_id,
+        const ordersList = Array.isArray(data.orders) ? data.orders : (Array.isArray(data) ? data : []);
+        const mappedOrders = ordersList.map((o: any) => ({
+          id: o.id || o.order_id,
+          productName: o.product_name || o.productName || 'Sản phẩm Shopee',
+          productImage: o.product_image || o.productImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=200',
+          orderAmount: Number(o.order_amount || o.orderAmount || 0),
+          estimatedCashback: Number(o.estimated_cashback !== undefined ? o.estimated_cashback : (o.estimatedCashback || Math.round((o.commission || 0) * 0.5))),
+          realCashback: o.real_cashback !== undefined ? Number(o.real_cashback) : (o.realCashback !== undefined ? Number(o.realCashback) : undefined),
+          status: o.status || 'pending',
+          createdTime: o.created_at || o.order_time || o.createdTime || new Date().toISOString(),
+          userId: o.user_id || o.userId,
           notes: o.notes || undefined
         }));
-        set({ orders: mappedOrders, totalAdminOrders: data.pagination.total });
+        set({
+          orders: mappedOrders,
+          totalAdminOrders: data.pagination ? data.pagination.total : mappedOrders.length
+        });
       }
     } catch (error) {
       console.error('Fetch admin orders error:', error);

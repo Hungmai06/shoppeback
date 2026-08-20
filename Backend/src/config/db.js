@@ -218,6 +218,95 @@ async function initializeDatabase() {
       )
     `);
 
+    // Add MySQL indexes safely
+    const mysqlIndexes = [
+      'CREATE INDEX idx_orders_user_id ON orders(user_id)',
+      'CREATE INDEX idx_orders_user_status ON orders(user_id, status)',
+      'CREATE INDEX idx_withdrawals_user_id ON withdrawals(user_id)',
+      'CREATE INDEX idx_withdrawals_user_status ON withdrawals(user_id, status)',
+      'CREATE INDEX idx_notifications_user_id ON notifications(user_id, created_at DESC)',
+      'CREATE INDEX idx_click_logs_user_id ON click_logs(user_id)',
+      'CREATE INDEX idx_users_referred_by ON users(referred_by)'
+    ];
+    for (const idxSql of mysqlIndexes) {
+      try {
+        await wrapper.exec(idxSql);
+      } catch (e) {
+        // Ignore if index already exists
+      }
+    }
+
+    await wrapper.exec(`
+      CREATE TABLE IF NOT EXISTS affiliate_clicks (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NULL,
+        click_id VARCHAR(255) UNIQUE NOT NULL,
+        sub_id VARCHAR(255) NULL,
+        item_id VARCHAR(255) NULL,
+        shop_id VARCHAR(255) NULL,
+        origin_url TEXT NULL,
+        clicked_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_aff_clicks_click_id (click_id),
+        INDEX idx_aff_clicks_sub_id (sub_id),
+        INDEX idx_aff_clicks_user_id (user_id),
+        INDEX idx_aff_clicks_item_shop (item_id, shop_id),
+        INDEX idx_aff_clicks_clicked_at (clicked_at)
+      )
+    `);
+
+    await wrapper.exec(`
+      CREATE TABLE IF NOT EXISTS affiliate_orders (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) UNIQUE NOT NULL,
+        checkout_id VARCHAR(255) NULL,
+        user_id VARCHAR(255) NULL,
+        item_id VARCHAR(255) NULL,
+        shop_id VARCHAR(255) NULL,
+        order_time DATETIME NULL,
+        shopee_click_time DATETIME NULL,
+        commission REAL DEFAULT 0,
+        shopee_status VARCHAR(255) NULL,
+        status VARCHAR(50) DEFAULT 'PENDING',
+        matched_by VARCHAR(50) NULL,
+        match_score REAL NULL,
+        matched_click_id VARCHAR(255) NULL,
+        sub_id1 VARCHAR(255) NULL,
+        sub_id2 VARCHAR(255) NULL,
+        sub_id3 VARCHAR(255) NULL,
+        sub_id4 VARCHAR(255) NULL,
+        sub_id5 VARCHAR(255) NULL,
+        product_name TEXT NULL,
+        order_amount REAL DEFAULT 0,
+        raw_data TEXT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_aff_orders_order_id (order_id),
+        INDEX idx_aff_orders_user_id (user_id),
+        INDEX idx_aff_orders_status (status),
+        INDEX idx_aff_orders_item_shop (item_id, shop_id),
+        INDEX idx_aff_orders_order_time (order_time)
+      )
+    `);
+
+    await wrapper.exec(`
+      CREATE TABLE IF NOT EXISTS order_match_audit_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) NOT NULL,
+        admin_id VARCHAR(255) NULL,
+        action VARCHAR(100) NOT NULL,
+        previous_user_id VARCHAR(255) NULL,
+        new_user_id VARCHAR(255) NULL,
+        previous_status VARCHAR(50) NULL,
+        new_status VARCHAR(50) NULL,
+        notes TEXT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_audit_order_id (order_id),
+        INDEX idx_audit_admin_id (admin_id),
+        INDEX idx_audit_created_at (created_at)
+      )
+    `);
+
     // Seed default settings for MySQL
     const [settingsCountRows] = await pool.query('SELECT COUNT(*) as count FROM system_settings');
     if (settingsCountRows[0].count === 0) {
@@ -311,6 +400,15 @@ async function initializeDatabase() {
       )
     `);
 
+    try {
+      await db.exec('ALTER TABLE users ADD COLUMN referred_by TEXT');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE users ADD COLUMN referral_earnings REAL DEFAULT 0');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE users ADD COLUMN refresh_token TEXT');
+    } catch (e) { }
     try {
       await db.exec('ALTER TABLE users ADD COLUMN affiliate_sub_id TEXT');
     } catch (e) { }
@@ -413,6 +511,80 @@ async function initializeDatabase() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
+    `);
+
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_user_status ON orders(user_id, status);
+      CREATE INDEX IF NOT EXISTS idx_withdrawals_user_id ON withdrawals(user_id);
+      CREATE INDEX IF NOT EXISTS idx_withdrawals_user_status ON withdrawals(user_id, status);
+      CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_click_logs_user_id ON click_logs(user_id);
+      CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by);
+
+      CREATE TABLE IF NOT EXISTS affiliate_clicks (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NULL,
+        click_id TEXT UNIQUE NOT NULL,
+        sub_id TEXT NULL,
+        item_id TEXT NULL,
+        shop_id TEXT NULL,
+        origin_url TEXT NULL,
+        clicked_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_aff_clicks_click_id ON affiliate_clicks(click_id);
+      CREATE INDEX IF NOT EXISTS idx_aff_clicks_sub_id ON affiliate_clicks(sub_id);
+      CREATE INDEX IF NOT EXISTS idx_aff_clicks_user_id ON affiliate_clicks(user_id);
+      CREATE INDEX IF NOT EXISTS idx_aff_clicks_item_shop ON affiliate_clicks(item_id, shop_id);
+      CREATE INDEX IF NOT EXISTS idx_aff_clicks_clicked_at ON affiliate_clicks(clicked_at);
+
+      CREATE TABLE IF NOT EXISTS affiliate_orders (
+        id TEXT PRIMARY KEY,
+        order_id TEXT UNIQUE NOT NULL,
+        checkout_id TEXT NULL,
+        user_id TEXT NULL,
+        item_id TEXT NULL,
+        shop_id TEXT NULL,
+        order_time DATETIME NULL,
+        shopee_click_time DATETIME NULL,
+        commission REAL DEFAULT 0,
+        shopee_status TEXT NULL,
+        status TEXT DEFAULT 'PENDING',
+        matched_by TEXT NULL,
+        match_score REAL NULL,
+        matched_click_id TEXT NULL,
+        sub_id1 TEXT NULL,
+        sub_id2 TEXT NULL,
+        sub_id3 TEXT NULL,
+        sub_id4 TEXT NULL,
+        sub_id5 TEXT NULL,
+        product_name TEXT NULL,
+        order_amount REAL DEFAULT 0,
+        raw_data TEXT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_aff_orders_order_id ON affiliate_orders(order_id);
+      CREATE INDEX IF NOT EXISTS idx_aff_orders_user_id ON affiliate_orders(user_id);
+      CREATE INDEX IF NOT EXISTS idx_aff_orders_status ON affiliate_orders(status);
+      CREATE INDEX IF NOT EXISTS idx_aff_orders_item_shop ON affiliate_orders(item_id, shop_id);
+      CREATE INDEX IF NOT EXISTS idx_aff_orders_order_time ON affiliate_orders(order_time);
+
+      CREATE TABLE IF NOT EXISTS order_match_audit_logs (
+        id TEXT PRIMARY KEY,
+        order_id TEXT NOT NULL,
+        admin_id TEXT NULL,
+        action TEXT NOT NULL,
+        previous_user_id TEXT NULL,
+        new_user_id TEXT NULL,
+        previous_status TEXT NULL,
+        new_status TEXT NULL,
+        notes TEXT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_order_id ON order_match_audit_logs(order_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_admin_id ON order_match_audit_logs(admin_id);
     `);
 
     // Seed default settings for SQLite

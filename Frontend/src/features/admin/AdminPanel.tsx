@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShieldCheck, Users, ShoppingBag, Wallet,
@@ -48,17 +48,43 @@ const getPageNumbers = (currentPage: number, totalPages: number) => {
   return rangeWithDots;
 };
 
+type AdminTabType = 'dashboard' | 'users' | 'orders' | 'withdrawals' | 'reconciliation' | 'settings';
+
 export default function AdminPanel() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     currentUser, logout, orders, totalAdminOrders, withdrawals, users, settings,
+    isAuthLoading, authInitialized,
     updateOrderStatus, updateWithdrawalStatus, updateSettings,
     reconciliationHistory, uploadReconciliationCSV, applyReconciliationCSV,
     updateAdminUser, adminStats, fetchAdminOrders, fetchAdminStats,
+    fetchAdminUsers, fetchAdminWithdrawals, fetchReconciliationLogs,
     createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus
   } = useAppStore();
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'orders' | 'withdrawals' | 'reconciliation' | 'settings'>('dashboard');
+  const validTabs: AdminTabType[] = ['dashboard', 'users', 'orders', 'withdrawals', 'reconciliation', 'settings'];
+
+  const initialTab: AdminTabType = (() => {
+    const urlTab = searchParams.get('tab') as AdminTabType;
+    if (urlTab && validTabs.includes(urlTab)) return urlTab;
+    const storedTab = localStorage.getItem('admin_active_tab') as AdminTabType;
+    if (storedTab && validTabs.includes(storedTab)) return storedTab;
+    return 'dashboard';
+  })();
+
+  const [activeTab, setActiveTab] = useState<AdminTabType>(initialTab);
+
+  const handleTabChange = (newTab: AdminTabType) => {
+    setActiveTab(newTab);
+    localStorage.setItem('admin_active_tab', newTab);
+    setSearchParams({ tab: newTab });
+  };
+
+  // Sync localStorage & URL whenever tab changes
+  React.useEffect(() => {
+    localStorage.setItem('admin_active_tab', activeTab);
+  }, [activeTab]);
 
   // Search & Filter States
   const [userSearch, setUserSearch] = useState('');
@@ -75,7 +101,36 @@ export default function AdminPanel() {
     setOrderPage(1);
   }, [orderSearch, orderStatusFilter]);
 
-  // Fetch paginated and filtered orders from backend
+  // Fetch full initial admin data on mount immediately
+  React.useEffect(() => {
+    fetchAdminStats();
+    fetchAdminUsers();
+    fetchAdminWithdrawals();
+    fetchReconciliationLogs();
+    fetchAdminOrders(1, ordersPerPage, '', 'all');
+  }, []);
+
+  // Refetch when currentUser is available or changes
+  React.useEffect(() => {
+    if (currentUser?.role === 'admin') {
+      fetchAdminStats();
+      fetchAdminUsers();
+      fetchAdminWithdrawals();
+      fetchReconciliationLogs();
+      fetchAdminOrders(orderPage, ordersPerPage, orderSearch, orderStatusFilter);
+    }
+  }, [currentUser]);
+
+  // Refetch when switching to dashboard tab
+  React.useEffect(() => {
+    if (activeTab === 'dashboard' && currentUser?.role === 'admin') {
+      fetchAdminStats();
+      fetchAdminUsers();
+      fetchAdminWithdrawals();
+    }
+  }, [activeTab, currentUser]);
+
+  // Fetch paginated and filtered orders from backend when on orders tab
   React.useEffect(() => {
     if (activeTab === 'orders' && currentUser?.role === 'admin') {
       const delay = setTimeout(() => {
@@ -147,36 +202,38 @@ export default function AdminPanel() {
     }
   }, [settings]);
 
-  // Redirect if not admin
+  // Redirect if not admin (only AFTER auth has finished initializing)
   React.useEffect(() => {
+    if (!authInitialized || isAuthLoading) return;
+
     if (!currentUser) {
-      navigate('/auth/login');
+      toast.error('Vui lòng đăng nhập tài khoản Quản trị');
+      navigate('/auth');
     } else if (currentUser.role !== 'admin') {
       toast.error('Bạn không có quyền truy cập khu vực Quản trị');
       navigate('/');
     }
-  }, [currentUser, navigate]);
-
-  if (!currentUser || currentUser.role !== 'admin') return null;
+  }, [currentUser, isAuthLoading, authInitialized, navigate]);
 
   // Statistics calculation
   const totalUsersCount = adminStats?.summary?.totalUsers ?? users.length;
-  const totalOrdersCount = adminStats?.summary?.totalOrders ?? 0;
-  const pendingOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Đang chờ xử lý')?.value || 0;
-  const approvedOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Hoàn thành')?.value || 0;
-  const rejectedOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Hủy' || s.name === 'Hoàn hàng')?.value || 0;
-  const cashbackPaidCount = adminStats?.statusDistribution?.find(s => s.name === 'Đã thanh toán')?.value || 0;
+  const totalOrdersCount = adminStats?.summary?.totalOrders ?? (totalAdminOrders || orders.length);
+  const pendingOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Đang chờ xử lý')?.value ?? orders.filter(o => o.status === 'pending').length;
+  const approvedOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Hoàn thành')?.value ?? orders.filter(o => o.status === 'approved').length;
+  const rejectedOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Hủy' || s.name === 'Hoàn hàng')?.value ?? orders.filter(o => o.status === 'rejected' || o.status === 'returned').length;
+  const cashbackPaidCount = adminStats?.statusDistribution?.find(s => s.name === 'Đã thanh toán')?.value ?? orders.filter(o => o.status === 'paid').length;
 
   const totalCashbackPaid = adminStats?.summary?.totalPaidWithdrawals ?? withdrawals
     .filter(w => w.status === 'approved')
     .reduce((sum, w) => sum + w.amount, 0);
 
-  const totalEstimatedRevenue = adminStats?.summary?.netProfit ?? orders
+  const totalEstimatedRevenue = adminStats?.summary?.platformTotalRevenue ?? orders
     .filter(o => o.status === 'approved' || o.status === 'paid')
     .reduce((sum, o) => {
-      const totalComm = o.orderAmount * (settings.commissionPercentage / 100);
-      const userCash = (o.realCashback || o.estimatedCashback) * 0.5;
-      return sum + Math.max(0, totalComm - userCash);
+      const shopeeComm = (o as any).shopeeCommission !== undefined && (o as any).shopeeCommission !== null
+        ? Number((o as any).shopeeCommission)
+        : ((o.realCashback || o.estimatedCashback || 0) * 2);
+      return sum + shopeeComm;
     }, 0);
 
 
@@ -261,7 +318,7 @@ export default function AdminPanel() {
       await fetchAdminStats();
       setOrderPage(1);
       setOrderStatusFilter('all');
-      setActiveTab('orders');
+      handleTabChange('orders');
     } catch (err: any) {
       toast.error(err.message || 'Thất bại khi áp dụng đối soát');
     }
@@ -320,7 +377,7 @@ export default function AdminPanel() {
       await fetchAdminStats();
       setOrderPage(1);
       setOrderStatusFilter('all');
-      setActiveTab('orders');
+      handleTabChange('orders');
     } catch (err: any) {
       toast.error(err.message || 'Thất bại khi áp dụng đối soát');
     }
@@ -430,46 +487,93 @@ export default function AdminPanel() {
     }
   };
 
-  // Chart Monthly Analytics computed dynamically from real database/orders
+  // Chart Monthly Analytics: 1 đường duy nhất thể hiện Hoa hồng Shopee nhận được từ file đối soát
   const revenueChartData = useMemo(() => {
     if (adminStats && adminStats.monthlyAnalytics && adminStats.monthlyAnalytics.length > 0) {
       return adminStats.monthlyAnalytics.map(a => ({
         month: a.name,
-        DoanhThu: a.revenue,
-        HoaHongChi: a.cashback,
-        LoiNhuan: a.profit
+        HoaHongShopee: a.revenue || 0
       }));
     }
 
-    const monthlyMap: Record<string, { month: string; DoanhThu: number; HoaHongChi: number; LoiNhuan: number }> = {};
+    const monthlyMap: Record<string, { month: string; HoaHongShopee: number }> = {};
     const now = new Date();
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       monthlyMap[key] = {
         month: `T${d.getMonth() + 1}`,
-        DoanhThu: 0,
-        HoaHongChi: 0,
-        LoiNhuan: 0
+        HoaHongShopee: 0
       };
     }
 
     orders.forEach(o => {
-      const cb = o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0);
-      const comm = (o as any).shopeeCommission || (cb * 2);
+      const isCompleted = (o.status === 'approved' || o.status === 'paid');
+      if (!isCompleted) return;
+
+      const comm = Number((o as any).shopeeCommission !== undefined && (o as any).shopeeCommission !== null
+        ? (o as any).shopeeCommission
+        : ((o.realCashback || o.estimatedCashback || 0) * 2));
+
       const dateStr = o.createdTime || '';
       if (dateStr.length >= 7) {
         const key = dateStr.substring(0, 7);
         if (monthlyMap[key]) {
-          monthlyMap[key].DoanhThu += comm;
-          monthlyMap[key].HoaHongChi += cb;
-          monthlyMap[key].LoiNhuan += (comm - cb);
+          monthlyMap[key].HoaHongShopee += comm;
         }
       }
     });
 
     return Object.values(monthlyMap);
   }, [adminStats, orders]);
+
+  // User Registrations daily analytics (last 14 days)
+  const userRegistrationsChartData = useMemo(() => {
+    if (adminStats?.dailyUserRegistrations && adminStats.dailyUserRegistrations.length > 0) {
+      return adminStats.dailyUserRegistrations.map(d => ({
+        date: d.date,
+        NguoiDungMoi: d.count
+      }));
+    }
+
+    const dailyMap: Record<string, { date: string; NguoiDungMoi: number }> = {};
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const displayLabel = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+      dailyMap[dateKey] = {
+        date: displayLabel,
+        NguoiDungMoi: 0
+      };
+    }
+
+    users.forEach(u => {
+      const dateStr = (u as any).created_at || (u as any).createdAt || '';
+      if (dateStr.length >= 10) {
+        const dateKey = dateStr.substring(0, 10);
+        if (dailyMap[dateKey]) {
+          dailyMap[dateKey].NguoiDungMoi++;
+        }
+      }
+    });
+
+    return Object.values(dailyMap);
+  }, [adminStats, users]);
+
+  // Loading spinner while auth is initializing on F5
+  if (isAuthLoading || !authInitialized) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center font-poppins">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="h-8 w-8 text-primary animate-spin" />
+          <p className="text-sm font-semibold text-text-secondary">Đang tải bảng quản trị...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser || currentUser.role !== 'admin') return null;
+
   return (
     <div className="min-h-screen bg-bg flex flex-col font-poppins">
 
@@ -486,10 +590,10 @@ export default function AdminPanel() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-sm">
-              {currentUser.name.charAt(0).toUpperCase()}
+              {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'A'}
             </div>
             <div className="text-left hidden md:block">
-              <p className="text-xs font-bold text-text leading-none">{currentUser.name}</p>
+              <p className="text-xs font-bold text-text leading-none">{currentUser?.name || 'Admin'}</p>
               <span className="text-[10px] text-text-secondary font-medium block mt-0.5">Quyền hạn: Admin</span>
             </div>
             <Button
@@ -519,7 +623,7 @@ export default function AdminPanel() {
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => handleTabChange(tab.id as any)}
               className={`flex items-center gap-3.5 px-4 py-3 text-sm font-semibold rounded-[12px] transition-all text-left ${activeTab === tab.id ? 'bg-primary/5 text-primary' : 'text-text-secondary hover:text-text hover:bg-border/20'}`}
             >
               {tab.icon}
@@ -556,8 +660,8 @@ export default function AdminPanel() {
                 {[
                   { title: "Tổng số thành viên", value: totalUsersCount, desc: "Đã đăng ký tài khoản", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" /> },
                   { title: "Tổng số đơn hàng", value: totalOrdersCount, desc: "Đã phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" /> },
-                  { title: "Tổng hoa hồng đã chi", value: `${totalCashbackPaid.toLocaleString('vi-VN')}đ`, desc: "Người dùng đã nhận thực tế", color: "text-success", icon: <Wallet className="h-5 w-5 text-success" /> },
-                  { title: "Doanh thu ước tính", value: `${Math.round(totalEstimatedRevenue).toLocaleString('vi-VN')}đ`, desc: "Sau khi khấu trừ hoàn tiền", color: "text-primary", icon: <Activity className="h-5 w-5 text-primary" /> }
+                  { title: "Tổng hoa hồng đã chi", value: `${totalCashbackPaid.toLocaleString('vi-VN')}đ`, desc: "Khi Admin duyệt yêu cầu rút tiền", color: "text-success", icon: <Wallet className="h-5 w-5 text-success" /> },
+                  { title: "Doanh thu ước tính", value: `${Math.round(totalEstimatedRevenue).toLocaleString('vi-VN')}đ`, desc: "Hoa hồng Shopee các đơn hoàn thành", color: "text-primary", icon: <Activity className="h-5 w-5 text-primary" /> }
                 ].map((card, idx) => (
                   <Card key={idx} className="border-border/50 relative overflow-hidden">
                     <CardHeader className="p-5 pb-2 flex flex-row items-center justify-between">
@@ -576,28 +680,23 @@ export default function AdminPanel() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="lg:col-span-2 border-border/50">
                   <CardHeader>
-                    <CardTitle className="text-base">Báo cáo doanh thu & Lợi nhuận</CardTitle>
-                    <CardDescription>Biến động tài chính của hệ thống trong 6 tháng qua (VND)</CardDescription>
+                    <CardTitle className="text-base">Hoa hồng nhận được từ Shopee</CardTitle>
+                    <CardDescription>Tổng hoa hồng ghi nhận từ file đối soát trong 6 tháng qua (VND)</CardDescription>
                   </CardHeader>
                   <CardContent className="h-72 pl-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={revenueChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                         <defs>
-                          <linearGradient id="colorDoanhThu" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.2} />
+                          <linearGradient id="colorHoaHongShopee" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.25} />
                             <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                          </linearGradient>
-                          <linearGradient id="colorLoiNhuan" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#22C55E" stopOpacity={0.2} />
-                            <stop offset="95%" stopColor="#22C55E" stopOpacity={0} />
                           </linearGradient>
                         </defs>
                         <XAxis dataKey="month" stroke="#6B7280" fontSize={11} tickLine={false} axisLine={false} />
                         <YAxis stroke="#6B7280" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val} />
-                        <Tooltip formatter={(val) => [`${Number(val).toLocaleString('vi-VN')}đ`]} contentStyle={{ borderRadius: 12, border: '1px solid #ECECEC' }} />
+                        <Tooltip formatter={(val) => [`${Number(val).toLocaleString('vi-VN')}đ`, 'Hoa hồng Shopee']} contentStyle={{ borderRadius: 12, border: '1px solid #ECECEC' }} />
                         <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
-                        <Area type="monotone" dataKey="DoanhThu" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDoanhThu)" strokeWidth={2.5} />
-                        <Area type="monotone" dataKey="LoiNhuan" stroke="#22C55E" fillOpacity={1} fill="url(#colorLoiNhuan)" strokeWidth={2.5} />
+                        <Area name="Hoa hồng Shopee" type="monotone" dataKey="HoaHongShopee" stroke="#3B82F6" fillOpacity={1} fill="url(#colorHoaHongShopee)" strokeWidth={2.5} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -631,6 +730,91 @@ export default function AdminPanel() {
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* ROW 2: USER REGISTRATIONS BY DAY */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card className="lg:col-span-2 border-border/50">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <div>
+                      <CardTitle className="text-base">Thống kê người dùng đăng ký theo ngày</CardTitle>
+                      <CardDescription>Số lượng tài khoản thành viên mới đăng ký trong 14 ngày gần nhất</CardDescription>
+                    </div>
+                    <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 py-1 px-3 text-xs font-bold">
+                      14 ngày gần nhất
+                    </Badge>
+                  </CardHeader>
+                  <CardContent className="h-72 pl-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={userRegistrationsChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorNguoiDungMoi" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#6366F1" stopOpacity={0.25} />
+                            <stop offset="95%" stopColor="#6366F1" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="date" stroke="#6B7280" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#6B7280" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                        <Tooltip formatter={(val) => [`${Number(val)} người dùng`, 'Đăng ký mới']} contentStyle={{ borderRadius: 12, border: '1px solid #ECECEC' }} />
+                        <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                        <Area name="Người dùng mới" type="monotone" dataKey="NguoiDungMoi" stroke="#6366F1" fillOpacity={1} fill="url(#colorNguoiDungMoi)" strokeWidth={2.5} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/50 flex flex-col justify-between">
+                  <CardHeader>
+                    <CardTitle className="text-base">Tỷ lệ vai trò tài khoản</CardTitle>
+                    <CardDescription>Phân bổ người dùng & quản trị viên</CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-60 flex flex-col justify-center gap-3">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold">
+                          <Users className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-text">Thành viên (User)</p>
+                          <p className="text-[10px] text-text-secondary">Người mua sắm tích lũy</p>
+                        </div>
+                      </div>
+                      <span className="text-sm font-extrabold text-primary">
+                        {users.filter(u => u.role === 'user').length}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center font-bold">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-text">Quản trị viên (Admin)</p>
+                          <p className="text-[10px] text-text-secondary">Có quyền quản lý hệ thống</p>
+                        </div>
+                      </div>
+                      <span className="text-sm font-extrabold text-red-600">
+                        {users.filter(u => u.role === 'admin').length}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                          <Activity className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-text">Tổng cộng</p>
+                          <p className="text-[10px] text-text-secondary">Tất cả tài khoản hệ thống</p>
+                        </div>
+                      </div>
+                      <span className="text-sm font-extrabold text-emerald-700">
+                        {totalUsersCount}
+                      </span>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -861,54 +1045,66 @@ export default function AdminPanel() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {paginatedOrders.map((o) => {
-                        const shopeeComm = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
-                        const cashbackPercent = settings?.cashbackPercentage ?? 50;
-                        const userCashback = shopeeComm * (cashbackPercent / 100);
-                        return (
-                          <TableRow key={o.id}>
-                            <TableCell className="font-bold text-primary">{o.id}</TableCell>
-                            <TableCell className="font-semibold text-xs text-text-secondary">
-                              {o.userId ? (
-                                <span className="font-mono">{o.userId}</span>
-                              ) : (
-                                <Badge variant="outline" className="text-warning border-warning/30 bg-yellow-50/50 text-[10px]">Chưa xác định</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="max-w-[180px] truncate font-semibold">
-                              <span className="truncate" title={o.productName}>{o.productName}</span>
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">{Math.round(o.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-right font-semibold text-text-secondary">{Math.round(shopeeComm).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-right font-bold text-primary">{Math.round(userCashback).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-xs font-semibold text-text-secondary">
-                              {o.createdTime ? o.createdTime.substring(0, 16) : '-'}
-                            </TableCell>
-                            <TableCell>
-                              {o.status === 'pending' && <Badge variant="info">Đang chờ xử lý</Badge>}
-                              {o.status === 'approved' && <Badge variant="success">Hoàn thành</Badge>}
-                              {o.status === 'rejected' && <Badge variant="danger">Hủy</Badge>}
-                              {o.status === 'returned' && <Badge variant="warning" className="bg-orange-50 text-orange-600 border-orange-200">Hoàn hàng</Badge>}
-                              {o.status === 'paid' && <Badge variant="warning">Đã thanh toán</Badge>}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <button
-                                onClick={() => {
-                                  setEditingOrder(o);
-                                  setEditOrderStatus(o.status);
-                                  setEditOrderRealCashback(o.realCashback !== undefined ? o.realCashback.toString() : o.estimatedCashback.toString());
-                                  setEditOrderNotes(o.notes || '');
-                                }}
-                                className="px-3 py-1.5 text-xs font-bold border border-border text-text hover:bg-bg/50 rounded-button transition-all flex items-center justify-center gap-1.5 mx-auto"
-                                title="Chỉnh sửa đơn hàng"
-                              >
-                                <Edit2 className="h-3.5 w-3.5" />
-                                Chỉnh sửa
-                              </button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                      {paginatedOrders.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-12 text-text-secondary font-medium">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <ShoppingBag className="h-8 w-8 text-border stroke-[1.5]" />
+                              <p className="text-sm font-semibold">Chưa có đơn hàng nào hoặc không tìm thấy kết quả</p>
+                              <p className="text-xs text-text-secondary">Nhấn nút "Nhập file đối soát CSV" ở trên để import đơn hàng Shopee</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        paginatedOrders.map((o) => {
+                          const shopeeComm = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
+                          const cashbackPercent = settings?.cashbackPercentage ?? 50;
+                          const userCashback = shopeeComm * (cashbackPercent / 100);
+                          return (
+                            <TableRow key={o.id}>
+                              <TableCell className="font-bold text-primary">{o.id}</TableCell>
+                              <TableCell className="font-semibold text-xs text-text-secondary">
+                                {o.userId ? (
+                                  <span className="font-mono">{o.userId}</span>
+                                ) : (
+                                  <Badge variant="outline" className="text-warning border-warning/30 bg-yellow-50/50 text-[10px]">Chưa xác định</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="max-w-[180px] truncate font-semibold">
+                                <span className="truncate" title={o.productName}>{o.productName}</span>
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">{Math.round(o.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-semibold text-text-secondary">{Math.round(shopeeComm).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-bold text-primary">{Math.round(userCashback).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-xs font-semibold text-text-secondary">
+                                {o.createdTime ? o.createdTime.substring(0, 16) : '-'}
+                              </TableCell>
+                              <TableCell>
+                                {o.status === 'pending' && <Badge variant="info">Đang chờ xử lý</Badge>}
+                                {o.status === 'approved' && <Badge variant="success">Hoàn thành</Badge>}
+                                {o.status === 'rejected' && <Badge variant="danger">Hủy</Badge>}
+                                {o.status === 'returned' && <Badge variant="warning" className="bg-orange-50 text-orange-600 border-orange-200">Hoàn hàng</Badge>}
+                                {o.status === 'paid' && <Badge variant="warning">Đã thanh toán</Badge>}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <button
+                                  onClick={() => {
+                                    setEditingOrder(o);
+                                    setEditOrderStatus(o.status);
+                                    setEditOrderRealCashback(o.realCashback !== undefined ? o.realCashback.toString() : o.estimatedCashback.toString());
+                                    setEditOrderNotes(o.notes || '');
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-bold border border-border text-text hover:bg-bg/50 rounded-button transition-all flex items-center justify-center gap-1.5 mx-auto"
+                                  title="Chỉnh sửa đơn hàng"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                  Chỉnh sửa
+                                </button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
                     </TableBody>
                   </TableContainer>
 

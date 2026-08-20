@@ -520,12 +520,12 @@ export const TableRow = ({ children, className, onClick }: { children: React.Rea
   </tr>
 );
 
-export const TableHead = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <th className={cn("p-4 font-semibold text-text-secondary", className)}>{children}</th>
+export const TableHead = ({ children, className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) => (
+  <th className={cn("p-4 font-semibold text-text-secondary", className)} {...props}>{children}</th>
 );
 
-export const TableCell = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <td className={cn("p-4 align-middle", className)}>{children}</td>
+export const TableCell = ({ children, className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) => (
+  <td className={cn("p-4 align-middle", className)} {...props}>{children}</td>
 );
 
 // ========================

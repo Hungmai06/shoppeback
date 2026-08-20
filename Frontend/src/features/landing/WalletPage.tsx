@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 
 export default function WalletPage() {
   const navigate = useNavigate();
-  const { currentUser, withdrawals, orders, addWithdrawalRequest, updateProfile } = useAppStore();
+  const { currentUser, withdrawals, orders, userStats, addWithdrawalRequest, updateProfile } = useAppStore();
   const isLoggedIn = !!currentUser;
 
   // Form states
@@ -31,21 +31,13 @@ export default function WalletPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // Load profile data into form fields on mount or user change
+  // Auto-fill bank info from current user profile
   useEffect(() => {
     if (currentUser) {
-      const isWallet = ['MoMo', 'ZaloPay', 'Viettel Money', 'ShopeePay'].includes(currentUser.bankName || '');
-      if (isWallet) {
-        setPaymentMethod('wallet');
-        setWalletName(currentUser.bankName || 'MoMo');
-        setWalletPhone(currentUser.accountNumber || '');
-        setWalletHolder(currentUser.accountHolder || '');
-      } else {
-        setPaymentMethod('bank');
-        setBankName(currentUser.bankName || '');
-        setAccountNumber(currentUser.accountNumber || '');
-        setAccountHolder(currentUser.accountHolder || '');
-      }
+      if (currentUser.bankName) setBankName(currentUser.bankName);
+      if (currentUser.accountNumber) setAccountNumber(currentUser.accountNumber);
+      if (currentUser.accountHolder) setAccountHolder(currentUser.accountHolder);
+      if (currentUser.phone) setWalletPhone(currentUser.phone);
     }
   }, [currentUser]);
 
@@ -59,27 +51,27 @@ export default function WalletPage() {
     : [];
 
   const pendingCashback = isLoggedIn 
-    ? userOrders.filter(o => o.status === 'pending').reduce((sum, o) => sum + o.estimatedCashback, 0)
-    : 0; // 0 when not logged in
+    ? (userStats?.pendingCashback ?? userOrders.filter(o => o.status === 'pending').reduce((sum, o) => sum + (o.estimatedCashback || 0), 0))
+    : 0;
 
-  const totalApprovedCashback100 = isLoggedIn
-    ? userOrders.filter(o => o.status === 'approved').reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback), 0)
-    : 0; // 0 when not logged in
+  const approvedCashback = isLoggedIn
+    ? (userStats?.approvedCashback ?? userOrders.filter(o => o.status === 'approved' || o.status === 'paid').reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback || 0), 0))
+    : 0;
 
-  const approvedCashback = totalApprovedCashback100 * 0.5;
+  const totalApprovedCashback100 = approvedCashback * 2;
 
   const paidWithdrawals = isLoggedIn
-    ? withdrawals.filter(w => w.userId === currentUser.id && w.status === 'approved').reduce((sum, w) => sum + w.amount, 0)
-    : 0; // Mock paid
+    ? (userStats?.paidWithdrawals ?? withdrawals.filter(w => w.userId === currentUser.id && w.status === 'approved').reduce((sum, w) => sum + w.amount, 0))
+    : 0;
 
   const pendingWithdrawals = isLoggedIn
-    ? withdrawals.filter(w => w.userId === currentUser.id && w.status === 'pending').reduce((sum, w) => sum + w.amount, 0)
-    : 0; // Mock pending withdraw
+    ? (userStats?.pendingWithdrawals ?? withdrawals.filter(w => w.userId === currentUser.id && w.status === 'pending').reduce((sum, w) => sum + w.amount, 0))
+    : 0;
 
-  // Available to withdraw: Approved cashback (50%) - (Approved withdrawals + Pending withdrawals)
+  // Available to withdraw: Approved cashback + Referral earnings - (Approved withdrawals + Pending withdrawals)
   const availableBalance = isLoggedIn
-    ? Math.max(0, approvedCashback - (paidWithdrawals + pendingWithdrawals))
-    : 0; // 0 when not logged in
+    ? (userStats?.availableBalance ?? Math.max(0, (approvedCashback + (currentUser.referralEarnings || 0)) - (paidWithdrawals + pendingWithdrawals)))
+    : 0;
 
   const handleWithdrawalRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,7 +88,7 @@ export default function WalletPage() {
     }
 
     if (amountNum > availableBalance) {
-      toast.error('Số tiền rút vượt quá số dư khả dụng');
+      toast.error(`Số tiền rút (${amountNum.toLocaleString('vi-VN')}đ) vượt quá số dư khả dụng (${availableBalance.toLocaleString('vi-VN')}đ)`);
       return;
     }
 
@@ -116,18 +108,18 @@ export default function WalletPage() {
       accountHolder: finalAccountHolder
     });
 
-    const success = await addWithdrawalRequest(
+    const res = await addWithdrawalRequest(
       amountNum, 
       finalBankName, 
       finalAccountNumber, 
       finalAccountHolder
     );
 
-    if (success) {
-      toast.success('Gửi yêu cầu rút tiền thành công! Vui lòng chờ đối soát.');
+    if (res.success) {
+      toast.success(res.message || 'Gửi yêu cầu rút tiền thành công! Vui lòng chờ đối soát.');
       setWithdrawAmount('');
     } else {
-      toast.error('Không thể tạo yêu cầu rút tiền. Vui lòng kiểm tra lại số dư.');
+      toast.error(res.message || 'Không thể tạo yêu cầu rút tiền. Vui lòng kiểm tra lại số dư.');
     }
   };
 
@@ -201,18 +193,73 @@ export default function WalletPage() {
               <h3 className="text-lg font-black text-text mb-6">Tạo lệnh rút tiền</h3>
               
               <form onSubmit={handleWithdrawalRequest} className="space-y-5">
-                {/* Amount field */}
+                {/* Amount field with Live validation and Quick Fill Buttons */}
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">SỐ TIỀN CẦN RÚT (VND)</label>
-                  <input
-                    type="number"
-                    placeholder="Ví dụ: 50000"
-                    value={withdrawAmount}
-                    onChange={(e) => setWithdrawAmount(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
-                    required
-                  />
-                  <p className="text-[10px] text-text-secondary font-medium">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">SỐ TIỀN CẦN RÚT (VND)</label>
+                    <span className="text-xs font-bold text-primary">
+                      Khả dụng: {availableBalance.toLocaleString('vi-VN')}đ
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      placeholder="Ví dụ: 50000"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      className={`w-full px-4 py-3 bg-white border text-sm rounded-input outline-none transition-all font-semibold ${
+                        withdrawAmount && Number(withdrawAmount) > availableBalance
+                          ? 'border-red-500 ring-2 ring-red-100 text-red-600'
+                          : 'border-border focus:border-primary focus:ring-2 focus:ring-primary/10'
+                      }`}
+                      required
+                    />
+                    {availableBalance > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setWithdrawAmount(String(availableBalance))}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2.5 py-1 text-[11px] font-bold bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-colors"
+                      >
+                        Rút hết
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Realtime Alert if Amount > Available Balance */}
+                  {withdrawAmount && Number(withdrawAmount) > availableBalance && (
+                    <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs font-semibold text-red-700 flex items-start gap-1.5 mt-1">
+                      <span>⚠️</span>
+                      <span>
+                        Số tiền nhập (<strong>{Number(withdrawAmount).toLocaleString('vi-VN')}đ</strong>) vượt quá số dư khả dụng (<strong>{availableBalance.toLocaleString('vi-VN')}đ</strong>). Vui lòng điều chỉnh lại.
+                      </span>
+                    </div>
+                  )}
+
+                  {withdrawAmount && Number(withdrawAmount) > 0 && Number(withdrawAmount) < 50000 && (
+                    <p className="text-xs font-medium text-amber-600 mt-1">
+                      ⚠️ Số tiền rút tối thiểu là 50.000đ.
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[50000, 100000, 200000, 500000].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setWithdrawAmount(String(amt))}
+                        disabled={amt > availableBalance}
+                        className={`text-[11px] font-bold px-2.5 py-1 rounded-md border transition-all ${
+                          amt > availableBalance
+                            ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                            : 'bg-white hover:bg-primary/5 text-text hover:text-primary border-border hover:border-primary/40'
+                        }`}
+                      >
+                        {amt.toLocaleString('vi-VN')}đ
+                      </button>
+                    ))}
+                  </div>
+
+                  <p className="text-[10px] text-text-secondary font-medium mt-1">
                     Rút tối thiểu: <span className="font-bold text-text">50.000đ</span>. Phí rút: <span className="font-bold text-success">Miễn phí</span>
                   </p>
                 </div>

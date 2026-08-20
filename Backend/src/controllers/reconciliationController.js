@@ -362,11 +362,17 @@ async function uploadAndAnalyze(req, res) {
       if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id, u.id);
     }
 
-    // Read all click_logs to map random clickId/sub_id -> user_id
+    // Read all click_logs and affiliate_clicks to map random clickId/sub_id -> user_id
     const allClickLogs = await db.all('SELECT id, user_id, sub_id FROM click_logs WHERE user_id IS NOT NULL');
+    const allAffClicks = await db.all('SELECT id, click_id, user_id, sub_id FROM affiliate_clicks WHERE user_id IS NOT NULL');
     const clickSubIdToUserIdMap = new Map();
     for (const log of allClickLogs) {
       if (log.id && log.user_id) clickSubIdToUserIdMap.set(log.id, log.user_id);
+      if (log.sub_id && log.user_id) clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
+    }
+    for (const log of allAffClicks) {
+      if (log.id && log.user_id) clickSubIdToUserIdMap.set(log.id, log.user_id);
+      if (log.click_id && log.user_id) clickSubIdToUserIdMap.set(log.click_id, log.user_id);
       if (log.sub_id && log.user_id) clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
     }
 
@@ -563,12 +569,27 @@ async function applyReconciliation(req, res) {
     }
 
     const allClickLogs = await db.all('SELECT id, user_id, sub_id FROM click_logs WHERE user_id IS NOT NULL');
+    const allAffClicks = await db.all('SELECT id, click_id, user_id, sub_id FROM affiliate_clicks WHERE user_id IS NOT NULL');
     const clickSubIdToUserIdMap = new Map();
     const clickIdMap = new Map();
     for (const log of allClickLogs) {
       if (log.id && log.user_id) {
         clickSubIdToUserIdMap.set(log.id, log.user_id);
         clickIdMap.set(log.id, log.id);
+      }
+      if (log.sub_id && log.user_id) {
+        clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
+        clickIdMap.set(log.sub_id, log.id);
+      }
+    }
+    for (const log of allAffClicks) {
+      if (log.id && log.user_id) {
+        clickSubIdToUserIdMap.set(log.id, log.user_id);
+        clickIdMap.set(log.id, log.id);
+      }
+      if (log.click_id && log.user_id) {
+        clickSubIdToUserIdMap.set(log.click_id, log.user_id);
+        clickIdMap.set(log.click_id, log.id);
       }
       if (log.sub_id && log.user_id) {
         clickSubIdToUserIdMap.set(log.sub_id, log.user_id);

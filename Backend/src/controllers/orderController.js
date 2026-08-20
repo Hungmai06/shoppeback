@@ -1,7 +1,41 @@
 const { getDatabase } = require('../config/db');
+const { extractShopeeIds } = require('../services/affiliateMatchingService');
+
+async function createOrder(req, res) {
+  const { id, productName, productImage, orderAmount, estimatedCashback, clickId } = req.body;
+  const userId = req.user ? req.user.id : null;
+  const finalId = id || clickId || `CLK${Date.now()}`;
+  const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+  try {
+    const db = await getDatabase();
+    if (userId) {
+      await db.run(
+        `INSERT OR REPLACE INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'pending', ?, CURRENT_TIMESTAMP)`,
+        [
+          finalId,
+          userId,
+          clickId || finalId,
+          productName || 'Sản phẩm Shopee',
+          productImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400',
+          Number(orderAmount || 0),
+          Number(estimatedCashback || 0),
+          Number(estimatedCashback ? estimatedCashback * 2 : 0),
+          now
+        ]
+      );
+    }
+
+    res.status(201).json({ message: 'Đã lưu đơn hàng chờ đối soát thành công', id: finalId });
+  } catch (error) {
+    console.error('Create Order Error:', error);
+    res.status(500).json({ message: 'Lỗi máy chủ khi tạo đơn hàng' });
+  }
+}
 
 async function logClick(req, res) {
-  const { productUrl } = req.body;
+  const { productUrl, productName, productImage, orderAmount, estimatedCashback } = req.body;
 
   if (!productUrl) {
     return res.status(400).json({ message: 'Thiếu đường dẫn sản phẩm' });
@@ -10,13 +44,39 @@ async function logClick(req, res) {
   try {
     const db = await getDatabase();
     const clickId = `CLK${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
+    const subId = clickId;
+    const extracted = extractShopeeIds(productUrl);
+    const itemId = req.body.itemId || req.body.item_id || extracted.itemId || null;
+    const shopId = req.body.shopId || req.body.shop_id || extracted.shopId || null;
+    const clickedAt = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const userId = req.user ? req.user.id : null;
 
     await db.run(
-      'INSERT INTO click_logs (id, user_id, product_url) VALUES (?, ?, ?)',
-      [clickId, req.user.id, productUrl]
+      `INSERT INTO affiliate_clicks (id, user_id, click_id, sub_id, item_id, shop_id, origin_url, clicked_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [clickId, userId, clickId, subId, itemId, shopId, productUrl, clickedAt]
     );
 
-    res.status(201).json({ message: 'Đã ghi nhận lượt click mua hàng', clickId });
+    await db.run(
+      'INSERT INTO click_logs (id, user_id, product_url, sub_id) VALUES (?, ?, ?, ?)',
+      [clickId, userId, productUrl, subId]
+    );
+
+    // Ghi nhận vào orders nếu user đã đăng nhập
+    if (userId) {
+      const finalName = productName || 'Sản phẩm Shopee';
+      const finalImg = productImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400';
+      const finalAmount = Number(orderAmount || 0);
+      const finalCb = Number(estimatedCashback || Math.round(finalAmount * 0.035));
+
+      await db.run(
+        `INSERT OR REPLACE INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'pending', ?, CURRENT_TIMESTAMP)`,
+        [clickId, userId, clickId, finalName, finalImg, finalAmount, finalCb, finalCb * 2, clickedAt]
+      );
+    }
+
+    res.status(201).json({ message: 'Đã ghi nhận lượt click mua hàng', clickId, subId, itemId, shopId });
   } catch (error) {
     console.error('Log Click Error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ khi ghi nhận click' });
@@ -28,6 +88,34 @@ async function getUserOrders(req, res) {
 
   try {
     const db = await getDatabase();
+
+    // Tự động đồng bộ các đơn affiliate của user sang orders nếu chưa có
+    try {
+      const unsyncedUser = await db.all(
+        `SELECT a.* FROM affiliate_orders a
+         LEFT JOIN orders o ON a.order_id = o.id
+         WHERE o.id IS NULL AND a.user_id = ?`,
+        [req.user.id]
+      );
+      if (unsyncedUser && unsyncedUser.length > 0) {
+        const settings = await db.get('SELECT cashback_percentage FROM system_settings WHERE id = 1');
+        const cashbackRate = (settings ? settings.cashback_percentage : 50.0) / 100.0;
+        for (const un of unsyncedUser) {
+          const cb = Math.round((un.commission || 0) * cashbackRate);
+          const st = un.shopee_status ? (un.shopee_status.toLowerCase().includes('hoàn thành') || un.shopee_status.toLowerCase().includes('approved') ? 'approved' : 'pending') : 'pending';
+          await db.run(
+            `INSERT OR IGNORE INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [
+              un.order_id, un.user_id, un.matched_click_id, un.product_name || 'Sản phẩm Shopee',
+              'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=200',
+              un.order_amount || 0, cb, cb, un.commission || 0, st,
+              un.order_time || new Date().toISOString().replace('T', ' ').substring(0, 19)
+            ]
+          );
+        }
+      }
+    } catch (e) { }
     
     let query = 'SELECT * FROM orders WHERE user_id = ?';
     const params = [req.user.id];
@@ -57,6 +145,40 @@ async function adminGetOrders(req, res) {
 
   try {
     const db = await getDatabase();
+
+    // Tự động đồng bộ các đơn affiliate sang orders nếu chưa có để đảm bảo Dashboard luôn hiển thị đầy đủ
+    try {
+      const unsynced = await db.all(
+        `SELECT a.* FROM affiliate_orders a
+         LEFT JOIN orders o ON a.order_id = o.id
+         WHERE o.id IS NULL`
+      );
+      if (unsynced && unsynced.length > 0) {
+        const settings = await db.get('SELECT cashback_percentage FROM system_settings WHERE id = 1');
+        const cashbackRate = (settings ? settings.cashback_percentage : 50.0) / 100.0;
+        for (const un of unsynced) {
+          const cb = Math.round((un.commission || 0) * cashbackRate);
+          let st = 'pending';
+          if (un.shopee_status) {
+            const rawSt = un.shopee_status.toLowerCase();
+            if (rawSt.includes('hoàn thành') || rawSt.includes('approved') || rawSt.includes('paid')) st = 'approved';
+            else if (rawSt.includes('hủy') || rawSt.includes('rejected') || rawSt.includes('cancelled')) st = 'rejected';
+            else if (rawSt.includes('hoàn hàng') || rawSt.includes('returned')) st = 'returned';
+          }
+          await db.run(
+            `INSERT OR IGNORE INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [
+              un.order_id, un.user_id, un.matched_click_id, un.product_name || 'Sản phẩm Shopee',
+              'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=200',
+              un.order_amount || 0, cb, cb, un.commission || 0, st,
+              un.order_time || new Date().toISOString().replace('T', ' ').substring(0, 19)
+            ]
+          );
+        }
+      }
+    } catch (e) { }
+
     const offset = (page - 1) * limit;
 
     let query = 'SELECT * FROM orders WHERE 1=1';
@@ -211,6 +333,7 @@ async function adminUpdateOrderStatus(req, res) {
 }
 
 module.exports = {
+  createOrder,
   logClick,
   getUserOrders,
   adminGetOrders,

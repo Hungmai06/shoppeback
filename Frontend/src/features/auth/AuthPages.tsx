@@ -145,6 +145,7 @@ export default function AuthPages() {
                     label="Địa chỉ Email"
                     placeholder="name@example.com"
                     type="email"
+                    autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -165,6 +166,7 @@ export default function AuthPages() {
                       <input
                         type={showPassword ? "text" : "password"}
                         placeholder="••••••••"
+                        autoComplete="current-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
@@ -210,6 +212,7 @@ export default function AuthPages() {
                     label="Họ và tên"
                     placeholder="Nguyễn Văn A"
                     type="text"
+                    autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
@@ -218,6 +221,7 @@ export default function AuthPages() {
                     label="Địa chỉ Email"
                     placeholder="name@example.com"
                     type="email"
+                    autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -228,6 +232,7 @@ export default function AuthPages() {
                       <input
                         type={showPassword ? "text" : "password"}
                         placeholder="Tối thiểu 6 ký tự"
+                        autoComplete="new-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
@@ -250,6 +255,7 @@ export default function AuthPages() {
                       <input
                         type={showConfirmPassword ? "text" : "password"}
                         placeholder="Nhập lại mật khẩu"
+                        autoComplete="new-password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
@@ -271,6 +277,7 @@ export default function AuthPages() {
                     label="Mã giới thiệu (Không bắt buộc)"
                     placeholder="Nhập mã giới thiệu nếu có"
                     type="text"
+                    autoComplete="off"
                     value={referralCode}
                     onChange={(e) => setReferralCode(e.target.value)}
                   />

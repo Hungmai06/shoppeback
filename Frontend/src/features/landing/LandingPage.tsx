@@ -92,7 +92,7 @@ export default function LandingPage() {
 
         // Automatically convert link for newly logged-in user
         const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-        const token = localStorage.getItem('access_token');
+        const token = localStorage.getItem('token');
 
         fetch(`${API_BASE}/shopee/convert`, {
           method: 'POST',
@@ -100,7 +100,12 @@ export default function LandingPage() {
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {})
           },
-          body: JSON.stringify({ url: pendingUrl })
+          body: JSON.stringify({
+            url: pendingUrl,
+            productName: pendingName,
+            orderAmount: pendingPrice,
+            estimatedCashback: Math.round(pendingPrice * 0.035)
+          })
         })
           .then(res => res.json())
           .then(data => {
@@ -121,7 +126,7 @@ export default function LandingPage() {
               window.open(data.affiliateLink, '_blank');
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     }
   }, [currentUser, addOrder]);
@@ -142,7 +147,8 @@ export default function LandingPage() {
 
     try {
       const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem('token');
+      const estimatedCashback = Math.round((checkedProduct.commission || 0) * 0.5) || Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5);
 
       const res = await fetch(`${API_BASE}/shopee/convert`, {
         method: 'POST',
@@ -150,7 +156,16 @@ export default function LandingPage() {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ url: checkedProduct.url })
+        body: JSON.stringify({
+          url: checkedProduct.url,
+          itemId: checkedProduct.itemId,
+          shopId: checkedProduct.shopId,
+          productName: checkedProduct.name,
+          productImage: checkedProduct.image,
+          orderAmount: checkedProduct.price,
+          estimatedCashback: estimatedCashback,
+          commission: checkedProduct.commission
+        })
       });
 
       const data = await res.json();
@@ -161,7 +176,7 @@ export default function LandingPage() {
           productName: checkedProduct.name,
           productImage: checkedProduct.image,
           orderAmount: checkedProduct.price,
-          estimatedCashback: Math.round((checkedProduct.commission || 0) * 0.5) || Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
+          estimatedCashback: estimatedCashback,
           status: 'pending',
           createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
           userId: currentUser.id
@@ -196,7 +211,7 @@ export default function LandingPage() {
         >
           <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/25 text-primary px-4 py-1.5 rounded-full text-xs font-bold mb-6">
             <Sparkles className="h-4 w-4" />
-            <span>Tiết kiệm đến 15% mỗi lần mua sắm</span>
+            <span>Tiết kiệm đến 50% mỗi lần mua sắm</span>
           </div>
 
           <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-text leading-[1.2] mb-6">

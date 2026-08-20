@@ -36,10 +36,11 @@ if (isClusterEnabled && cluster.isPrimary) {
     threshold: 512 // Compress any response > 512 bytes
   }));
 
-  // 2. Enable CORS
+  // 2. Enable CORS with preflight caching for Safari/WebKit
   app.use(cors({
     origin: '*', // Can restrict to specific domain in production
-    credentials: true
+    credentials: true,
+    maxAge: 86400 // Cache OPTIONS preflight for 24 hours (crucial for Safari latency)
   }));
 
   // 3. Body parsing limits (protects memory against large payload attacks)
@@ -102,6 +103,8 @@ if (isClusterEnabled && cluster.isPrimary) {
   app.use('/api/settings', require('./src/routes/settingsRoutes'));
   app.use('/api/referrals', require('./src/routes/referralRoutes'));
   app.use('/api/shopee', require('./src/routes/shopeeRoutes'));
+  app.use('/api/admin/affiliate-orders', require('./src/routes/affiliateOrderRoutes'));
+  app.use('/api/affiliate-orders', require('./src/routes/affiliateOrderRoutes'));
 
   // Root endpoint status check
   app.get('/', (req, res) => {

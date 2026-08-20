@@ -214,6 +214,7 @@ export default function AuthModal() {
                     label="Địa chỉ Email"
                     placeholder="name@example.com"
                     type="email"
+                    autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -234,6 +235,7 @@ export default function AuthModal() {
                       <input
                         type={showPassword ? "text" : "password"}
                         placeholder="••••••••"
+                        autoComplete="current-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         className="w-full px-4 py-3 pr-11 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
@@ -294,6 +296,7 @@ export default function AuthModal() {
                     label="Họ và tên"
                     placeholder="Nguyễn Văn A"
                     type="text"
+                    autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
@@ -303,6 +306,7 @@ export default function AuthModal() {
                     label="Địa chỉ Email"
                     placeholder="name@example.com"
                     type="email"
+                    autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -315,6 +319,7 @@ export default function AuthModal() {
                         <input
                           type={showPassword ? "text" : "password"}
                           placeholder="••••••••"
+                          autoComplete="new-password"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           className="w-full px-3 py-2.5 pr-8 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 font-semibold"
@@ -337,6 +342,7 @@ export default function AuthModal() {
                         <input
                           type={showConfirmPassword ? "text" : "password"}
                           placeholder="••••••••"
+                          autoComplete="new-password"
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           className="w-full px-3 py-2.5 pr-8 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 font-semibold"
@@ -360,6 +366,7 @@ export default function AuthModal() {
                     <input
                       type="text"
                       placeholder="VD: REF12345"
+                      autoComplete="off"
                       value={referralCode}
                       onChange={(e) => setReferralCode(e.target.value)}
                       className="w-full px-3 py-2.5 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 font-semibold uppercase"

@@ -27,26 +27,65 @@ function ensureUuid(idInput) {
 }
 
 /**
+ * Chuẩn hóa input URL Shopee (thêm https:// nếu thiếu, hỗ trợ mã Item ID dạng số)
+ * @param {string} inputUrl
+ * @returns {string}
+ */
+function normalizeShopeeInputUrl(inputUrl) {
+  if (!inputUrl || typeof inputUrl !== 'string') {
+    throw new Error('Thiếu URL Shopee');
+  }
+  let str = inputUrl.trim();
+  if (!str) {
+    throw new Error('Thiếu URL Shopee');
+  }
+
+  // Nếu người dùng chỉ nhập mỗi Item ID (toàn chữ số)
+  if (/^\d+$/.test(str)) {
+    return `https://shopee.vn/product/0/${str}`;
+  }
+
+  // Nếu người dùng nhập shopee.vn/... mà thiếu https://
+  if (!/^https?:\/\//i.test(str)) {
+    str = 'https://' + str;
+  }
+
+  return str;
+}
+
+/**
  * Kiểm tra và validate URL có phải thuộc Shopee Việt Nam hay không
  * @param {string} inputUrl 
  * @returns {URL} parsed URL object
  */
 function validateShopeeUrl(inputUrl) {
-  if (!inputUrl || typeof inputUrl !== 'string') {
-    throw new Error('Thiếu URL Shopee');
-  }
+  const normalizedStr = normalizeShopeeInputUrl(inputUrl);
 
   let parsedUrl;
   try {
-    parsedUrl = new URL(inputUrl.trim());
+    parsedUrl = new URL(normalizedStr);
   } catch (err) {
     throw new Error('URL không hợp lệ');
   }
 
   const hostname = parsedUrl.hostname.toLowerCase();
-  const validDomains = ['shopee.vn', 'www.shopee.vn', 'vn.shp.ee', 's.shopee.vn'];
+  const validDomains = [
+    'shopee.vn',
+    'www.shopee.vn',
+    'vn.shp.ee',
+    'shp.ee',
+    's.shopee.vn',
+    'shope.ee',
+    'm.shopee.vn',
+    'cf.shopee.vn'
+  ];
 
-  const isValidShopee = validDomains.includes(hostname) || hostname.endsWith('.shopee.vn');
+  const isValidShopee =
+    validDomains.includes(hostname) ||
+    hostname.endsWith('.shopee.vn') ||
+    hostname.endsWith('.shp.ee') ||
+    hostname.endsWith('.shope.ee');
+
   if (!isValidShopee) {
     throw new Error('Chỉ hỗ trợ link Shopee Việt Nam');
   }
@@ -69,12 +108,13 @@ function generateClickId() {
  * @returns {string} Link affiliate an_redir
  */
 function createShopeeAffiliateLink(originUrl, subId = '') {
-  validateShopeeUrl(originUrl);
+  const parsedUrl = validateShopeeUrl(originUrl);
+  const cleanOrigin = parsedUrl.toString();
 
   const affiliateId = process.env.SHOPEE_AFFILIATE_ID || AFFILIATE_ID;
   const affiliateParams = new URLSearchParams();
 
-  affiliateParams.set('origin_link', originUrl.trim());
+  affiliateParams.set('origin_link', cleanOrigin);
   affiliateParams.set('affiliate_id', affiliateId);
 
   if (subId) {
