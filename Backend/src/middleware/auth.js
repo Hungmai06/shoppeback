@@ -49,30 +49,29 @@ function adminOnly(req, res, next) {
   }
 }
 
-function optionalAuth(req, res, next) {
+async function optionalAuth(req, res, next) {
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith('Bearer')
   ) {
     try {
       const token = req.headers.authorization.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretkey');
-      getDatabase().then(db => {
-        db.get('SELECT id, name, email, role, status FROM users WHERE id = ?', [decoded.id])
-          .then(user => {
-            if (user && user.status !== 'locked') {
-              req.user = user;
-            }
-            next();
-          })
-          .catch(() => next());
-      }).catch(() => next());
-      return;
+      if (token && token !== 'null' && token !== 'undefined') {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretkey');
+        const db = await getDatabase();
+        const user = await db.get(
+          'SELECT id, name, email, role, status FROM users WHERE id = ?',
+          [decoded.id]
+        );
+        if (user && user.status !== 'locked') {
+          req.user = user;
+        }
+      }
     } catch (error) {
       // Ignore token parse error for optional auth
     }
   }
-  next();
+  return next();
 }
 
 module.exports = { protect, adminOnly, optionalAuth };

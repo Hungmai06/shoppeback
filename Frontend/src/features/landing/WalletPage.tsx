@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 
 export default function WalletPage() {
   const navigate = useNavigate();
-  const { currentUser, withdrawals, orders, userStats, addWithdrawalRequest, updateProfile } = useAppStore();
+  const { currentUser, withdrawals, orders, userStats, addWithdrawalRequest, updateProfile, fetchUserOrders, fetchUserWithdrawals } = useAppStore();
   const isLoggedIn = !!currentUser;
 
   // Form states
@@ -31,15 +31,17 @@ export default function WalletPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // Auto-fill bank info from current user profile
+  // Auto-fill bank info & fetch latest orders/withdrawals
   useEffect(() => {
     if (currentUser) {
       if (currentUser.bankName) setBankName(currentUser.bankName);
       if (currentUser.accountNumber) setAccountNumber(currentUser.accountNumber);
       if (currentUser.accountHolder) setAccountHolder(currentUser.accountHolder);
       if (currentUser.phone) setWalletPhone(currentUser.phone);
+      fetchUserOrders();
+      fetchUserWithdrawals();
     }
-  }, [currentUser]);
+  }, [currentUser, fetchUserOrders, fetchUserWithdrawals]);
 
   // Orders and withdrawals for current user
   const userOrders = isLoggedIn

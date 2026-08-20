@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/appStore';
 import type { Order } from '../../store/appStore';
@@ -57,11 +57,18 @@ const MOCK_PREVIEW_ORDERS: Order[] = [
 
 export default function TrackingPage() {
   const navigate = useNavigate();
-  const { currentUser, orders } = useAppStore();
+  const { currentUser, orders, fetchUserOrders } = useAppStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
   const isLoggedIn = !!currentUser;
+
+  // Auto fetch user orders on mount
+  useEffect(() => {
+    if (currentUser) {
+      fetchUserOrders();
+    }
+  }, [currentUser, fetchUserOrders]);
   
   // Decide which orders array to display
   const activeOrders = isLoggedIn 

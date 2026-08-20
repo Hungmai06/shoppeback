@@ -26,6 +26,10 @@ class MySQLWrapper {
     if (sql.trim().toUpperCase() === 'BEGIN TRANSACTION') {
       normalizedSql = 'START TRANSACTION';
     }
+    // Normalize SQLite insert modifiers to MySQL syntax
+    normalizedSql = normalizedSql.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, 'REPLACE INTO');
+    normalizedSql = normalizedSql.replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, 'INSERT IGNORE INTO');
+
     const [result] = await this.pool.query(normalizedSql, params);
     return {
       lastID: result ? result.insertId : null,
