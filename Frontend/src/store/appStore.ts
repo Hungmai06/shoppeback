@@ -269,7 +269,47 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         Promise.allSettled(loadPromises);
       } else {
-        // Expired/Invalid token
+        // Try auto-refreshing token using refreshToken
+        const savedRefreshToken = localStorage.getItem('refreshToken');
+        if (savedRefreshToken) {
+          try {
+            const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: savedRefreshToken })
+            });
+
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              localStorage.setItem('token', refreshData.token);
+              if (refreshData.refreshToken) {
+                localStorage.setItem('refreshToken', refreshData.refreshToken);
+              }
+              // Retry fetching profile with new token
+              const retryRes = await fetch(`${API_BASE}/auth/profile`, {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${refreshData.token}`
+                }
+              });
+
+              if (retryRes.ok) {
+                const data = await retryRes.json();
+                set({
+                  currentUser: data.profile,
+                  userStats: data.stats,
+                  isAuthLoading: false,
+                  authInitialized: true
+                });
+                return;
+              }
+            }
+          } catch (rfErr) {
+            console.error('Silent token refresh failed:', rfErr);
+          }
+        }
+
+        // Token completely invalid
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
         set({ currentUser: null, userStats: null, isAuthLoading: false, authInitialized: true });

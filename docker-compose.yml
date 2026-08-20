@@ -31,6 +31,8 @@ services:
       - DB_PASSWORD=shoppe_password_123
       - DB_NAME=affiliateshoppe
       - JWT_SECRET=supersecretjwtkey_123456789_shoppe
+      - JWT_ACCESS_EXPIRES_IN=30d
+      - JWT_REFRESH_EXPIRES_IN=90d
       - SHOPEE_AFFILIATE_ID=173401900099
       - CLUSTER_MODE=false
     volumes:
