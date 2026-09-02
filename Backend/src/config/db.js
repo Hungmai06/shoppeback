@@ -183,6 +183,13 @@ async function initializeDatabase() {
         support_zalo VARCHAR(255) DEFAULT 'https://zalo.me/g/hoantienmuasam',
         support_facebook VARCHAR(255) DEFAULT 'https://facebook.com/hoantienmuasam',
         shopee_affiliate_id VARCHAR(255) DEFAULT '173401900099',
+        shopee_cookie_url VARCHAR(500) DEFAULT 'https://s.shopee.vn/an_redir',
+        lazada_affiliate_id VARCHAR(255) DEFAULT '',
+        lazada_cookie_url VARCHAR(500) DEFAULT 'https://s.lazada.vn/s.an_redir',
+        tiktok_affiliate_id VARCHAR(255) DEFAULT '',
+        tiktok_cookie_url VARCHAR(500) DEFAULT 'https://vt.tiktok.com/an_redir',
+        tiki_affiliate_id VARCHAR(255) DEFAULT '',
+        tiki_cookie_url VARCHAR(500) DEFAULT 'https://tiki.vn/an_redir',
         commission_percentage REAL DEFAULT 10.0,
         cashback_percentage REAL DEFAULT 50.0,
         telegram_notification TINYINT DEFAULT 1,
@@ -191,6 +198,20 @@ async function initializeDatabase() {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
+
+    const mysqlAlterCols = [
+      "ALTER TABLE system_settings ADD COLUMN shopee_cookie_url VARCHAR(500) DEFAULT 'https://s.shopee.vn/an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN lazada_affiliate_id VARCHAR(255) DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN lazada_cookie_url VARCHAR(500) DEFAULT 'https://s.lazada.vn/s.an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN tiktok_affiliate_id VARCHAR(255) DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN tiktok_cookie_url VARCHAR(500) DEFAULT 'https://vt.tiktok.com/an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN tiki_affiliate_id VARCHAR(255) DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN tiki_cookie_url VARCHAR(500) DEFAULT 'https://tiki.vn/an_redir'"
+    ];
+
+    for (const alterQuery of mysqlAlterCols) {
+      try { await wrapper.exec(alterQuery); } catch (e) {}
+    }
 
     await wrapper.exec(`
       CREATE TABLE IF NOT EXISTS reconciliation_logs (
@@ -380,6 +401,13 @@ async function initializeDatabase() {
         support_zalo TEXT DEFAULT 'https://zalo.me/g/hoantienmuasam',
         support_facebook TEXT DEFAULT 'https://facebook.com/hoantienmuasam',
         shopee_affiliate_id TEXT DEFAULT '173401900099',
+        shopee_cookie_url TEXT DEFAULT 'https://s.shopee.vn/an_redir',
+        lazada_affiliate_id TEXT DEFAULT '',
+        lazada_cookie_url TEXT DEFAULT 'https://s.lazada.vn/s.an_redir',
+        tiktok_affiliate_id TEXT DEFAULT '',
+        tiktok_cookie_url TEXT DEFAULT 'https://vt.tiktok.com/an_redir',
+        tiki_affiliate_id TEXT DEFAULT '',
+        tiki_cookie_url TEXT DEFAULT 'https://tiki.vn/an_redir',
         commission_percentage REAL DEFAULT 10.0,
         cashback_percentage REAL DEFAULT 50.0,
         telegram_notification INTEGER DEFAULT 1,
@@ -388,6 +416,20 @@ async function initializeDatabase() {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    const sqliteAlterCols = [
+      "ALTER TABLE system_settings ADD COLUMN shopee_cookie_url TEXT DEFAULT 'https://s.shopee.vn/an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN lazada_affiliate_id TEXT DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN lazada_cookie_url TEXT DEFAULT 'https://s.lazada.vn/s.an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN tiktok_affiliate_id TEXT DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN tiktok_cookie_url TEXT DEFAULT 'https://vt.tiktok.com/an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN tiki_affiliate_id TEXT DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN tiki_cookie_url TEXT DEFAULT 'https://tiki.vn/an_redir'"
+    ];
+
+    for (const alterQuery of sqliteAlterCols) {
+      try { await db.exec(alterQuery); } catch (e) {}
+    }
 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS reconciliation_logs (

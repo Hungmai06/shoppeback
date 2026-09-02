@@ -127,8 +127,14 @@ export default function AdminPanel() {
   const [sysWebsiteName, setSysWebsiteName] = useState(settings.websiteName || "Hoàn Tiền Mua Sắm");
   const [sysSupportPhone, setSysSupportPhone] = useState(settings.supportPhone || "0988.888.888");
   const [sysSupportZalo, setSysSupportZalo] = useState(settings.supportZalo || "https://zalo.me/g/hoantienmuasam");
-  const [sysSupportFacebook, setSysSupportFacebook] = useState(settings.supportFacebook || "https://facebook.com/hoantienmuasam");
   const [sysShopeeAffiliateId, setSysShopeeAffiliateId] = useState(settings.shopeeAffiliateId || "173401900099");
+  const [sysShopeeCookieUrl, setSysShopeeCookieUrl] = useState(settings.shopeeCookieUrl || "https://s.shopee.vn/an_redir");
+  const [sysLazadaAffiliateId, setSysLazadaAffiliateId] = useState(settings.lazadaAffiliateId || "");
+  const [sysLazadaCookieUrl, setSysLazadaCookieUrl] = useState(settings.lazadaCookieUrl || "https://s.lazada.vn/s.an_redir");
+  const [sysTiktokAffiliateId, setSysTiktokAffiliateId] = useState(settings.tiktokAffiliateId || "");
+  const [sysTiktokCookieUrl, setSysTiktokCookieUrl] = useState(settings.tiktokCookieUrl || "https://vt.tiktok.com/an_redir");
+  const [sysTikiAffiliateId, setSysTikiAffiliateId] = useState(settings.tikiAffiliateId || "");
+  const [sysTikiCookieUrl, setSysTikiCookieUrl] = useState(settings.tikiCookieUrl || "https://tiki.vn/an_redir");
   const [sysTeleNotify, setSysTeleNotify] = useState(settings.telegramNotification);
   const [sysEmailNotify, setSysEmailNotify] = useState(settings.emailNotification);
   const [sysMaintMode, setSysMaintMode] = useState(settings.maintenanceMode);
@@ -141,6 +147,13 @@ export default function AdminPanel() {
       setSysSupportZalo(settings.supportZalo || "https://zalo.me/g/hoantienmuasam");
       setSysSupportFacebook(settings.supportFacebook || "https://facebook.com/hoantienmuasam");
       setSysShopeeAffiliateId(settings.shopeeAffiliateId || "173401900099");
+      setSysShopeeCookieUrl(settings.shopeeCookieUrl || "https://s.shopee.vn/an_redir");
+      setSysLazadaAffiliateId(settings.lazadaAffiliateId || "");
+      setSysLazadaCookieUrl(settings.lazadaCookieUrl || "https://s.lazada.vn/s.an_redir");
+      setSysTiktokAffiliateId(settings.tiktokAffiliateId || "");
+      setSysTiktokCookieUrl(settings.tiktokCookieUrl || "https://vt.tiktok.com/an_redir");
+      setSysTikiAffiliateId(settings.tikiAffiliateId || "");
+      setSysTikiCookieUrl(settings.tikiCookieUrl || "https://tiki.vn/an_redir");
       setSysTeleNotify(settings.telegramNotification);
       setSysEmailNotify(settings.emailNotification);
       setSysMaintMode(settings.maintenanceMode);
@@ -275,6 +288,13 @@ export default function AdminPanel() {
       supportZalo: sysSupportZalo,
       supportFacebook: sysSupportFacebook,
       shopeeAffiliateId: sysShopeeAffiliateId,
+      shopeeCookieUrl: sysShopeeCookieUrl,
+      lazadaAffiliateId: sysLazadaAffiliateId,
+      lazadaCookieUrl: sysLazadaCookieUrl,
+      tiktokAffiliateId: sysTiktokAffiliateId,
+      tiktokCookieUrl: sysTiktokCookieUrl,
+      tikiAffiliateId: sysTikiAffiliateId,
+      tikiCookieUrl: sysTikiCookieUrl,
       telegramNotification: sysTeleNotify,
       emailNotification: sysEmailNotify,
       maintenanceMode: sysMaintMode
@@ -1245,16 +1265,108 @@ export default function AdminPanel() {
                         />
                       </div>
 
-                      <div className="flex flex-col gap-1.5 sm:col-span-2">
-                        <label className="text-xs font-bold text-text/80">Shopee Affiliate ID mặc định</label>
-                        <input
-                          type="text"
-                          value={sysShopeeAffiliateId}
-                          onChange={(e) => setSysShopeeAffiliateId(e.target.value)}
-                          className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
-                          required
-                        />
-                        <span className="text-[10px] text-text-secondary">Dùng để chèn mã tiếp thị liên kết tự động khi tạo link rút gọn</span>
+                      <div className="sm:col-span-2 pt-4 border-t border-border/40">
+                        <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-3">🟠 Tiếp thị liên kết Shopee</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-text/80">Shopee Affiliate ID</label>
+                            <input
+                              type="text"
+                              value={sysShopeeAffiliateId}
+                              onChange={(e) => setSysShopeeAffiliateId(e.target.value)}
+                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                              placeholder="173401900099"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-text/80">Link Cookie 7 ngày (Deeplink Shopee)</label>
+                            <input
+                              type="text"
+                              value={sysShopeeCookieUrl}
+                              onChange={(e) => setSysShopeeCookieUrl(e.target.value)}
+                              placeholder="https://s.shopee.vn/an_redir"
+                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-2 pt-4 border-t border-border/40">
+                        <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">🟦 Tiếp thị liên kết Lazada</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-text/80">Lazada Affiliate ID</label>
+                            <input
+                              type="text"
+                              value={sysLazadaAffiliateId}
+                              onChange={(e) => setSysLazadaAffiliateId(e.target.value)}
+                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                              placeholder="Nhập mã LazAffiliate..."
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-text/80">Link Cookie / Deeplink Lazada</label>
+                            <input
+                              type="text"
+                              value={sysLazadaCookieUrl}
+                              onChange={(e) => setSysLazadaCookieUrl(e.target.value)}
+                              placeholder="https://s.lazada.vn/s.an_redir"
+                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-2 pt-4 border-t border-border/40">
+                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">🎵 Tiếp thị liên kết TikTok Shop</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-text/80">TikTok Shop Affiliate ID</label>
+                            <input
+                              type="text"
+                              value={sysTiktokAffiliateId}
+                              onChange={(e) => setSysTiktokAffiliateId(e.target.value)}
+                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                              placeholder="Nhập mã TikTok Affiliate..."
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-text/80">Link Cookie / Deeplink TikTok Shop</label>
+                            <input
+                              type="text"
+                              value={sysTiktokCookieUrl}
+                              onChange={(e) => setSysTiktokCookieUrl(e.target.value)}
+                              placeholder="https://vt.tiktok.com/an_redir"
+                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-2 pt-4 border-t border-border/40">
+                        <h3 className="text-xs font-bold text-sky-500 uppercase tracking-wider mb-3">🌐 Tiếp thị liên kết Tiki</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-text/80">Tiki Affiliate ID</label>
+                            <input
+                              type="text"
+                              value={sysTikiAffiliateId}
+                              onChange={(e) => setSysTikiAffiliateId(e.target.value)}
+                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                              placeholder="Nhập mã Tiki Affiliate..."
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-text/80">Link Cookie / Deeplink Tiki</label>
+                            <input
+                              type="text"
+                              value={sysTikiCookieUrl}
+                              onChange={(e) => setSysTikiCookieUrl(e.target.value)}
+                              placeholder="https://tiki.vn/an_redir"
+                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
 

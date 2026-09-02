@@ -67,6 +67,13 @@ export interface SystemSettings {
   supportZalo?: string;
   supportFacebook?: string;
   shopeeAffiliateId?: string;
+  shopeeCookieUrl?: string;
+  lazadaAffiliateId?: string;
+  lazadaCookieUrl?: string;
+  tiktokAffiliateId?: string;
+  tiktokCookieUrl?: string;
+  tikiAffiliateId?: string;
+  tikiCookieUrl?: string;
 }
 
 export interface UserStats {
@@ -534,6 +541,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     supportZalo: "https://zalo.me/g/hoantienmuasam",
     supportFacebook: "https://facebook.com/hoantienmuasam",
     shopeeAffiliateId: "173401900099",
+    shopeeCookieUrl: "https://s.shopee.vn/an_redir",
+    lazadaAffiliateId: "",
+    lazadaCookieUrl: "https://s.lazada.vn/s.an_redir",
+    tiktokAffiliateId: "",
+    tiktokCookieUrl: "https://vt.tiktok.com/an_redir",
+    tikiAffiliateId: "",
+    tikiCookieUrl: "https://tiki.vn/an_redir",
   },
 
   updateSettings: async (newSettings) => {

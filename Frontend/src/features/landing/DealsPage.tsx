@@ -54,7 +54,7 @@ export default function DealsPage() {
     }, 1000);
   };
 
-  const handleCreateAffiliateLink = () => {
+  const handleCreateAffiliateLink = async () => {
     if (!currentUser) {
       toast.warning('Vui lòng đăng nhập để tạo link hoàn tiền và tích lũy số dư');
       navigate('/auth');
@@ -62,22 +62,27 @@ export default function DealsPage() {
     }
     if (!checkedProduct) return;
 
-    const affiliateLink = `https://shope.ee/aff?p=${encodeURIComponent(checkedProduct.name)}&sub_id=${currentUser.id}`;
-    navigator.clipboard.writeText(affiliateLink);
-    toast.success('Đã tạo và sao chép link hoàn tiền thành công!');
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+      const redirectGatewayUrl = `${API_BASE}/shopee/redirect?url=${encodeURIComponent(checkedProduct.url)}`;
 
-    // Add to user orders automatically in "pending" status to simulate shopping click
-    const newOrder: Order = {
-      id: `HD${Math.floor(1000 + Math.random() * 9000)}`,
-      productName: checkedProduct.name,
-      productImage: checkedProduct.image,
-      orderAmount: checkedProduct.price,
-      estimatedCashback: Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
-      status: 'pending',
-      createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-      userId: currentUser.id
-    };
-    addOrder(newOrder);
+      const newOrder: Order = {
+        id: `HD${Math.floor(1000 + Math.random() * 9000)}`,
+        productName: checkedProduct.name,
+        productImage: checkedProduct.image,
+        orderAmount: checkedProduct.price,
+        estimatedCashback: Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
+        status: 'pending',
+        createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: currentUser.id
+      };
+      addOrder(newOrder);
+
+      // Mở trực tiếp Gateway Redirect URL trong thao tác Click (Hiển thị Bước 1 nạp Cookie trước -> Tự động Redirect Bước 2)
+      window.open(redirectGatewayUrl, '_blank');
+    } catch (err) {
+      toast.error('Có lỗi xảy ra khi tạo link hoàn tiền');
+    }
   };
 
   const copyToClipboard = (text: string) => {

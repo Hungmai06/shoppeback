@@ -49,18 +49,18 @@ if (isClusterEnabled && cluster.isPrimary) {
   // 4. Rate Limiting Protection against DDoS / Spam traffic spikes
   const globalLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute window
-    max: 300, // Max 300 requests per minute per IP
+    max: 2000, // Max 2000 requests per minute per IP
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: 'Hệ thống đang xử lý nhiều lượt truy cập. Vui lòng thử lại sau 1 phút.' }
+    message: { message: 'Hệ thống đang xử lý nhiều lượt truy cập. Vui lòng thử lại sau ít phút.' }
   });
 
   const authLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
-    max: 30, // Max 30 login/register attempts per minute per IP
+    max: 200, // Max 200 login/register attempts per minute per IP
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: 'Thao tác quá nhanh. Vui lòng đợi 1 phút trước khi thử lại.' }
+    message: { message: 'Thao tác quá nhanh. Vui lòng đợi ít phút trước khi thử lại.' }
   });
 
   app.use('/api/', globalLimiter);
