@@ -62,25 +62,58 @@ export default function DealsPage() {
     }
     if (!checkedProduct) return;
 
+    // 1. Mở ngay 1 tab mới ở trạng thái chờ để tránh bị trình duyệt chặn popup
+    const newTab = window.open('about:blank', '_blank');
+
     try {
       const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-      const redirectGatewayUrl = `${API_BASE}/shopee/redirect?url=${encodeURIComponent(checkedProduct.url)}`;
+      const token = localStorage.getItem('access_token');
 
-      const newOrder: Order = {
-        id: `HD${Math.floor(1000 + Math.random() * 9000)}`,
-        productName: checkedProduct.name,
-        productImage: checkedProduct.image,
-        orderAmount: checkedProduct.price,
-        estimatedCashback: Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
-        status: 'pending',
-        createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-        userId: currentUser.id
-      };
-      addOrder(newOrder);
+      const res = await fetch(`${API_BASE}/shopee/convert`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ url: checkedProduct.url })
+      });
+      const data = await res.json();
 
-      // Mở trực tiếp Gateway Redirect URL trong thao tác Click (Hiển thị Bước 1 nạp Cookie trước -> Tự động Redirect Bước 2)
-      window.open(redirectGatewayUrl, '_blank');
-    } catch (err) {
+      if (data && data.success && data.affiliateLink) {
+        const link1 = data.affiliateLink; // Link setup cookie trong hệ thống
+        const link2 = data.originUrl || checkedProduct.url; // Link sản phẩm tra cứu
+
+        const newOrder: Order = {
+          id: data.clickId || `HD${Math.floor(1000 + Math.random() * 9000)}`,
+          productName: checkedProduct.name,
+          productImage: checkedProduct.image,
+          orderAmount: checkedProduct.price,
+          estimatedCashback: Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
+          status: 'pending',
+          createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          userId: currentUser.id
+        };
+        addOrder(newOrder);
+
+        if (newTab) {
+          // Mở NGUYÊN VĂN Link 1 (link setup trong hệ thống) trên tab mới trước
+          newTab.location.href = link1;
+
+          // Sau đúng 1.5s (1500ms), tự động nhảy tiếp tab mới đó sang Link 2 (link sản phẩm tra cứu)
+          setTimeout(() => {
+            try {
+              if (!newTab.closed) {
+                newTab.location.href = link2;
+              }
+            } catch (e) {}
+          }, 1500);
+        }
+      } else {
+        if (newTab) newTab.close();
+        toast.error(data?.message || 'Có lỗi xảy ra khi tạo link hoàn tiền');
+      }
+    } catch (err: any) {
+      if (newTab) newTab.close();
       toast.error('Có lỗi xảy ra khi tạo link hoàn tiền');
     }
   };

@@ -116,7 +116,7 @@ async function redirectShopeeLink(req, res) {
       console.warn('Click log warning:', dbErr.message);
     }
 
-    // 5. Chuyển hướng 2 lần cho Desktop (Nhảy Link 1 Cookie hệ thống -> Nhảy Link 2 sản phẩm tra cứu)
+    // 5. Chuyển hướng 2 lần (Mở Link 1 setup hệ thống trước -> sau 1.5s nhảy tiếp sang Link 2 sản phẩm tra cứu)
     const htmlGateway = `
 <!DOCTYPE html>
 <html>
@@ -129,21 +129,13 @@ async function redirectShopeeLink(req, res) {
     const link1 = "${link1}";
     const link2 = "${link2}";
 
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    // 1. Mở ngay Link 1 (Link setup hệ thống)
+    window.location.href = link1;
 
-    if (!isMobile) {
-      // Trên Desktop: Nhảy 2 lần rõ ràng (Lần 1 mở Link 1 Cookie hệ thống, Lần 2 nhảy mở Link 2 sản phẩm tra cứu)
-      window.location.href = link1;
-      setTimeout(function() {
-        window.location.href = link2;
-      }, 1200);
-    } else {
-      // Trên Mobile: Chuyển sang Link 1 nạp cookie, sau đó chuyển tiếp sang Link 2
-      window.location.href = link1;
-      setTimeout(function() {
-        window.location.href = link2;
-      }, 1800);
-    }
+    // 2. Sau 1.5s nhảy tiếp sang Link 2 (Link sản phẩm tra cứu)
+    setTimeout(function() {
+      window.location.href = link2;
+    }, 1500);
   </script>
 </body>
 </html>

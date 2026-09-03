@@ -127,6 +127,7 @@ export default function AdminPanel() {
   const [sysWebsiteName, setSysWebsiteName] = useState(settings.websiteName || "Hoàn Tiền Mua Sắm");
   const [sysSupportPhone, setSysSupportPhone] = useState(settings.supportPhone || "0988.888.888");
   const [sysSupportZalo, setSysSupportZalo] = useState(settings.supportZalo || "https://zalo.me/g/hoantienmuasam");
+  const [sysSupportFacebook, setSysSupportFacebook] = useState(settings.supportFacebook || "https://facebook.com/hoantienmuasam");
   const [sysShopeeAffiliateId, setSysShopeeAffiliateId] = useState(settings.shopeeAffiliateId || "173401900099");
   const [sysShopeeCookieUrl, setSysShopeeCookieUrl] = useState(settings.shopeeCookieUrl || "https://s.shopee.vn/an_redir");
   const [sysLazadaAffiliateId, setSysLazadaAffiliateId] = useState(settings.lazadaAffiliateId || "");
