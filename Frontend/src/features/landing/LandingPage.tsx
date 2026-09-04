@@ -224,7 +224,9 @@ export default function LandingPage() {
       const data = await res.json();
 
       if (data && data.success && data.affiliateLink) {
-        const affiliateUrl = data.affiliateLink;
+        const link1 = data.affiliateLink; // Link1: Cookie hệ thống
+        const link2 = data.originUrl || checkedProduct.url; // Link2: Link sản phẩm tra cứu
+        const isCustomSystemLink = data.isCustomSystemLink || (!link1.includes('an_redir') && link1 !== link2);
 
         const newOrder: Order = {
           id: data.clickId || `HD${Math.floor(1000 + Math.random() * 9000)}`,
@@ -240,11 +242,20 @@ export default function LandingPage() {
 
         toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
 
-        if (newTab && !newTab.closed) {
-          newTab.location.href = affiliateUrl;
-        } else {
-          // Trên thiết bị di động hoặc nếu tab mới bị chặn popup, chuyển hướng trực tiếp tab hiện tại
-          window.location.href = affiliateUrl;
+        const targetWin = (newTab && !newTab.closed) ? newTab : window;
+
+        // Step 1: Chuyển hướng tới Link 1 (link cookie hệ thống)
+        targetWin.location.href = link1;
+
+        // Step 2: Nếu là link hệ thống tùy chỉnh (không tự redirect an_redir), sau 1.5s nhảy tiếp sang Link 2 (sản phẩm gốc)
+        if (isCustomSystemLink) {
+          setTimeout(() => {
+            try {
+              if (!targetWin.closed) {
+                targetWin.location.href = link2;
+              }
+            } catch (e) {}
+          }, 1500);
         }
       } else {
         if (newTab && !newTab.closed) newTab.close();

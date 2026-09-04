@@ -49,11 +49,14 @@ async function convertShopeeLink(req, res) {
       console.warn('Click log insertion warning:', dbErr.message);
     }
 
-    // 5. Trả về cho Frontend
+    // 5. Trả về cho Frontend (Kèm cờ isCustomSystemLink nếu Admin dùng link hệ thống riêng không chứa an_redir)
+    const isCustomSystemLink = Boolean(customBaseUrl && customBaseUrl.trim() && !customBaseUrl.includes('an_redir'));
+
     return res.json({
       success: true,
       affiliateLink,
       originUrl,
+      isCustomSystemLink,
       clickId,
       subId
     });
@@ -69,7 +72,7 @@ async function convertShopeeLink(req, res) {
 
 /**
  * Xử lý chuyển hướng trực tiếp (GET Redirect Gateway)
- * Nhận URL thô qua query parameter ?url=..., tự tạo sub_id, lưu log và 302 Redirect tới link Shopee an_redir
+ * Nhận URL thô qua query parameter ?url=..., tự tạo sub_id, lưu log và Redirect tới link Shopee
  */
 async function redirectShopeeLink(req, res) {
   try {
@@ -101,7 +104,7 @@ async function redirectShopeeLink(req, res) {
       }
     } catch (sErr) {}
 
-    // 3. Tạo Link 1 (Link Cookie Admin) & Link 2 (Link Sản phẩm gốc)
+    // 3. Tạo Link 1 (Link Cookie Admin/Hệ thống) & Link 2 (Link Sản phẩm gốc)
     const link1 = createShopeeAffiliateLink(originUrl, subId, customBaseUrl, customAffId);
     const link2 = normalizeShopeeProductUrl(originUrl);
 
@@ -116,7 +119,38 @@ async function redirectShopeeLink(req, res) {
       console.warn('Click log warning:', dbErr.message);
     }
 
-    // 5. Chuyển hướng trực tiếp 302 tới Link Affiliate Shopee (Tự động lưu cookie & mở Shopee App trên điện thoại)
+    // 5. Nếu Admin thiết lập Link Hệ Thống riêng (không chứa an_redir), thực hiện chuyển hướng 2 bước (Link 1 -> sau 1.5s nhảy Link 2)
+    const isCustomSystemLink = Boolean(customBaseUrl && customBaseUrl.trim() && !customBaseUrl.includes('an_redir'));
+
+    if (isCustomSystemLink) {
+      const htmlGateway = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Shopee Redirect Gateway</title>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;">
+  <script>
+    const link1 = "${link1}";
+    const link2 = "${link2}";
+
+    // 1. Mở ngay Link 1 (Link cookie hệ thống Admin)
+    window.location.href = link1;
+
+    // 2. Sau 1.5s tự động nhảy tiếp sang Link 2 (Link sản phẩm gốc người dùng tìm)
+    setTimeout(function() {
+      window.location.href = link2;
+    }, 1500);
+  </script>
+</body>
+</html>
+      `;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(htmlGateway);
+    }
+
+    // Nếu dùng link an_redir mặc định: Chuyển hướng trực tiếp 302 (Shopee an_redir tự động lưu cookie và nhảy về sản phẩm)
     return res.redirect(302, link1);
 
   } catch (error) {
