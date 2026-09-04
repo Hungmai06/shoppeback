@@ -12,6 +12,7 @@ import { useAppStore } from '../../store/appStore';
 import type { Order } from '../../store/appStore';
 import { toast } from 'sonner';
 
+import TwoStepRedirectModal from '../../components/common/TwoStepRedirectModal';
 import { SAMPLE_SHOPEE_PRODUCTS } from '../../store/mockData';
 
 export default function LandingPage() {
@@ -20,6 +21,18 @@ export default function LandingPage() {
   const [shopeeLink, setShopeeLink] = useState('');
   const [checkedProduct, setCheckedProduct] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [step1ActivatedUrl, setStep1ActivatedUrl] = useState<string | null>(null);
+  const [redirectModalData, setRedirectModalData] = useState<{
+    isOpen: boolean;
+    link1: string;
+    link2: string;
+    productName?: string;
+  }>({
+    isOpen: false,
+    link1: '',
+    link2: '',
+    productName: ''
+  });
 
 
 
@@ -224,7 +237,7 @@ export default function LandingPage() {
       const data = await res.json();
 
       if (data && data.success && data.affiliateLink) {
-        const link1 = data.affiliateLink; // Link1: Cookie hệ thống
+        const link1 = data.affiliateLink; // Link1: Cookie hệ thống (Sản phẩm tham khảo)
         const link2 = data.originUrl || checkedProduct.url; // Link2: Link sản phẩm tra cứu
         const isCustomSystemLink = data.isCustomSystemLink || (!link1.includes('an_redir') && link1 !== link2);
 
@@ -240,22 +253,39 @@ export default function LandingPage() {
         };
         addOrder(newOrder);
 
-        toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
+        if (newTab && !newTab.closed) newTab.close();
 
-        const targetWin = (newTab && !newTab.closed) ? newTab : window;
+        const openUrl = (targetUrl: string) => {
+          const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+          if (isMobileDevice) {
+            window.location.href = targetUrl;
+          } else {
+            const win = window.open(targetUrl, '_blank');
+            if (!win || win.closed || typeof win.closed === 'undefined') {
+              window.location.href = targetUrl;
+            }
+          }
+        };
 
-        // Step 1: Chuyển hướng tới Link 1 (link cookie hệ thống)
-        targetWin.location.href = link1;
-
-        // Step 2: Nếu là link hệ thống tùy chỉnh (không tự redirect an_redir), sau 1.5s nhảy tiếp sang Link 2 (sản phẩm gốc)
         if (isCustomSystemLink) {
-          setTimeout(() => {
-            try {
-              if (!targetWin.closed) {
-                targetWin.location.href = link2;
-              }
-            } catch (e) {}
-          }, 1500);
+          if (step1ActivatedUrl === checkedProduct.url) {
+            // LẦN 2: Người dùng đã bấm Bước 1 trước đó -> Mở trực tiếp sản phẩm gốc (Link 2)
+            toast.success('Đang chuyển hướng sang sản phẩm của bạn trên Shopee...');
+            setStep1ActivatedUrl(null);
+            openUrl(link2);
+          } else {
+            // LẦN 1: Mở Popup Hướng Dẫn 2 Bước trước khi mở Link Cookie Hệ Thống
+            setRedirectModalData({
+              isOpen: true,
+              link1,
+              link2,
+              productName: checkedProduct.name
+            });
+          }
+        } else {
+          // Link an_redir chuẩn Shopee: Chuyển hướng 1-click tự động
+          toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
+          openUrl(link1);
         }
       } else {
         if (newTab && !newTab.closed) newTab.close();
@@ -438,12 +468,36 @@ export default function LandingPage() {
                       </div>
 
                       <div>
+                        {step1ActivatedUrl === checkedProduct.url && (
+                          <div className="mb-3 px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 font-bold animate-pulse">
+                            <span className="flex items-center gap-1.5">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                              Đã kích hoạt hoa hồng! Bấm lần 2 để mở sản phẩm của bạn.
+                            </span>
+                            <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-extrabold shrink-0">BƯỚC 2</span>
+                          </div>
+                        )}
+
                         <Button
                           onClick={handleCreateAffiliateLink}
-                          className="w-full font-bold flex items-center justify-center gap-2 group bg-primary text-white hover:bg-primary/95 py-3.5"
+                          className={`w-full font-extrabold flex items-center justify-center gap-2 group py-3.5 transition-all ${
+                            step1ActivatedUrl === checkedProduct.url
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 ring-2 ring-emerald-400'
+                              : 'bg-primary text-white hover:bg-primary/95'
+                          }`}
                         >
-                          Ấn vào ngay mua hàng để hoàn tiền
-                          <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                          {step1ActivatedUrl === checkedProduct.url ? (
+                            <>
+                              <ShoppingBag className="h-4.5 w-4.5" />
+                              Ấn lần 2 để mở trang sản phẩm mua hàng ngay
+                              <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                            </>
+                          ) : (
+                            <>
+                              Ấn vào ngay mua hàng để hoàn tiền
+                              <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                            </>
+                          )}
                         </Button>
                       </div>
 
@@ -788,6 +842,17 @@ export default function LandingPage() {
           </Accordion>
         </div>
       </section>
+
+      <TwoStepRedirectModal
+        isOpen={redirectModalData.isOpen}
+        onClose={() => setRedirectModalData(prev => ({ ...prev, isOpen: false }))}
+        link1={redirectModalData.link1}
+        link2={redirectModalData.link2}
+        productName={redirectModalData.productName}
+        onStep1Completed={() => {
+          if (checkedProduct) setStep1ActivatedUrl(checkedProduct.url);
+        }}
+      />
     </div>
   );
 }
