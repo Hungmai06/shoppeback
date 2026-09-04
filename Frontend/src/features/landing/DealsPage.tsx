@@ -62,8 +62,13 @@ export default function DealsPage() {
     }
     if (!checkedProduct) return;
 
-    // 1. Mở ngay 1 tab mới ở trạng thái chờ để tránh bị trình duyệt chặn popup
-    const newTab = window.open('about:blank', '_blank');
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|FBAN|FBAV|Instagram|Zalo/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+    // Trên Desktop: mở trước 1 tab để tránh bị chặn popup khi gọi fetch bất đồng bộ
+    let newTab: Window | null = null;
+    if (!isMobile) {
+      newTab = window.open('about:blank', '_blank');
+    }
 
     try {
       const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -80,8 +85,7 @@ export default function DealsPage() {
       const data = await res.json();
 
       if (data && data.success && data.affiliateLink) {
-        const link1 = data.affiliateLink; // Link setup cookie trong hệ thống
-        const link2 = data.originUrl || checkedProduct.url; // Link sản phẩm tra cứu
+        const affiliateUrl = data.affiliateLink;
 
         const newOrder: Order = {
           id: data.clickId || `HD${Math.floor(1000 + Math.random() * 9000)}`,
@@ -95,25 +99,20 @@ export default function DealsPage() {
         };
         addOrder(newOrder);
 
-        if (newTab) {
-          // Mở NGUYÊN VĂN Link 1 (link setup trong hệ thống) trên tab mới trước
-          newTab.location.href = link1;
+        toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
 
-          // Sau đúng 1.5s (1500ms), tự động nhảy tiếp tab mới đó sang Link 2 (link sản phẩm tra cứu)
-          setTimeout(() => {
-            try {
-              if (!newTab.closed) {
-                newTab.location.href = link2;
-              }
-            } catch (e) {}
-          }, 1500);
+        if (newTab && !newTab.closed) {
+          newTab.location.href = affiliateUrl;
+        } else {
+          // Trên thiết bị di động hoặc nếu tab mới bị chặn popup, chuyển hướng trực tiếp tab hiện tại
+          window.location.href = affiliateUrl;
         }
       } else {
-        if (newTab) newTab.close();
+        if (newTab && !newTab.closed) newTab.close();
         toast.error(data?.message || 'Có lỗi xảy ra khi tạo link hoàn tiền');
       }
     } catch (err: any) {
-      if (newTab) newTab.close();
+      if (newTab && !newTab.closed) newTab.close();
       toast.error('Có lỗi xảy ra khi tạo link hoàn tiền');
     }
   };

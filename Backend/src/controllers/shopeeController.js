@@ -116,33 +116,8 @@ async function redirectShopeeLink(req, res) {
       console.warn('Click log warning:', dbErr.message);
     }
 
-    // 5. Chuyển hướng 2 lần (Mở Link 1 setup hệ thống trước -> sau 1.5s nhảy tiếp sang Link 2 sản phẩm tra cứu)
-    const htmlGateway = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Shopee Redirect</title>
-</head>
-<body style="margin:0;padding:0;background:#ffffff;">
-  <script>
-    const link1 = "${link1}";
-    const link2 = "${link2}";
-
-    // 1. Mở ngay Link 1 (Link setup hệ thống)
-    window.location.href = link1;
-
-    // 2. Sau 1.5s nhảy tiếp sang Link 2 (Link sản phẩm tra cứu)
-    setTimeout(function() {
-      window.location.href = link2;
-    }, 1500);
-  </script>
-</body>
-</html>
-    `;
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    return res.send(htmlGateway);
+    // 5. Chuyển hướng trực tiếp 302 tới Link Affiliate Shopee (Tự động lưu cookie & mở Shopee App trên điện thoại)
+    return res.redirect(302, link1);
 
   } catch (error) {
     return res.status(400).send(`Lỗi chuyển hướng link Shopee: ${error.message}`);
