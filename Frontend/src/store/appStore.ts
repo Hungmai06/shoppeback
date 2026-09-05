@@ -90,12 +90,15 @@ export interface AdminStats {
     totalUsers: number;
     totalOrders: number;
     totalPaidWithdrawals: number;
+    pendingWithdrawalsTotal?: number;
     platformTotalRevenue: number;
     platformTotalCashbackOwed: number;
     netProfit: number;
   };
   statusDistribution: { name: string; value: number }[];
   monthlyAnalytics: { name: string; revenue: number; cashback: number; profit: number }[];
+  topUsers?: { userId: string; userName: string; earnings: number; orderCount: number }[];
+  topProducts?: { name: string; count: number; totalAmount: number }[];
 }
 
 interface AppState {
@@ -165,7 +168,8 @@ interface AppState {
   fetchAdminOrders: (page?: number, limit?: number, search?: string, status?: string) => Promise<void>;
   fetchAdminWithdrawals: () => Promise<void>;
   fetchAdminUsers: () => Promise<void>;
-  fetchAdminStats: () => Promise<void>;
+  fetchAdminStats: (range?: string) => Promise<void>;
+  exportOrdersCSV: () => void;
   fetchReconciliationLogs: () => Promise<void>;
   uploadReconciliationCSV: (file: File) => Promise<any>;
   applyReconciliationCSV: (tempFileName: string) => Promise<any>;
@@ -412,11 +416,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  uploadOrderScreenshot: (id, screenshotUrl) => {
-    // Keep local client state screenshot update
+  uploadOrderScreenshot: async (id, screenshotUrl) => {
     set((state) => ({
       orders: state.orders.map(o => o.id === id ? { ...o, screenshot: screenshotUrl } : o)
     }));
+    try {
+      await fetch(`${API_BASE}/orders/${id}/screenshot`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify({ screenshot: screenshotUrl })
+      });
+    } catch (error) {
+      console.error('Upload order screenshot error:', error);
+    }
   },
 
   // Withdrawals
@@ -709,9 +721,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchAdminStats: async () => {
+  fetchAdminStats: async (range = 'all') => {
     try {
-      const res = await fetch(`${API_BASE}/settings/admin/stats`, { headers: getHeaders() });
+      const res = await fetch(`${API_BASE}/settings/admin/stats?range=${range}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         set({ adminStats: data });
@@ -719,6 +731,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Fetch admin stats error:', error);
     }
+  },
+
+  exportOrdersCSV: () => {
+    const orders = get().orders;
+    const settings = get().settings;
+    const cashbackPercent = settings?.cashbackPercentage ?? 50;
+
+    const headers = ['Mã đơn hàng', 'Mã thành viên', 'Tên sản phẩm', 'Giá trị đơn (₫)', 'Hoa hồng Shopee (₫)', 'Hoàn tiền khách (₫)', 'Ngày tạo', 'Trạng thái', 'Ghi chú'];
+    const rows = orders.map(o => {
+      const shopeeComm = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
+      const userCashback = shopeeComm * (cashbackPercent / 100);
+      let statusStr: string = o.status;
+      if (o.status === 'pending') statusStr = 'Đang chờ xử lý';
+      if (o.status === 'approved') statusStr = 'Hoàn thành';
+      if (o.status === 'rejected') statusStr = 'Hủy';
+      if (o.status === 'returned') statusStr = 'Hoàn hàng';
+      if (o.status === 'paid') statusStr = 'Đã thanh toán';
+
+      return [
+        `"${o.id}"`,
+        `"${o.userId || ''}"`,
+        `"${(o.productName || '').replace(/"/g, '""')}"`,
+        o.orderAmount || 0,
+        shopeeComm || 0,
+        Math.round(userCashback) || 0,
+        `"${o.createdTime || ''}"`,
+        `"${statusStr}"`,
+        `"${(o.notes || '').replace(/"/g, '""')}"`
+      ].join(',');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Bao_Cao_Don_Hang_${new Date().toISOString().substring(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   },
 
   fetchReconciliationLogs: async () => {

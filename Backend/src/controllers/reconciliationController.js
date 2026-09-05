@@ -1,7 +1,30 @@
 const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
+const XLSX = require('xlsx');
 const { getDatabase } = require('../config/db');
+
+async function readRowsFromFile(filePath, originalName = '') {
+  const ext = path.extname(originalName || filePath).toLowerCase();
+  if (ext === '.xlsx' || ext === '.xls') {
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    return XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+  }
+
+  const rawRows = [];
+  await new Promise((resolve, reject) => {
+    fs.createReadStream(filePath)
+      .pipe(csv({ separator: detectSeparator(filePath) }))
+      .on('data', (row) => {
+        rawRows.push(row);
+      })
+      .on('end', resolve)
+      .on('error', reject);
+  });
+  return rawRows;
+}
 
 // Helper to normalize strings for header mapping
 function normalizeHeader(header) {
@@ -387,17 +410,7 @@ async function uploadAndAnalyze(req, res) {
     const settings = await db.get('SELECT cashback_percentage FROM system_settings WHERE id = 1');
     const cashbackRate = (settings ? settings.cashback_percentage : 50.0) / 100.0;
 
-    const rawRows = [];
-
-    await new Promise((resolve, reject) => {
-      fs.createReadStream(tempFilePath)
-        .pipe(csv({ separator: detectSeparator(tempFilePath) }))
-        .on('data', (row) => {
-          rawRows.push(row);
-        })
-        .on('end', resolve)
-        .on('error', reject);
-    });
+    const rawRows = await readRowsFromFile(tempFilePath, req.file.originalname);
 
     report.totalRows = rawRows.length;
     const { orders: ordersToProcess, invalidCount } = groupRowsByOrderId(rawRows);
@@ -592,18 +605,7 @@ async function applyReconciliation(req, res) {
     let updatedCount = 0;
     let ignoredCount = 0;
 
-    const rawRows = [];
-
-    // Parse the file again synchronously or accumulate in memory first
-    await new Promise((resolve, reject) => {
-      fs.createReadStream(tempFilePath)
-        .pipe(csv({ separator: detectSeparator(tempFilePath) }))
-        .on('data', (row) => {
-          rawRows.push(row);
-        })
-        .on('end', resolve)
-        .on('error', reject);
-    });
+    const rawRows = await readRowsFromFile(tempFilePath, tempFileName);
 
     const { orders: ordersToProcess, invalidCount } = groupRowsByOrderId(rawRows);
     ignoredCount += invalidCount;

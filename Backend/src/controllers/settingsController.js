@@ -104,6 +104,8 @@ async function updateSettings(req, res) {
 }
 
 async function adminGetStats(req, res) {
+  const { range = 'all' } = req.query;
+
   try {
     const db = await getDatabase();
 
@@ -115,19 +117,41 @@ async function adminGetStats(req, res) {
     const usersCountResult = await db.get("SELECT COUNT(*) as count FROM users WHERE role = 'user'");
     const totalUsers = usersCountResult.count;
 
-    // Orders count
-    const ordersCountResult = await db.get("SELECT COUNT(*) as count FROM orders");
-    const totalOrders = ordersCountResult.count;
+    // Pending withdrawals total
+    const pendingWithdrawalsResult = await db.get("SELECT SUM(amount) as total FROM withdrawals WHERE status = 'pending'");
+    const pendingWithdrawalsTotal = pendingWithdrawalsResult ? (pendingWithdrawalsResult.total || 0) : 0;
 
-    // Paid withdrawals
-    const totalPaidWithdrawalsResult = await db.get("SELECT SUM(amount) as total FROM withdrawals WHERE status = 'approved'");
-    const totalPaidWithdrawals = totalPaidWithdrawalsResult.total || 0;
+    // Paid withdrawals total
+    const paidWithdrawalsResult = await db.get("SELECT SUM(amount) as total FROM withdrawals WHERE status = 'approved'");
+    const totalPaidWithdrawals = paidWithdrawalsResult ? (paidWithdrawalsResult.total || 0) : 0;
 
-    // Calculate revenue & profits from database orders
-    const ordersList = await db.all("SELECT id, status, real_cashback, estimated_cashback, shopee_commission, created_at FROM orders");
-    
+    // Build date filter clause for orders query based on range
+    let dateFilter = '';
+    const now = new Date();
+    if (range === 'today') {
+      const todayStr = now.toISOString().substring(0, 10);
+      dateFilter = ` AND created_at >= '${todayStr} 00:00:00'`;
+    } else if (range === '7days') {
+      const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      dateFilter = ` AND created_at >= '${d7.toISOString().substring(0, 10)} 00:00:00'`;
+    } else if (range === '30days') {
+      const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      dateFilter = ` AND created_at >= '${d30.toISOString().substring(0, 10)} 00:00:00'`;
+    } else if (range === 'this_month') {
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      dateFilter = ` AND created_at >= '${monthStart} 00:00:00'`;
+    }
+
+    // Orders list
+    const ordersList = await db.all(`SELECT id, user_id, product_name, order_amount, real_cashback, estimated_cashback, shopee_commission, status, created_at FROM orders WHERE 1=1 ${dateFilter}`);
+    const totalOrders = ordersList.length;
+
     let platformTotalRevenue = 0; // Total 100% Shopee commission
-    let platformTotalCashbackOwed = 0; // Total 50% user cashback
+    let platformTotalCashbackOwed = 0; // Total user cashback
+
+    // Top Users & Products map
+    const userEarningsMap = {};
+    const productCountMap = {};
 
     ordersList.forEach(o => {
       const userCb = (o.real_cashback !== null && o.real_cashback !== undefined)
@@ -141,10 +165,41 @@ async function adminGetStats(req, res) {
       if (o.status === 'approved' || o.status === 'paid') {
         platformTotalRevenue += shopeeComm;
         platformTotalCashbackOwed += userCb;
+
+        if (o.user_id) {
+          if (!userEarningsMap[o.user_id]) {
+            userEarningsMap[o.user_id] = { userId: o.user_id, earnings: 0, orderCount: 0 };
+          }
+          userEarningsMap[o.user_id].earnings += userCb;
+          userEarningsMap[o.user_id].orderCount += 1;
+        }
+      }
+
+      if (o.product_name) {
+        const shortName = o.product_name.length > 35 ? o.product_name.substring(0, 32) + '...' : o.product_name;
+        if (!productCountMap[shortName]) {
+          productCountMap[shortName] = { name: shortName, count: 0, totalAmount: 0 };
+        }
+        productCountMap[shortName].count += 1;
+        productCountMap[shortName].totalAmount += (o.order_amount || 0);
       }
     });
 
     const netProfit = platformTotalRevenue - platformTotalCashbackOwed;
+
+    // Attach user names to top users
+    const allUsers = await db.all("SELECT id, name, email FROM users");
+    const userNameMap = {};
+    allUsers.forEach(u => { userNameMap[u.id] = u.name || u.email; });
+
+    const topUsers = Object.values(userEarningsMap)
+      .map(u => ({ ...u, userName: userNameMap[u.userId] || u.userId }))
+      .sort((a, b) => b.earnings - a.earnings)
+      .slice(0, 5);
+
+    const topProducts = Object.values(productCountMap)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
 
     // Orders by status
     const statusCounts = { pending: 0, approved: 0, rejected: 0, paid: 0, returned: 0 };
@@ -156,7 +211,6 @@ async function adminGetStats(req, res) {
 
     // Monthly chart data (last 6 months)
     const monthlyStatsMap = {};
-    const now = new Date();
 
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -196,6 +250,7 @@ async function adminGetStats(req, res) {
         totalUsers,
         totalOrders,
         totalPaidWithdrawals,
+        pendingWithdrawalsTotal,
         platformTotalRevenue,
         platformTotalCashbackOwed,
         netProfit
@@ -207,7 +262,9 @@ async function adminGetStats(req, res) {
         { name: 'Hủy', value: statusCounts.rejected },
         { name: 'Hoàn hàng', value: statusCounts.returned }
       ],
-      monthlyAnalytics: chartData
+      monthlyAnalytics: chartData,
+      topUsers,
+      topProducts
     });
   } catch (error) {
     console.error('Admin Get Stats Error:', error);

@@ -54,7 +54,7 @@ export default function AdminPanel() {
     currentUser, logout, orders, totalAdminOrders, withdrawals, users, settings,
     updateOrderStatus, updateWithdrawalStatus, updateSettings,
     reconciliationHistory, uploadReconciliationCSV, applyReconciliationCSV,
-    updateAdminUser, adminStats, fetchAdminOrders, fetchAdminStats,
+    updateAdminUser, adminStats, fetchAdminOrders, fetchAdminStats, fetchAdminWithdrawals, fetchAdminUsers, fetchReconciliationLogs, exportOrdersCSV,
     createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus
   } = useAppStore();
 
@@ -65,6 +65,7 @@ export default function AdminPanel() {
   const [userRoleFilter, setUserRoleFilter] = useState('all');
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [statsRange, setStatsRange] = useState<'all' | 'today' | '7days' | '30days' | 'this_month'>('all');
 
   // Order Pagination states
   const [orderPage, setOrderPage] = useState(1);
@@ -75,18 +76,32 @@ export default function AdminPanel() {
     setOrderPage(1);
   }, [orderSearch, orderStatusFilter]);
 
-  // Fetch paginated and filtered orders from backend
+  // Fetch paginated and filtered orders & active tab data from backend
   React.useEffect(() => {
-    if (activeTab === 'orders' && currentUser?.role === 'admin') {
-      const delay = setTimeout(() => {
-        fetchAdminOrders(orderPage, ordersPerPage, orderSearch, orderStatusFilter);
-      }, 300); // Debounce search
-      return () => clearTimeout(delay);
+    if (currentUser?.role === 'admin') {
+      if (activeTab === 'dashboard') {
+        fetchAdminStats(statsRange);
+      } else if (activeTab === 'users') {
+        fetchAdminUsers();
+      } else if (activeTab === 'orders') {
+        const delay = setTimeout(() => {
+          fetchAdminOrders(orderPage, ordersPerPage, orderSearch, orderStatusFilter);
+        }, 300);
+        return () => clearTimeout(delay);
+      } else if (activeTab === 'withdrawals') {
+        fetchAdminWithdrawals();
+      } else if (activeTab === 'reconciliation') {
+        fetchReconciliationLogs();
+      }
     }
-  }, [activeTab, orderPage, orderSearch, orderStatusFilter, currentUser]);
+  }, [activeTab, orderPage, orderSearch, orderStatusFilter, statsRange, currentUser]);
 
   // Selected items for Modals
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
+
+  // Withdrawal Rejection states
+  const [rejectingWithdrawalId, setRejectingWithdrawalId] = useState<string | null>(null);
+  const [withdrawalRejectNotes, setWithdrawalRejectNotes] = useState<string>('');
 
   // Order Edit states
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -128,6 +143,8 @@ export default function AdminPanel() {
   const [sysSupportPhone, setSysSupportPhone] = useState(settings.supportPhone || "0988.888.888");
   const [sysSupportZalo, setSysSupportZalo] = useState(settings.supportZalo || "https://zalo.me/g/hoantienmuasam");
   const [sysSupportFacebook, setSysSupportFacebook] = useState(settings.supportFacebook || "https://facebook.com/hoantienmuasam");
+  const [sysCommissionPercentage, setSysCommissionPercentage] = useState<number>(settings.commissionPercentage ?? 10);
+  const [sysCashbackPercentage, setSysCashbackPercentage] = useState<number>(settings.cashbackPercentage ?? 50);
   const [sysShopeeAffiliateId, setSysShopeeAffiliateId] = useState(settings.shopeeAffiliateId || "173401900099");
   const [sysShopeeCookieUrl, setSysShopeeCookieUrl] = useState(settings.shopeeCookieUrl || "https://s.shopee.vn/an_redir");
   const [sysLazadaAffiliateId, setSysLazadaAffiliateId] = useState(settings.lazadaAffiliateId || "");
@@ -147,6 +164,8 @@ export default function AdminPanel() {
       setSysSupportPhone(settings.supportPhone || "0988.888.888");
       setSysSupportZalo(settings.supportZalo || "https://zalo.me/g/hoantienmuasam");
       setSysSupportFacebook(settings.supportFacebook || "https://facebook.com/hoantienmuasam");
+      setSysCommissionPercentage(settings.commissionPercentage ?? 10);
+      setSysCashbackPercentage(settings.cashbackPercentage ?? 50);
       setSysShopeeAffiliateId(settings.shopeeAffiliateId || "173401900099");
       setSysShopeeCookieUrl(settings.shopeeCookieUrl || "https://s.shopee.vn/an_redir");
       setSysLazadaAffiliateId(settings.lazadaAffiliateId || "");
@@ -288,6 +307,8 @@ export default function AdminPanel() {
       supportPhone: sysSupportPhone,
       supportZalo: sysSupportZalo,
       supportFacebook: sysSupportFacebook,
+      commissionPercentage: Number(sysCommissionPercentage) || 10,
+      cashbackPercentage: Number(sysCashbackPercentage) || 50,
       shopeeAffiliateId: sysShopeeAffiliateId,
       shopeeCookieUrl: sysShopeeCookieUrl,
       lazadaAffiliateId: sysLazadaAffiliateId,
@@ -572,21 +593,44 @@ export default function AdminPanel() {
           {activeTab === 'dashboard' && (
             <div className="flex flex-col gap-8">
 
+              {/* TIME RANGE FILTER HEADER */}
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white p-4 rounded-input border border-border">
+                <div>
+                  <h2 className="text-xl font-black text-text">Báo cáo & Thống kê tổng quan</h2>
+                  <p className="text-xs text-text-secondary mt-0.5">Theo dõi hiệu suất doanh thu, hoa hồng và các chỉ số hoạt động hệ thống.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-text-secondary">Khoảng thời gian:</span>
+                  <select
+                    value={statsRange}
+                    onChange={(e) => setStatsRange(e.target.value as any)}
+                    className="bg-bg border border-border text-xs rounded-input py-2 px-3 font-semibold outline-none focus:border-primary"
+                  >
+                    <option value="all">Tất cả thời gian</option>
+                    <option value="today">Hôm nay</option>
+                    <option value="7days">7 ngày qua</option>
+                    <option value="30days">30 ngày qua</option>
+                    <option value="this_month">Tháng này</option>
+                  </select>
+                </div>
+              </div>
+
               {/* TOP WIDGETS CARDS */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {[
-                  { title: "Tổng số thành viên", value: totalUsersCount, desc: "Đã đăng ký tài khoản", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" /> },
-                  { title: "Tổng số đơn hàng", value: totalOrdersCount, desc: "Đã phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" /> },
-                  { title: "Tổng hoa hồng đã chi", value: `${totalCashbackPaid.toLocaleString('vi-VN')}đ`, desc: "Người dùng đã nhận thực tế", color: "text-success", icon: <Wallet className="h-5 w-5 text-success" /> },
-                  { title: "Doanh thu ước tính", value: `${Math.round(totalEstimatedRevenue).toLocaleString('vi-VN')}đ`, desc: "Sau khi khấu trừ hoàn tiền", color: "text-primary", icon: <Activity className="h-5 w-5 text-primary" /> }
+                  { title: "Tổng thành viên", value: totalUsersCount, desc: "Tài khoản người dùng", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" /> },
+                  { title: "Tổng đơn hàng", value: totalOrdersCount, desc: "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" /> },
+                  { title: "Doanh thu gộp (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
+                  { title: "Lợi nhuận ròng", value: `${Math.round(adminStats?.summary?.netProfit || totalEstimatedRevenue).toLocaleString('vi-VN')}đ`, desc: "Sau khấu trừ hoàn tiền", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
+                  { title: "Tiền đã & chờ chi", value: `${(totalCashbackPaid).toLocaleString('vi-VN')}đ`, desc: `Chờ duyệt: ${(adminStats?.summary?.pendingWithdrawalsTotal || 0).toLocaleString('vi-VN')}đ`, color: "text-warning", icon: <Wallet className="h-5 w-5 text-warning" /> }
                 ].map((card, idx) => (
                   <Card key={idx} className="border-border/50 relative overflow-hidden">
-                    <CardHeader className="p-5 pb-2 flex flex-row items-center justify-between">
-                      <CardDescription className="font-bold text-text-secondary uppercase tracking-wider text-[10px]">{card.title}</CardDescription>
+                    <CardHeader className="p-4 pb-1 flex flex-row items-center justify-between">
+                      <CardDescription className="font-bold text-text-secondary uppercase tracking-wider text-[9px]">{card.title}</CardDescription>
                       {card.icon}
                     </CardHeader>
-                    <CardContent className="p-5 pt-0">
-                      <p className="text-2xl font-black text-text mb-1">{card.value}</p>
+                    <CardContent className="p-4 pt-1">
+                      <p className="text-xl font-black text-text mb-0.5">{card.value}</p>
                       <p className="text-[10px] text-text-secondary font-medium">{card.desc}</p>
                     </CardContent>
                   </Card>
@@ -597,7 +641,7 @@ export default function AdminPanel() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="lg:col-span-2 border-border/50">
                   <CardHeader>
-                    <CardTitle className="text-base">Báo cáo doanh thu & Lợi nhuận</CardTitle>
+                    <CardTitle className="text-base">Biểu đồ Doanh thu & Lợi nhuận</CardTitle>
                     <CardDescription>Biến động tài chính của hệ thống trong 6 tháng qua (VND)</CardDescription>
                   </CardHeader>
                   <CardContent className="h-72 pl-0">
@@ -617,8 +661,8 @@ export default function AdminPanel() {
                         <YAxis stroke="#6B7280" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val} />
                         <Tooltip formatter={(val) => [`${Number(val).toLocaleString('vi-VN')}đ`]} contentStyle={{ borderRadius: 12, border: '1px solid #ECECEC' }} />
                         <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
-                        <Area type="monotone" dataKey="DoanhThu" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDoanhThu)" strokeWidth={2.5} />
-                        <Area type="monotone" dataKey="LoiNhuan" stroke="#22C55E" fillOpacity={1} fill="url(#colorLoiNhuan)" strokeWidth={2.5} />
+                        <Area type="monotone" dataKey="DoanhThu" name="Doanh thu gộp" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDoanhThu)" strokeWidth={2.5} />
+                        <Area type="monotone" dataKey="LoiNhuan" name="Lợi nhuận ròng" stroke="#22C55E" fillOpacity={1} fill="url(#colorLoiNhuan)" strokeWidth={2.5} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -626,7 +670,7 @@ export default function AdminPanel() {
 
                 <Card className="border-border/50 flex flex-col justify-between">
                   <CardHeader>
-                    <CardTitle className="text-base">Số liệu tình trạng đơn</CardTitle>
+                    <CardTitle className="text-base">Tỷ lệ trạng thái đơn</CardTitle>
                     <CardDescription>Thống kê số lượng đơn hàng theo từng trạng thái</CardDescription>
                   </CardHeader>
                   <CardContent className="h-60 flex items-center justify-center">
@@ -635,7 +679,7 @@ export default function AdminPanel() {
                         { name: 'Chờ đối soát', value: pendingOrdersCount, fill: '#3B82F6' },
                         { name: 'Đã duyệt', value: approvedOrdersCount, fill: '#22C55E' },
                         { name: 'Đã thanh toán', value: cashbackPaidCount, fill: '#F59E0B' },
-                        { name: 'Bị huỷ / Từ chối', value: rejectedOrdersCount, fill: '#EF4444' }
+                        { name: 'Hủy/Hoàn', value: rejectedOrdersCount, fill: '#EF4444' }
                       ]} barSize={35}>
                         <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} />
                         <YAxis tickLine={false} axisLine={false} fontSize={10} />
@@ -654,6 +698,89 @@ export default function AdminPanel() {
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
+              </div>
+
+              {/* LEADERBOARDS & TOP PERFORMERS SECTION */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* TOP 5 USERS */}
+                <Card className="border-border/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Users className="h-4.5 w-4.5 text-primary" /> Top 5 Thành Viên Hoa Hồng Cao Nhất
+                    </CardTitle>
+                    <CardDescription>Xếp hạng người dùng tích lũy tiền hoàn trả nhiều nhất</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {adminStats?.topUsers && adminStats.topUsers.length > 0 ? (
+                      <TableContainer>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Thành Viên</TableHead>
+                            <TableHead className="text-center">Số Đơn Hoàn Thành</TableHead>
+                            <TableHead className="text-right">Tổng Tiền Nhận</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {adminStats.topUsers.map((u, i) => (
+                            <TableRow key={u.userId}>
+                              <TableCell className="font-semibold text-xs flex items-center gap-2">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-slate-200 text-slate-700' : i === 2 ? 'bg-amber-700/10 text-amber-800' : 'bg-bg text-text-secondary'}`}>
+                                  {i + 1}
+                                </span>
+                                <div>
+                                  <p className="font-bold text-text">{u.userName}</p>
+                                  <span className="text-[10px] text-text-secondary font-mono">{u.userId}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center font-bold text-xs">{u.orderCount} đơn</TableCell>
+                              <TableCell className="text-right font-black text-xs text-primary">{Math.round(u.earnings).toLocaleString('vi-VN')}đ</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </TableContainer>
+                    ) : (
+                      <div className="p-6 text-center text-xs text-text-secondary">Chưa có dữ liệu thành viên tích lũy hoa hồng</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* TOP 5 PRODUCTS */}
+                <Card className="border-border/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ShoppingBag className="h-4.5 w-4.5 text-success" /> Top Sản Phẩm Bán Chạy Nhất
+                    </CardTitle>
+                    <CardDescription>Danh mục sản phẩm được mua nhiều nhất trên sàn</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {adminStats?.topProducts && adminStats.topProducts.length > 0 ? (
+                      <TableContainer>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Tên Sản Phẩm</TableHead>
+                            <TableHead className="text-center">Số Đơn Mua</TableHead>
+                            <TableHead className="text-right">Tổng Giá Trị Đơn</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {adminStats.topProducts.map((p, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-semibold text-xs max-w-[200px] truncate">
+                                <span title={p.name}>{p.name}</span>
+                              </TableCell>
+                              <TableCell className="text-center font-bold text-xs">{p.count} lượt</TableCell>
+                              <TableCell className="text-right font-bold text-xs text-text">{Math.round(p.totalAmount).toLocaleString('vi-VN')}đ</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </TableContainer>
+                    ) : (
+                      <div className="p-6 text-center text-xs text-text-secondary">Chưa có dữ liệu sản phẩm phát sinh đơn hàng</div>
+                    )}
+                  </CardContent>
+                </Card>
+
               </div>
 
             </div>
@@ -826,7 +953,8 @@ export default function AdminPanel() {
                   <Button
                     variant="outline"
                     onClick={() => {
-                      toast.success('Đang tải tệp Excel danh sách đơn hàng...');
+                      exportOrdersCSV();
+                      toast.success('Đã tải xuống file báo cáo đơn hàng CSV!');
                     }}
                     className="flex items-center gap-1.5 border-border font-bold text-xs"
                   >
@@ -913,19 +1041,29 @@ export default function AdminPanel() {
                               {o.status === 'paid' && <Badge variant="warning">Đã thanh toán</Badge>}
                             </TableCell>
                             <TableCell className="text-center">
-                              <button
-                                onClick={() => {
-                                  setEditingOrder(o);
-                                  setEditOrderStatus(o.status);
-                                  setEditOrderRealCashback(o.realCashback !== undefined ? o.realCashback.toString() : o.estimatedCashback.toString());
-                                  setEditOrderNotes(o.notes || '');
-                                }}
-                                className="px-3 py-1.5 text-xs font-bold border border-border text-text hover:bg-bg/50 rounded-button transition-all flex items-center justify-center gap-1.5 mx-auto"
-                                title="Chỉnh sửa đơn hàng"
-                              >
-                                <Edit2 className="h-3.5 w-3.5" />
-                                Chỉnh sửa
-                              </button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => setSelectedOrderDetail(o)}
+                                  className="px-2.5 py-1.5 text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 rounded-button transition-all flex items-center justify-center gap-1"
+                                  title="Xem minh chứng & Chi tiết"
+                                >
+                                  <Activity className="h-3.5 w-3.5" />
+                                  Minh chứng
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingOrder(o);
+                                    setEditOrderStatus(o.status);
+                                    setEditOrderRealCashback(o.realCashback !== undefined ? o.realCashback.toString() : o.estimatedCashback.toString());
+                                    setEditOrderNotes(o.notes || '');
+                                  }}
+                                  className="px-2.5 py-1.5 text-xs font-bold border border-border text-text hover:bg-bg/50 rounded-button transition-all flex items-center justify-center gap-1"
+                                  title="Chỉnh sửa đơn hàng"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                  Sửa
+                                </button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -1037,10 +1175,11 @@ export default function AdminPanel() {
                                   </button>
                                   <button
                                     onClick={() => {
-                                      updateWithdrawalStatus(w.id, 'rejected');
-                                      toast.error(`Đã từ chối lệnh rút tiền ${w.id}`);
+                                      setRejectingWithdrawalId(w.id);
+                                      setWithdrawalRejectNotes('');
                                     }}
                                     className="p-1 bg-danger/10 text-danger hover:bg-danger hover:text-white rounded-button transition-all"
+                                    title="Từ chối lệnh rút tiền"
                                   >
                                     <X className="h-4 w-4" />
                                   </button>
@@ -1242,6 +1381,33 @@ export default function AdminPanel() {
                           className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
                           required
                         />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-text/80">% Hoa hồng tiếp thị tiêu chuẩn (%)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={sysCommissionPercentage}
+                          onChange={(e) => setSysCommissionPercentage(Number(e.target.value))}
+                          className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold"
+                          required
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-text/80">% Tiền hoàn trả cho thành viên (%)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={sysCashbackPercentage}
+                          onChange={(e) => setSysCashbackPercentage(Number(e.target.value))}
+                          className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold text-primary font-bold"
+                          required
+                        />
+                        <p className="text-[10px] text-text-secondary">Ví dụ: 50% có nghĩa là hệ thống chia 50% tiền hoa hồng nhận được cho khách hàng.</p>
                       </div>
 
                       <div className="flex flex-col gap-1.5">
@@ -1708,6 +1874,43 @@ export default function AdminPanel() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* WITHDRAWAL REJECTION REASON DIALOG */}
+      <Dialog isOpen={rejectingWithdrawalId !== null} onClose={() => setRejectingWithdrawalId(null)}>
+        <DialogHeader>
+          <DialogTitle>Từ chối lệnh rút tiền {rejectingWithdrawalId}</DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          <div className="flex flex-col gap-4 text-left">
+            <p className="text-xs text-text-secondary">
+              Vui lòng nhập lý do từ chối để thông báo cho người dùng (Ví dụ: "Số tài khoản không chính xác", "Tên chủ tài khoản không trùng khớp"):
+            </p>
+            <textarea
+              value={withdrawalRejectNotes}
+              onChange={(e) => setWithdrawalRejectNotes(e.target.value)}
+              placeholder="Nhập lý do từ chối..."
+              className="w-full p-3 border border-border rounded-input text-xs outline-none focus:border-primary min-h-[90px]"
+            />
+            <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+              <Button type="button" variant="ghost" onClick={() => setRejectingWithdrawalId(null)} className="font-bold">Hủy bỏ</Button>
+              <Button
+                type="button"
+                className="font-bold bg-danger text-white hover:bg-danger/90 border-none"
+                onClick={async () => {
+                  if (rejectingWithdrawalId) {
+                    await updateWithdrawalStatus(rejectingWithdrawalId, 'rejected');
+                    toast.error(`Đã từ chối lệnh rút tiền ${rejectingWithdrawalId}`);
+                    setRejectingWithdrawalId(null);
+                    setWithdrawalRejectNotes('');
+                  }
+                }}
+              >
+                Xác nhận từ chối
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

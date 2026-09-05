@@ -5,11 +5,13 @@ const {
   logClick,
   getUserOrders,
   adminGetOrders,
-  adminUpdateOrderStatus
+  adminUpdateOrderStatus,
+  updateOrderScreenshot
 } = require('../controllers/orderController');
 
 router.post('/click-log', protect, logClick);
 router.get('/user', protect, getUserOrders);
+router.put('/:id/screenshot', protect, updateOrderScreenshot);
 router.get('/admin', protect, adminOnly, adminGetOrders);
 router.put('/admin/:id/status', protect, adminOnly, adminUpdateOrderStatus);
 

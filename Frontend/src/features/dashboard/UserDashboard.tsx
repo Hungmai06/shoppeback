@@ -206,20 +206,23 @@ export default function UserDashboard() {
     setPasswordNew('');
   };
 
-  const handleUploadScreenshotSimulation = (orderId: string) => {
+  const handleUploadScreenshotSimulation = async (orderId: string) => {
     setUploadingOrderId(orderId);
+    const mockScreenshotUrl = 'https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?auto=format&fit=crop&q=80&w=400';
 
-    setTimeout(() => {
-      uploadOrderScreenshot(orderId, 'https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?auto=format&fit=crop&q=80&w=400');
+    try {
+      await uploadOrderScreenshot(orderId, mockScreenshotUrl);
       toast.success('Đã tải lên ảnh chụp đơn hàng! Admin sẽ đối soát nhanh chóng hơn.');
 
-      // Update selected order in dialog
       const updatedOrder = orders.find(o => o.id === orderId);
       if (updatedOrder) {
-        setSelectedOrder({ ...updatedOrder, screenshot: 'https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?auto=format&fit=crop&q=80&w=400' });
+        setSelectedOrder({ ...updatedOrder, screenshot: mockScreenshotUrl });
       }
+    } catch (err) {
+      toast.error('Lỗi khi tải ảnh minh chứng');
+    } finally {
       setUploadingOrderId(null);
-    }, 1500);
+    }
   };
 
   const getStatusBadge = (status: Order['status']) => {

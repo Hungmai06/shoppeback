@@ -210,9 +210,28 @@ async function adminUpdateOrderStatus(req, res) {
   }
 }
 
+async function updateOrderScreenshot(req, res) {
+  const { id } = req.params;
+  const { screenshot } = req.body;
+
+  if (!screenshot) {
+    return res.status(400).json({ message: 'Thiếu đường dẫn ảnh chụp minh chứng' });
+  }
+
+  try {
+    const db = await getDatabase();
+    await db.run('UPDATE orders SET screenshot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [screenshot, id]);
+    res.json({ message: 'Đã cập nhật ảnh minh chứng đơn hàng thành công' });
+  } catch (error) {
+    console.error('Update Screenshot Error:', error);
+    res.status(500).json({ message: 'Lỗi máy chủ khi lưu ảnh minh chứng' });
+  }
+}
+
 module.exports = {
   logClick,
   getUserOrders,
   adminGetOrders,
-  adminUpdateOrderStatus
+  adminUpdateOrderStatus,
+  updateOrderScreenshot
 };
