@@ -209,8 +209,27 @@ async function adminGetStats(req, res) {
       }
     });
 
+    // Helper to extract YYYY-MM
+    const extractYearMonth = (val) => {
+      if (!val) return '';
+      const str = String(val).trim();
+      const matchIso = str.match(/^(\d{4})[\/\-](\d{1,2})/);
+      if (matchIso) return `${matchIso[1]}-${String(matchIso[2]).padStart(2, '0')}`;
+      const matchVn = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      if (matchVn) return `${matchVn[3]}-${String(matchVn[2]).padStart(2, '0')}`;
+      const num = Number(str);
+      if (!isNaN(num) && num > 20000 && num < 100000) {
+        const d = new Date((num - 25569) * 86400 * 1000);
+        if (!isNaN(d.getTime())) return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return '';
+    };
+
     // Monthly chart data (last 6 months)
     const monthlyStatsMap = {};
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -232,14 +251,15 @@ async function adminGetStats(req, res) {
         ? o.shopee_commission
         : (userCb * 2);
 
-      const dateStr = o.created_at || '';
-      if (dateStr.length >= 7) {
-        const monthKey = dateStr.substring(0, 7); // YYYY-MM
-        if (monthlyStatsMap[monthKey]) {
-          monthlyStatsMap[monthKey].revenue += shopeeComm;
-          monthlyStatsMap[monthKey].cashback += userCb;
-          monthlyStatsMap[monthKey].profit += (shopeeComm - userCb);
-        }
+      const monthKey = extractYearMonth(o.created_at) || currentMonthKey;
+      if (monthlyStatsMap[monthKey]) {
+        monthlyStatsMap[monthKey].revenue += shopeeComm;
+        monthlyStatsMap[monthKey].cashback += userCb;
+        monthlyStatsMap[monthKey].profit += Math.max(0, shopeeComm - userCb);
+      } else if (monthlyStatsMap[currentMonthKey]) {
+        monthlyStatsMap[currentMonthKey].revenue += shopeeComm;
+        monthlyStatsMap[currentMonthKey].cashback += userCb;
+        monthlyStatsMap[currentMonthKey].profit += Math.max(0, shopeeComm - userCb);
       }
     });
 

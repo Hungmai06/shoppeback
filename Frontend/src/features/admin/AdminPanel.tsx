@@ -497,16 +497,21 @@ export default function AdminPanel() {
   // Chart Monthly Analytics computed dynamically from real database/orders
   const revenueChartData = useMemo(() => {
     if (adminStats && adminStats.monthlyAnalytics && adminStats.monthlyAnalytics.length > 0) {
-      return adminStats.monthlyAnalytics.map(a => ({
-        month: a.name,
-        DoanhThu: a.revenue,
-        HoaHongChi: a.cashback,
-        LoiNhuan: a.profit
-      }));
+      const hasData = adminStats.monthlyAnalytics.some(a => a.revenue > 0 || a.cashback > 0 || a.profit > 0);
+      if (hasData) {
+        return adminStats.monthlyAnalytics.map(a => ({
+          month: a.name,
+          DoanhThu: a.revenue,
+          HoaHongChi: a.cashback,
+          LoiNhuan: a.profit
+        }));
+      }
     }
 
     const monthlyMap: Record<string, { month: string; DoanhThu: number; HoaHongChi: number; LoiNhuan: number }> = {};
     const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -518,17 +523,34 @@ export default function AdminPanel() {
       };
     }
 
+    const extractMonthKey = (val: string) => {
+      if (!val) return '';
+      const str = String(val).trim();
+      const matchIso = str.match(/^(\d{4})[\/\-](\d{1,2})/);
+      if (matchIso) return `${matchIso[1]}-${String(matchIso[2]).padStart(2, '0')}`;
+      const matchVn = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      if (matchVn) return `${matchVn[3]}-${String(matchVn[2]).padStart(2, '0')}`;
+      const num = Number(str);
+      if (!isNaN(num) && num > 20000 && num < 100000) {
+        const d = new Date((num - 25569) * 86400 * 1000);
+        if (!isNaN(d.getTime())) return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
+      return '';
+    };
+
     orders.forEach(o => {
       const cb = o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0);
       const comm = (o as any).shopeeCommission || (cb * 2);
-      const dateStr = o.createdTime || '';
-      if (dateStr.length >= 7) {
-        const key = dateStr.substring(0, 7);
-        if (monthlyMap[key]) {
-          monthlyMap[key].DoanhThu += comm;
-          monthlyMap[key].HoaHongChi += cb;
-          monthlyMap[key].LoiNhuan += (comm - cb);
-        }
+      const mKey = extractMonthKey(o.createdTime) || currentMonthKey;
+      
+      if (monthlyMap[mKey]) {
+        monthlyMap[mKey].DoanhThu += comm;
+        monthlyMap[mKey].HoaHongChi += cb;
+        monthlyMap[mKey].LoiNhuan += Math.max(0, comm - cb);
+      } else if (monthlyMap[currentMonthKey]) {
+        monthlyMap[currentMonthKey].DoanhThu += comm;
+        monthlyMap[currentMonthKey].HoaHongChi += cb;
+        monthlyMap[currentMonthKey].LoiNhuan += Math.max(0, comm - cb);
       }
     });
 
@@ -1028,8 +1050,9 @@ export default function AdminPanel() {
                         <TableHead>Thành Viên</TableHead>
                         <TableHead>Sản Phẩm</TableHead>
                         <TableHead className="text-right">Giá Trị Đơn</TableHead>
-                        <TableHead className="text-right">Hoa Hồng Shopee</TableHead>
+                        <TableHead className="text-right">Hoa Hồng Shopee (100%)</TableHead>
                         <TableHead className="text-right">Hoàn Tiền Khách</TableHead>
+                        <TableHead className="text-right">Hoa Hồng Còn Lại (Lợi Nhuận)</TableHead>
                         <TableHead>Ngày Đặt</TableHead>
                         <TableHead>Trạng Thái</TableHead>
                         <TableHead className="text-center">Thao Tác</TableHead>
@@ -1038,14 +1061,14 @@ export default function AdminPanel() {
                     <TableBody>
                       {isLoadingOrders ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center py-16 text-xs text-text-secondary font-medium">
+                          <TableCell colSpan={10} className="text-center py-16 text-xs text-text-secondary font-medium">
                             <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
                             Đang tải danh sách đơn hàng...
                           </TableCell>
                         </TableRow>
                       ) : paginatedOrders.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center py-16 text-xs text-text-secondary font-medium">
+                          <TableCell colSpan={10} className="text-center py-16 text-xs text-text-secondary font-medium">
                             Chưa có đơn hàng nào phát sinh hoặc không tìm thấy đơn hàng phù hợp với từ khóa tìm kiếm.
                           </TableCell>
                         </TableRow>
@@ -1054,6 +1077,7 @@ export default function AdminPanel() {
                           const shopeeComm = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
                           const cashbackPercent = settings?.cashbackPercentage ?? 50;
                           const userCashback = shopeeComm * (cashbackPercent / 100);
+                          const adminProfit = Math.max(0, shopeeComm - userCashback);
                           return (
                             <TableRow key={o.id}>
                               <TableCell className="font-bold text-primary">{o.id}</TableCell>
@@ -1073,6 +1097,7 @@ export default function AdminPanel() {
                               <TableCell className="text-right font-semibold">{Math.round(o.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
                               <TableCell className="text-right font-semibold text-text-secondary">{Math.round(shopeeComm).toLocaleString('vi-VN')}đ</TableCell>
                               <TableCell className="text-right font-bold text-primary">{Math.round(userCashback).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-bold text-success">{Math.round(adminProfit).toLocaleString('vi-VN')}đ</TableCell>
                               <TableCell className="text-xs font-semibold text-text-secondary">
                                 {o.createdTime ? o.createdTime.substring(0, 16) : '-'}
                               </TableCell>
