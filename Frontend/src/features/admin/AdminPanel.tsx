@@ -1019,7 +1019,10 @@ export default function AdminPanel() {
                             <TableCell className="font-bold text-primary">{o.id}</TableCell>
                             <TableCell className="font-semibold text-xs text-text-secondary">
                               {o.userId ? (
-                                <span className="font-mono">{o.userId}</span>
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-text">{o.userName || o.userId}</span>
+                                  {o.userName && <span className="text-[10px] text-text-secondary font-mono">{o.userId} {o.userEmail ? `(${o.userEmail})` : ''}</span>}
+                                </div>
                               ) : (
                                 <Badge variant="outline" className="text-warning border-warning/30 bg-yellow-50/50 text-[10px]">Chưa xác định</Badge>
                               )}

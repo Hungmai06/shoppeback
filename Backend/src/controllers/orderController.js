@@ -59,27 +59,37 @@ async function adminGetOrders(req, res) {
     const db = await getDatabase();
     const offset = (page - 1) * limit;
 
-    let query = 'SELECT * FROM orders WHERE 1=1';
-    let countQuery = 'SELECT COUNT(*) as count FROM orders WHERE 1=1';
+    let query = `
+      SELECT o.*, u.name as user_name, u.email as user_email 
+      FROM orders o 
+      LEFT JOIN users u ON o.user_id = u.id 
+      WHERE 1=1
+    `;
+    let countQuery = `
+      SELECT COUNT(*) as count 
+      FROM orders o 
+      LEFT JOIN users u ON o.user_id = u.id 
+      WHERE 1=1
+    `;
     const params = [];
     const countParams = [];
 
     if (search) {
       const searchParam = `%${search}%`;
-      query += ' AND (id LIKE ? OR product_name LIKE ? OR user_id LIKE ?)';
-      countQuery += ' AND (id LIKE ? OR product_name LIKE ? OR user_id LIKE ?)';
-      params.push(searchParam, searchParam, searchParam);
-      countParams.push(searchParam, searchParam, searchParam);
+      query += ' AND (o.id LIKE ? OR o.product_name LIKE ? OR o.user_id LIKE ? OR u.name LIKE ? OR u.email LIKE ?)';
+      countQuery += ' AND (o.id LIKE ? OR o.product_name LIKE ? OR o.user_id LIKE ? OR u.name LIKE ? OR u.email LIKE ?)';
+      params.push(searchParam, searchParam, searchParam, searchParam, searchParam);
+      countParams.push(searchParam, searchParam, searchParam, searchParam, searchParam);
     }
 
     if (status && status !== 'all') {
-      query += ' AND status = ?';
-      countQuery += ' AND status = ?';
+      query += ' AND o.status = ?';
+      countQuery += ' AND o.status = ?';
       params.push(status);
       countParams.push(status);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY o.created_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));
 
     const orders = await db.all(query, params);

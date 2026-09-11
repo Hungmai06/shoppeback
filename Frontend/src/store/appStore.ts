@@ -10,6 +10,8 @@ export interface Order {
   status: 'pending' | 'approved' | 'rejected' | 'returned' | 'paid';
   createdTime: string;
   userId: string;
+  userName?: string;
+  userEmail?: string;
   screenshot?: string;
   notes?: string;
 }
@@ -602,6 +604,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           status: o.status,
           createdTime: o.created_at,
           userId: o.user_id,
+          userName: o.user_name || undefined,
+          userEmail: o.user_email || undefined,
           notes: o.notes || undefined
         }));
         set({ orders: mappedOrders, totalAdminOrders: data.pagination.total });
