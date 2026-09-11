@@ -624,13 +624,17 @@ export default function AdminPanel() {
               {/* TOP WIDGETS CARDS */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {[
-                  { title: "Tổng thành viên", value: totalUsersCount, desc: "Tài khoản người dùng", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" /> },
-                  { title: "Tổng đơn hàng", value: totalOrdersCount, desc: "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" /> },
+                  { title: "Tổng thành viên", value: totalUsersCount, desc: "Tài khoản người dùng", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" />, tab: 'users' },
+                  { title: "Tổng đơn hàng", value: totalOrdersCount, desc: "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" />, tab: 'orders' },
                   { title: "Tổng hoa hồng sàn (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Tổng hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
                   { title: "Hoa hồng giữ lại (Lợi nhuận)", value: `${Math.round(adminStats?.summary?.netProfit || totalEstimatedRevenue).toLocaleString('vi-VN')}đ`, desc: "Sau khi khấu trừ hoàn tiền cho khách", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
-                  { title: "Tiền đã & chờ chi", value: `${(totalCashbackPaid).toLocaleString('vi-VN')}đ`, desc: `Chờ duyệt: ${(adminStats?.summary?.pendingWithdrawalsTotal || 0).toLocaleString('vi-VN')}đ`, color: "text-warning", icon: <Wallet className="h-5 w-5 text-warning" /> }
+                  { title: "Tiền đã & chờ chi", value: `${(totalCashbackPaid).toLocaleString('vi-VN')}đ`, desc: `Chờ duyệt: ${(adminStats?.summary?.pendingWithdrawalsTotal || 0).toLocaleString('vi-VN')}đ`, color: "text-warning", icon: <Wallet className="h-5 w-5 text-warning" />, tab: 'withdrawals' }
                 ].map((card, idx) => (
-                  <Card key={idx} className="border-border/50 relative overflow-hidden">
+                  <Card 
+                    key={idx} 
+                    onClick={() => card.tab && setActiveTab(card.tab as any)}
+                    className={`border-border/50 relative overflow-hidden transition-all ${card.tab ? 'cursor-pointer hover:border-primary/50 hover:shadow-md' : ''}`}
+                  >
                     <CardHeader className="p-4 pb-1 flex flex-row items-center justify-between">
                       <CardDescription className="font-bold text-text-secondary uppercase tracking-wider text-[9px]">{card.title}</CardDescription>
                       {card.icon}
