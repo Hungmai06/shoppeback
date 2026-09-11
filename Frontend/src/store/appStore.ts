@@ -387,12 +387,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addOrder: async (order) => {
-    // Record click log
+    // Record click log & save pending order to database
     try {
       await fetch(`${API_BASE}/orders/click-log`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ productUrl: order.productName })
+        body: JSON.stringify({
+          productUrl: order.productName,
+          productName: order.productName,
+          productImage: order.productImage,
+          orderAmount: order.orderAmount,
+          estimatedCashback: order.estimatedCashback
+        })
       });
       // Visual feedback: temporarily append to state so it renders instantly
       set((state) => ({ orders: [order, ...state.orders] }));

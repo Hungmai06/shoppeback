@@ -1,9 +1,9 @@
 const { getDatabase } = require('../config/db');
 
 async function logClick(req, res) {
-  const { productUrl } = req.body;
+  const { productUrl, productName, productImage, orderAmount, estimatedCashback } = req.body;
 
-  if (!productUrl) {
+  if (!productUrl && !productName) {
     return res.status(400).json({ message: 'Thiếu đường dẫn sản phẩm' });
   }
 
@@ -13,8 +13,24 @@ async function logClick(req, res) {
 
     await db.run(
       'INSERT INTO click_logs (id, user_id, product_url) VALUES (?, ?, ?)',
-      [clickId, req.user.id, productUrl]
+      [clickId, req.user.id, productUrl || productName]
     );
+
+    // Save pending order to orders table so it persists for Admin and User
+    const name = productName || productUrl;
+    const img = productImage || '';
+    const amount = Number(orderAmount) || 100000;
+    const cashback = Number(estimatedCashback) || Math.round(amount * 0.035);
+
+    try {
+      await db.run(
+        `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [clickId, req.user.id, clickId, name, img, amount, cashback]
+      );
+    } catch (oErr) {
+      console.warn('Order insertion warning on click:', oErr.message);
+    }
 
     res.status(201).json({ message: 'Đã ghi nhận lượt click mua hàng', clickId });
   } catch (error) {
