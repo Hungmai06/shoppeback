@@ -5,25 +5,39 @@ const XLSX = require('xlsx');
 const { getDatabase } = require('../config/db');
 
 async function readRowsFromFile(filePath, originalName = '') {
-  // First try XLSX parser which handles CSV (UTF-8, UTF-16, BOM), TSV, XLSX, XLS automatically
+  const ext = path.extname(originalName || filePath).toLowerCase();
+  
+  if (ext === '.xlsx' || ext === '.xls') {
+    try {
+      const workbook = XLSX.readFile(filePath, { raw: false, cellDates: true });
+      if (workbook.SheetNames && workbook.SheetNames.length > 0) {
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        return XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      }
+    } catch (e) {
+      console.warn('XLSX binary read warning:', e.message);
+    }
+  }
+
+  // Read string for CSV/TSV/text files to preserve UTF-8 Vietnamese headers and characters
   try {
-    const workbook = XLSX.readFile(filePath, { raw: false, cellDates: true });
+    const fileStr = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
+    const workbook = XLSX.read(fileStr, { type: 'string', raw: false });
     if (workbook.SheetNames && workbook.SheetNames.length > 0) {
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
       if (rows && rows.length > 0) {
         return rows;
       }
     }
   } catch (e) {
-    console.warn('XLSX parser fallback to csv-parser:', e.message);
+    console.warn('XLSX text read warning, falling back to csv-parser:', e.message);
   }
 
   // Fallback to csv-parser with mapHeaders for BOM stripping
   const rawRows = [];
   await new Promise((resolve, reject) => {
-    fs.createReadStream(filePath)
+    fs.createReadStream(filePath, { encoding: 'utf8' })
       .pipe(csv({
         separator: detectSeparator(filePath),
         mapHeaders: ({ header }) => (header || '').replace(/^\uFEFF/, '').trim()
@@ -59,7 +73,8 @@ function extractRowFields(row) {
   // Build a normalized key map for fast lookup
   const normMap = {};
   for (const [key, val] of Object.entries(row)) {
-    normMap[normalizeHeader(key)] = { key, val: (val || '').trim() };
+    const strVal = (val !== null && val !== undefined) ? String(val).trim() : '';
+    normMap[normalizeHeader(key)] = { key, val: strVal };
   }
 
   // === ORDER ID ===
