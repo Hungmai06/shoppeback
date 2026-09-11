@@ -622,8 +622,8 @@ export default function AdminPanel() {
                 {[
                   { title: "Tổng thành viên", value: totalUsersCount, desc: "Tài khoản người dùng", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" /> },
                   { title: "Tổng đơn hàng", value: totalOrdersCount, desc: "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" /> },
-                  { title: "Doanh thu gộp (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
-                  { title: "Lợi nhuận ròng", value: `${Math.round(adminStats?.summary?.netProfit || totalEstimatedRevenue).toLocaleString('vi-VN')}đ`, desc: "Sau khấu trừ hoàn tiền", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
+                  { title: "Tổng hoa hồng sàn (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Tổng hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
+                  { title: "Hoa hồng giữ lại (Lợi nhuận)", value: `${Math.round(adminStats?.summary?.netProfit || totalEstimatedRevenue).toLocaleString('vi-VN')}đ`, desc: "Sau khi khấu trừ hoàn tiền cho khách", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
                   { title: "Tiền đã & chờ chi", value: `${(totalCashbackPaid).toLocaleString('vi-VN')}đ`, desc: `Chờ duyệt: ${(adminStats?.summary?.pendingWithdrawalsTotal || 0).toLocaleString('vi-VN')}đ`, color: "text-warning", icon: <Wallet className="h-5 w-5 text-warning" /> }
                 ].map((card, idx) => (
                   <Card key={idx} className="border-border/50 relative overflow-hidden">
@@ -643,7 +643,7 @@ export default function AdminPanel() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="lg:col-span-2 border-border/50">
                   <CardHeader>
-                    <CardTitle className="text-base">Biểu đồ Doanh thu & Lợi nhuận</CardTitle>
+                    <CardTitle className="text-base">Biểu đồ Hoa hồng & Lợi nhuận Admin</CardTitle>
                     <CardDescription>Biến động tài chính của hệ thống trong 6 tháng qua (VND)</CardDescription>
                   </CardHeader>
                   <CardContent className="h-72 pl-0">
@@ -663,8 +663,8 @@ export default function AdminPanel() {
                         <YAxis stroke="#6B7280" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val} />
                         <Tooltip formatter={(val) => [`${Number(val).toLocaleString('vi-VN')}đ`]} contentStyle={{ borderRadius: 12, border: '1px solid #ECECEC' }} />
                         <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
-                        <Area type="monotone" dataKey="DoanhThu" name="Doanh thu gộp" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDoanhThu)" strokeWidth={2.5} />
-                        <Area type="monotone" dataKey="LoiNhuan" name="Lợi nhuận ròng" stroke="#22C55E" fillOpacity={1} fill="url(#colorLoiNhuan)" strokeWidth={2.5} />
+                        <Area type="monotone" dataKey="DoanhThu" name="Tổng hoa hồng sàn" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDoanhThu)" strokeWidth={2.5} />
+                        <Area type="monotone" dataKey="LoiNhuan" name="Hoa hồng giữ lại (Lợi nhuận)" stroke="#22C55E" fillOpacity={1} fill="url(#colorLoiNhuan)" strokeWidth={2.5} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -1061,12 +1061,21 @@ export default function AdminPanel() {
                                     setEditOrderStatus(o.status);
                                     setEditOrderRealCashback(o.realCashback !== undefined ? o.realCashback.toString() : o.estimatedCashback.toString());
                                     setEditOrderNotes(o.notes || '');
+                                    setEditOrderUserId(o.userId || '');
                                   }}
                                   className="px-2.5 py-1.5 text-xs font-bold border border-border text-text hover:bg-bg/50 rounded-button transition-all flex items-center justify-center gap-1"
                                   title="Chỉnh sửa đơn hàng"
                                 >
                                   <Edit2 className="h-3.5 w-3.5" />
                                   Sửa
+                                </button>
+                                <button
+                                  onClick={() => setDeletingOrder(o)}
+                                  className="px-2.5 py-1.5 text-xs font-bold border border-red-200 text-danger hover:bg-red-50 rounded-button transition-all flex items-center justify-center gap-1"
+                                  title="Xóa đơn hàng khỏi CSDL"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Xóa
                                 </button>
                               </div>
                             </TableCell>
