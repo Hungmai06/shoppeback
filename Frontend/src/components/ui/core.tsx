@@ -524,8 +524,8 @@ export const TableHead = ({ children, className }: { children: React.ReactNode; 
   <th className={cn("p-4 font-semibold text-text-secondary", className)}>{children}</th>
 );
 
-export const TableCell = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <td className={cn("p-4 align-middle", className)}>{children}</td>
+export const TableCell = ({ children, className, colSpan }: { children: React.ReactNode; className?: string; colSpan?: number }) => (
+  <td colSpan={colSpan} className={cn("p-4 align-middle", className)}>{children}</td>
 );
 
 // ========================

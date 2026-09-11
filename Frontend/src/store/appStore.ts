@@ -110,6 +110,7 @@ interface AppState {
 
   // Auth state
   currentUser: UserProfile | null;
+  isAuthLoading: boolean;
   users: UserProfile[];
   userStats: UserStats | null;
   adminStats: AdminStats | null;
@@ -206,6 +207,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
 
   currentUser: null,
+  isAuthLoading: Boolean(localStorage.getItem('token')),
   users: [],
   userStats: null,
   adminStats: null,
@@ -236,7 +238,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 2. Fetch authenticated profile if token exists
     const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!token) {
+      set({ isAuthLoading: false });
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE}/auth/profile`, {
@@ -274,6 +279,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       set({ currentUser: null, userStats: null });
+    } finally {
+      set({ isAuthLoading: false });
     }
   },
 
@@ -615,7 +622,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Admin and reconciliation fetches
   fetchAdminOrders: async (page = 1, limit = 10, search = '', status = 'all') => {
     try {
-      const url = new URL(`${API_BASE}/orders/admin`);
+      const url = new URL(`${API_BASE}/orders/admin`, window.location.origin);
       url.searchParams.append('page', page.toString());
       url.searchParams.append('limit', limit.toString());
       if (search) url.searchParams.append('search', search);

@@ -51,7 +51,7 @@ const getPageNumbers = (currentPage: number, totalPages: number) => {
 export default function AdminPanel() {
   const navigate = useNavigate();
   const {
-    currentUser, logout, orders, totalAdminOrders, withdrawals, users, settings,
+    currentUser, isAuthLoading, logout, orders, totalAdminOrders, withdrawals, users, settings,
     updateOrderStatus, deleteOrderAdmin, updateWithdrawalStatus, updateSettings,
     reconciliationHistory, uploadReconciliationCSV, applyReconciliationCSV,
     updateAdminUser, adminStats, fetchAdminOrders, fetchAdminStats, fetchAdminWithdrawals, fetchAdminUsers, fetchReconciliationLogs, exportOrdersCSV,
@@ -67,8 +67,9 @@ export default function AdminPanel() {
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [statsRange, setStatsRange] = useState<'all' | 'today' | '7days' | '30days' | 'this_month'>('all');
 
-  // Order Pagination states
+  // Order Pagination & Loading states
   const [orderPage, setOrderPage] = useState(1);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const ordersPerPage = 10;
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -84,8 +85,10 @@ export default function AdminPanel() {
       } else if (activeTab === 'users') {
         fetchAdminUsers();
       } else if (activeTab === 'orders') {
-        const delay = setTimeout(() => {
-          fetchAdminOrders(orderPage, ordersPerPage, orderSearch, orderStatusFilter);
+        setIsLoadingOrders(true);
+        const delay = setTimeout(async () => {
+          await fetchAdminOrders(orderPage, ordersPerPage, orderSearch, orderStatusFilter);
+          setIsLoadingOrders(false);
         }, 300);
         return () => clearTimeout(delay);
       } else if (activeTab === 'withdrawals') {
@@ -185,13 +188,26 @@ export default function AdminPanel() {
 
   // Redirect if not admin
   React.useEffect(() => {
+    if (isAuthLoading) return;
+
     if (!currentUser) {
       navigate('/auth/login');
     } else if (currentUser.role !== 'admin') {
       toast.error('Bạn không có quyền truy cập khu vực Quản trị');
       navigate('/');
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, isAuthLoading, navigate]);
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm font-bold text-text-secondary">Đang kiểm tra quyền Quản trị hệ thống...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser || currentUser.role !== 'admin') return null;
 
@@ -1020,76 +1036,91 @@ export default function AdminPanel() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {paginatedOrders.map((o) => {
-                        const shopeeComm = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
-                        const cashbackPercent = settings?.cashbackPercentage ?? 50;
-                        const userCashback = shopeeComm * (cashbackPercent / 100);
-                        return (
-                          <TableRow key={o.id}>
-                            <TableCell className="font-bold text-primary">{o.id}</TableCell>
-                            <TableCell className="font-semibold text-xs text-text-secondary">
-                              {o.userId ? (
-                                <div className="flex flex-col">
-                                  <span className="font-bold text-text">{o.userName || o.userId}</span>
-                                  {o.userName && <span className="text-[10px] text-text-secondary font-mono">{o.userId} {o.userEmail ? `(${o.userEmail})` : ''}</span>}
+                      {isLoadingOrders ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-16 text-xs text-text-secondary font-medium">
+                            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
+                            Đang tải danh sách đơn hàng...
+                          </TableCell>
+                        </TableRow>
+                      ) : paginatedOrders.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-16 text-xs text-text-secondary font-medium">
+                            Chưa có đơn hàng nào phát sinh hoặc không tìm thấy đơn hàng phù hợp với từ khóa tìm kiếm.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        paginatedOrders.map((o) => {
+                          const shopeeComm = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
+                          const cashbackPercent = settings?.cashbackPercentage ?? 50;
+                          const userCashback = shopeeComm * (cashbackPercent / 100);
+                          return (
+                            <TableRow key={o.id}>
+                              <TableCell className="font-bold text-primary">{o.id}</TableCell>
+                              <TableCell className="font-semibold text-xs text-text-secondary">
+                                {o.userId ? (
+                                  <div className="flex flex-col">
+                                    <span className="font-bold text-text">{o.userName || o.userId}</span>
+                                    {o.userName && <span className="text-[10px] text-text-secondary font-mono">{o.userId} {o.userEmail ? `(${o.userEmail})` : ''}</span>}
+                                  </div>
+                                ) : (
+                                  <Badge variant="outline" className="text-warning border-warning/30 bg-yellow-50/50 text-[10px]">Chưa xác định</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="max-w-[180px] truncate font-semibold">
+                                <span className="truncate" title={o.productName}>{o.productName}</span>
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">{Math.round(o.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-semibold text-text-secondary">{Math.round(shopeeComm).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-bold text-primary">{Math.round(userCashback).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-xs font-semibold text-text-secondary">
+                                {o.createdTime ? o.createdTime.substring(0, 16) : '-'}
+                              </TableCell>
+                              <TableCell>
+                                {o.status === 'pending' && <Badge variant="info">Đang chờ xử lý</Badge>}
+                                {o.status === 'approved' && <Badge variant="success">Hoàn thành</Badge>}
+                                {o.status === 'rejected' && <Badge variant="danger">Hủy</Badge>}
+                                {o.status === 'returned' && <Badge variant="warning" className="bg-orange-50 text-orange-600 border-orange-200">Hoàn hàng</Badge>}
+                                {o.status === 'paid' && <Badge variant="warning">Đã thanh toán</Badge>}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => setSelectedOrderDetail(o)}
+                                    className="px-2.5 py-1.5 text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 rounded-button transition-all flex items-center justify-center gap-1"
+                                    title="Xem minh chứng & Chi tiết"
+                                  >
+                                    <Activity className="h-3.5 w-3.5" />
+                                    Minh chứng
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setEditingOrder(o);
+                                      setEditOrderStatus(o.status);
+                                      setEditOrderRealCashback(o.realCashback !== undefined ? o.realCashback.toString() : o.estimatedCashback.toString());
+                                      setEditOrderNotes(o.notes || '');
+                                      setEditOrderUserId(o.userId || '');
+                                    }}
+                                    className="px-2.5 py-1.5 text-xs font-bold border border-border text-text hover:bg-bg/50 rounded-button transition-all flex items-center justify-center gap-1"
+                                    title="Chỉnh sửa đơn hàng"
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                    Sửa
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingOrder(o)}
+                                    className="px-2.5 py-1.5 text-xs font-bold border border-red-200 text-danger hover:bg-red-50 rounded-button transition-all flex items-center justify-center gap-1"
+                                    title="Xóa đơn hàng khỏi CSDL"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Xóa
+                                  </button>
                                 </div>
-                              ) : (
-                                <Badge variant="outline" className="text-warning border-warning/30 bg-yellow-50/50 text-[10px]">Chưa xác định</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="max-w-[180px] truncate font-semibold">
-                              <span className="truncate" title={o.productName}>{o.productName}</span>
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">{Math.round(o.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-right font-semibold text-text-secondary">{Math.round(shopeeComm).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-right font-bold text-primary">{Math.round(userCashback).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-xs font-semibold text-text-secondary">
-                              {o.createdTime ? o.createdTime.substring(0, 16) : '-'}
-                            </TableCell>
-                            <TableCell>
-                              {o.status === 'pending' && <Badge variant="info">Đang chờ xử lý</Badge>}
-                              {o.status === 'approved' && <Badge variant="success">Hoàn thành</Badge>}
-                              {o.status === 'rejected' && <Badge variant="danger">Hủy</Badge>}
-                              {o.status === 'returned' && <Badge variant="warning" className="bg-orange-50 text-orange-600 border-orange-200">Hoàn hàng</Badge>}
-                              {o.status === 'paid' && <Badge variant="warning">Đã thanh toán</Badge>}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => setSelectedOrderDetail(o)}
-                                  className="px-2.5 py-1.5 text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 rounded-button transition-all flex items-center justify-center gap-1"
-                                  title="Xem minh chứng & Chi tiết"
-                                >
-                                  <Activity className="h-3.5 w-3.5" />
-                                  Minh chứng
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setEditingOrder(o);
-                                    setEditOrderStatus(o.status);
-                                    setEditOrderRealCashback(o.realCashback !== undefined ? o.realCashback.toString() : o.estimatedCashback.toString());
-                                    setEditOrderNotes(o.notes || '');
-                                    setEditOrderUserId(o.userId || '');
-                                  }}
-                                  className="px-2.5 py-1.5 text-xs font-bold border border-border text-text hover:bg-bg/50 rounded-button transition-all flex items-center justify-center gap-1"
-                                  title="Chỉnh sửa đơn hàng"
-                                >
-                                  <Edit2 className="h-3.5 w-3.5" />
-                                  Sửa
-                                </button>
-                                <button
-                                  onClick={() => setDeletingOrder(o)}
-                                  className="px-2.5 py-1.5 text-xs font-bold border border-red-200 text-danger hover:bg-red-50 rounded-button transition-all flex items-center justify-center gap-1"
-                                  title="Xóa đơn hàng khỏi CSDL"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Xóa
-                                </button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
                     </TableBody>
                   </TableContainer>
 
