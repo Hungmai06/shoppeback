@@ -128,7 +128,8 @@ interface AppState {
   orders: Order[];
   totalAdminOrders: number;
   addOrder: (order: Order) => Promise<void>;
-  updateOrderStatus: (id: string, status: Order['status'], realCashback?: number, notes?: string) => Promise<void>;
+  updateOrderStatus: (id: string, status: Order['status'], realCashback?: number, notes?: string, userId?: string) => Promise<void>;
+  deleteOrderAdmin: (id: string) => Promise<boolean>;
   uploadOrderScreenshot: (id: string, screenshotUrl: string) => void;
 
   // Withdrawals state
@@ -387,7 +388,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addOrder: async (order) => {
-    // Record click log & save pending order to database
+    // Record click log & persist pending order in DB
     try {
       await fetch(`${API_BASE}/orders/click-log`, {
         method: 'POST',
@@ -400,19 +401,19 @@ export const useAppStore = create<AppState>((set, get) => ({
           estimatedCashback: order.estimatedCashback
         })
       });
-      // Visual feedback: temporarily append to state so it renders instantly
+      // Visual feedback in local UI
       set((state) => ({ orders: [order, ...state.orders] }));
     } catch (error) {
       console.error('Click log error:', error);
     }
   },
 
-  updateOrderStatus: async (id, status, realCashback, notes) => {
+  updateOrderStatus: async (id, status, realCashback, notes, userId) => {
     try {
       const res = await fetch(`${API_BASE}/orders/admin/${id}/status`, {
         method: 'PUT',
         headers: getHeaders(),
-        body: JSON.stringify({ status, realCashback, notes })
+        body: JSON.stringify({ status, realCashback, notes, userId })
       });
 
       if (res.ok) {
@@ -421,6 +422,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (error) {
       console.error('Update order status error:', error);
+    }
+  },
+
+  deleteOrderAdmin: async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/orders/admin/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+
+      if (res.ok) {
+        set((state) => ({
+          orders: state.orders.filter(o => o.id !== id),
+          totalAdminOrders: Math.max(0, state.totalAdminOrders - 1)
+        }));
+        await get().fetchAdminOrders();
+        await get().fetchAdminStats();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Delete order error:', error);
+      return false;
     }
   },
 

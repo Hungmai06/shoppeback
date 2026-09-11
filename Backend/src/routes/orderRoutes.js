@@ -6,6 +6,7 @@ const {
   getUserOrders,
   adminGetOrders,
   adminUpdateOrderStatus,
+  adminDeleteOrder,
   updateOrderScreenshot
 } = require('../controllers/orderController');
 
@@ -14,5 +15,6 @@ router.get('/user', protect, getUserOrders);
 router.put('/:id/screenshot', protect, updateOrderScreenshot);
 router.get('/admin', protect, adminOnly, adminGetOrders);
 router.put('/admin/:id/status', protect, adminOnly, adminUpdateOrderStatus);
+router.delete('/admin/:id', protect, adminOnly, adminDeleteOrder);
 
 module.exports = router;

@@ -52,7 +52,7 @@ export default function AdminPanel() {
   const navigate = useNavigate();
   const {
     currentUser, logout, orders, totalAdminOrders, withdrawals, users, settings,
-    updateOrderStatus, updateWithdrawalStatus, updateSettings,
+    updateOrderStatus, deleteOrderAdmin, updateWithdrawalStatus, updateSettings,
     reconciliationHistory, uploadReconciliationCSV, applyReconciliationCSV,
     updateAdminUser, adminStats, fetchAdminOrders, fetchAdminStats, fetchAdminWithdrawals, fetchAdminUsers, fetchReconciliationLogs, exportOrdersCSV,
     createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus
@@ -103,11 +103,13 @@ export default function AdminPanel() {
   const [rejectingWithdrawalId, setRejectingWithdrawalId] = useState<string | null>(null);
   const [withdrawalRejectNotes, setWithdrawalRejectNotes] = useState<string>('');
 
-  // Order Edit states
+  // Order Edit & Delete states
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [editOrderStatus, setEditOrderStatus] = useState<Order['status']>('pending');
   const [editOrderRealCashback, setEditOrderRealCashback] = useState<string>('');
   const [editOrderNotes, setEditOrderNotes] = useState<string>('');
+  const [editOrderUserId, setEditOrderUserId] = useState<string>('');
+  const [deletingOrder, setDeletingOrder] = useState<Order | null>(null);
 
   // Reconciliation states for Orders Tab
   const [reconcileModalData, setReconcileModalData] = useState<any>(null);
@@ -256,7 +258,7 @@ export default function AdminPanel() {
     }
 
     try {
-      await updateOrderStatus(editingOrder.id, editOrderStatus, cashbackVal, editOrderNotes);
+      await updateOrderStatus(editingOrder.id, editOrderStatus, cashbackVal, editOrderNotes, editOrderUserId);
       toast.success(`Đã cập nhật đơn hàng ${editingOrder.id} thành công!`);
       setEditingOrder(null);
     } catch (err: any) {
@@ -1744,6 +1746,20 @@ export default function AdminPanel() {
             </div>
 
             <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-text/80">Gán cho thành viên (User ID hoặc Email)</label>
+              <input
+                type="text"
+                value={editOrderUserId}
+                onChange={(e) => setEditOrderUserId(e.target.value)}
+                placeholder="Nhập Mã User ID (ví dụ USR101) hoặc Email..."
+                className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+              />
+              <p className="text-[11px] text-text-secondary font-medium">
+                * Nếu thay đổi, đơn hàng sẽ được chuyển sang tài khoản của thành viên này quản lý.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-text/80">Hoa hồng Shopee thực tế (₫)</label>
               <input
                 type="number"
@@ -1787,6 +1803,43 @@ export default function AdminPanel() {
               <Button type="submit" className="font-bold">Lưu thay đổi</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DELETE ORDER DIALOG */}
+      <Dialog isOpen={deletingOrder !== null} onClose={() => setDeletingOrder(null)}>
+        <DialogHeader>
+          <DialogTitle>Xóa đơn hàng {deletingOrder?.id}</DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          <div className="flex flex-col gap-4 text-left font-sans">
+            <p className="text-sm text-text">
+              Bạn có chắc chắn muốn xóa vĩnh viễn đơn hàng <span className="font-bold text-danger">{deletingOrder?.id}</span> ({deletingOrder?.productName}) khỏi hệ thống?
+            </p>
+            <p className="text-xs text-text-secondary bg-red-50 border border-red-100 p-3 rounded-input font-medium">
+              ⚠️ Hành động này sẽ xóa vĩnh viễn đơn hàng khỏi CSDL và không thể hoàn tác.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setDeletingOrder(null)} className="font-bold">Hủy bỏ</Button>
+              <Button
+                type="button"
+                onClick={async () => {
+                  if (deletingOrder) {
+                    const success = await deleteOrderAdmin(deletingOrder.id);
+                    if (success) {
+                      toast.success(`Đã xóa đơn hàng ${deletingOrder.id} thành công!`);
+                    } else {
+                      toast.error('Xóa đơn hàng thất bại');
+                    }
+                    setDeletingOrder(null);
+                  }
+                }}
+                className="font-bold bg-danger hover:bg-danger/90 text-white border-none"
+              >
+                Xóa đơn hàng
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

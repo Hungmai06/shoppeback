@@ -10,15 +10,16 @@ async function logClick(req, res) {
   try {
     const db = await getDatabase();
     const clickId = `CLK${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
+    const userId = req.user ? req.user.id : null;
 
     await db.run(
       'INSERT INTO click_logs (id, user_id, product_url) VALUES (?, ?, ?)',
-      [clickId, req.user.id, productUrl || productName]
+      [clickId, userId, productUrl || productName]
     );
 
-    // Save pending order to orders table so it persists for Admin and User
+    // Save pending order to orders table so user and admin can see and manage it
     const name = productName || productUrl;
-    const img = productImage || '';
+    const img = productImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400';
     const amount = Number(orderAmount) || 100000;
     const cashback = Number(estimatedCashback) || Math.round(amount * 0.035);
 
@@ -26,7 +27,7 @@ async function logClick(req, res) {
       await db.run(
         `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, status)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [clickId, req.user.id, clickId, name, img, amount, cashback]
+        [clickId, userId, clickId, name, img, amount, cashback]
       );
     } catch (oErr) {
       console.warn('Order insertion warning on click:', oErr.message);
@@ -129,7 +130,7 @@ async function adminGetOrders(req, res) {
 
 async function adminUpdateOrderStatus(req, res) {
   const { id } = req.params;
-  const { status, realCashback, notes } = req.body;
+  const { status, realCashback, notes, userId } = req.body;
 
   if (!status) {
     return res.status(400).json({ message: 'Trạng thái đơn hàng là bắt buộc' });
@@ -144,8 +145,21 @@ async function adminUpdateOrderStatus(req, res) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
+    // Determine target user ID (allow admin to reassign order to another user)
+    let targetUserId = order.user_id;
+    if (userId !== undefined && userId !== null && userId !== '') {
+      // If user passed an email, resolve to ID if needed
+      if (userId.includes('@')) {
+        const foundUser = await db.get('SELECT id FROM users WHERE email = ?', [userId.trim()]);
+        if (foundUser) targetUserId = foundUser.id;
+        else targetUserId = userId.trim();
+      } else {
+        targetUserId = userId.trim();
+      }
+    }
+
     // Set realCashback if not specified and status changes to approved
-    let finalRealCash = realCashback;
+    let finalRealCash = realCashback !== undefined && realCashback !== '' ? Number(realCashback) : undefined;
     if (finalRealCash === undefined && (status === 'approved' || status === 'paid')) {
       finalRealCash = order.estimated_cashback;
     }
@@ -158,15 +172,16 @@ async function adminUpdateOrderStatus(req, res) {
     await db.run(
       `UPDATE orders
        SET status = ?,
+           user_id = ?,
            real_cashback = ?,
            notes = ?,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [status, updatedRealCashback, updatedNotes, id]
+      [status, targetUserId, updatedRealCashback, updatedNotes, id]
     );
 
     // Update user balance if transitioning to approved
-    if (status === 'approved' && order.status !== 'approved' && order.user_id) {
+    if (status === 'approved' && order.status !== 'approved' && targetUserId) {
       const userCashback = updatedRealCashback;
       
       await db.run(
@@ -174,11 +189,11 @@ async function adminUpdateOrderStatus(req, res) {
          SET balance = COALESCE(balance, 0) + ?,
              total_cashback = COALESCE(total_cashback, 0) + ?
          WHERE id = ?`,
-        [userCashback, userCashback, order.user_id]
+        [userCashback, userCashback, targetUserId]
       );
 
       // Check for referral bonus (20%)
-      const currentUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [order.user_id]);
+      const currentUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
       if (currentUserObj && currentUserObj.referred_by) {
         const refBonus = userCashback * 0.20;
         await db.run(
@@ -198,41 +213,61 @@ async function adminUpdateOrderStatus(req, res) {
       }
     }
 
-    // Create user notification
-    let statusVietnamese = '';
-    if (status === 'approved') statusVietnamese = 'hoàn thành';
-    if (status === 'rejected') statusVietnamese = 'đã bị hủy';
-    if (status === 'returned') statusVietnamese = 'đã hoàn hàng';
-    if (status === 'paid') statusVietnamese = 'đã thanh toán';
+    // Create user notification if user exists
+    if (targetUserId) {
+      let statusVietnamese = '';
+      if (status === 'approved') statusVietnamese = 'hoàn thành';
+      if (status === 'rejected') statusVietnamese = 'đã bị hủy';
+      if (status === 'returned') statusVietnamese = 'đã hoàn hàng';
+      if (status === 'paid') statusVietnamese = 'đã thanh toán';
 
-    if (statusVietnamese) {
-      const notifId = `NT${Date.now()}`;
-      let title = '';
-      if (status === 'approved') title = 'Đơn hàng hoàn thành';
-      else if (status === 'paid') title = 'Đơn hàng đã thanh toán';
-      else if (status === 'returned') title = 'Đơn hàng đã hoàn hàng';
-      else title = 'Đơn hàng bị hủy';
+      if (statusVietnamese) {
+        const notifId = `NT${Date.now()}`;
+        let title = '';
+        if (status === 'approved') title = 'Đơn hàng hoàn thành';
+        else if (status === 'paid') title = 'Đơn hàng đã thanh toán';
+        else if (status === 'returned') title = 'Đơn hàng đã hoàn hàng';
+        else title = 'Đơn hàng bị hủy';
 
-      await db.run(
-        `INSERT INTO notifications (id, user_id, title, content, type)
-         VALUES (?, ?, ?, ?, 'order')`,
-        [
-          notifId,
-          order.user_id,
-          title,
-          `Đơn hàng ${id} (${order.product_name.substring(0, 25)}...) ${statusVietnamese}.`
-        ]
-      );
+        await db.run(
+          `INSERT INTO notifications (id, user_id, title, content, type)
+           VALUES (?, ?, ?, ?, 'order')`,
+          [
+            notifId,
+            targetUserId,
+            title,
+            `Đơn hàng ${id} (${order.product_name.substring(0, 25)}...) ${statusVietnamese}.`
+          ]
+        );
+      }
     }
 
     await db.run('COMMIT');
 
-    res.json({ message: `Đã cập nhật trạng thái đơn hàng sang ${status} thành công` });
+    res.json({ message: `Đã cập nhật đơn hàng thành công` });
   } catch (error) {
     const db = await getDatabase();
     await db.run('ROLLBACK');
     console.error('Admin Update Order Status Error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ khi cập nhật đơn hàng' });
+  }
+}
+
+async function adminDeleteOrder(req, res) {
+  const { id } = req.params;
+
+  try {
+    const db = await getDatabase();
+    const order = await db.get('SELECT * FROM orders WHERE id = ?', [id]);
+    if (!order) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng để xóa' });
+    }
+
+    await db.run('DELETE FROM orders WHERE id = ?', [id]);
+    res.json({ message: 'Đã xóa đơn hàng thành công' });
+  } catch (error) {
+    console.error('Admin Delete Order Error:', error);
+    res.status(500).json({ message: 'Lỗi máy chủ khi xóa đơn hàng' });
   }
 }
 
@@ -259,5 +294,6 @@ module.exports = {
   getUserOrders,
   adminGetOrders,
   adminUpdateOrderStatus,
+  adminDeleteOrder,
   updateOrderScreenshot
 };
