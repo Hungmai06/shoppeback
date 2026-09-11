@@ -9,7 +9,8 @@ async function readRowsFromFile(filePath, originalName = '') {
   
   if (ext === '.xlsx' || ext === '.xls') {
     try {
-      const workbook = XLSX.readFile(filePath, { raw: false, cellDates: true });
+      const fileBuffer = fs.readFileSync(filePath);
+      const workbook = XLSX.read(fileBuffer, { type: 'buffer', raw: false, cellDates: true });
       if (workbook.SheetNames && workbook.SheetNames.length > 0) {
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         return XLSX.utils.sheet_to_json(worksheet, { defval: '' });
@@ -751,7 +752,7 @@ async function applyReconciliation(req, res) {
               notifId,
               targetUserId,
               'Đơn hàng đã được duyệt hoàn tiền',
-              `Đơn hàng ${orderId} (${productName.substring(0, 20)}...) đã đối soát thành công cho bạn. Số tiền hoàn +${amountDisplay}đ đã được cộng.`
+              `Đơn hàng ${orderId} (${(productName || 'Sản phẩm').substring(0, 20)}...) đã đối soát thành công cho bạn. Số tiền hoàn +${amountDisplay}đ đã được cộng.`
             ]
           );
         }
@@ -823,7 +824,7 @@ async function applyReconciliation(req, res) {
                 notifId,
                 targetUserId,
                 'Đơn hàng ghi nhận & đã duyệt',
-                `Đơn hàng mới ${orderId} (${productName.substring(0, 20)}...) đã được thêm và duyệt thành công. Tiền hoàn +${amountDisplay}đ đã được cộng.`
+                `Đơn hàng mới ${orderId} (${(productName || 'Sản phẩm').substring(0, 20)}...) đã được thêm và duyệt thành công. Tiền hoàn +${amountDisplay}đ đã được cộng.`
               ]
             );
           } else {

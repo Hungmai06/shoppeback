@@ -869,7 +869,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().fetchAdminStats();
         return data;
       }
-      throw new Error('Áp dụng đối soát thất bại');
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.message || 'Áp dụng đối soát thất bại');
     } catch (error) {
       console.error('Apply reconciliation error:', error);
       throw error;

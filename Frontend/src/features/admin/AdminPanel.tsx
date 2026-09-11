@@ -115,6 +115,7 @@ export default function AdminPanel() {
   const [reconcileModalData, setReconcileModalData] = useState<any>(null);
   const [isImportReconcileModalOpen, setIsImportReconcileModalOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isApplyingReconcile, setIsApplyingReconcile] = useState(false);
 
   // User CRUD states
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -287,6 +288,7 @@ export default function AdminPanel() {
   const handleApplyImportReconciliation = async () => {
     if (!reconcileModalData || !reconcileModalData.tempFileName) return;
 
+    setIsApplyingReconcile(true);
     try {
       const res = await applyReconciliationCSV(reconcileModalData.tempFileName);
       toast.success(res.message || `Đã đối soát tự động phê duyệt và cộng tiền thành công!`);
@@ -299,6 +301,8 @@ export default function AdminPanel() {
       setActiveTab('orders');
     } catch (err: any) {
       toast.error(err.message || 'Thất bại khi áp dụng đối soát');
+    } finally {
+      setIsApplyingReconcile(false);
     }
   };
 
@@ -1932,9 +1936,17 @@ export default function AdminPanel() {
                 <Button
                   type="button"
                   onClick={handleApplyImportReconciliation}
-                  className="font-bold bg-primary text-white hover:bg-primary/90"
+                  disabled={isApplyingReconcile}
+                  className="font-bold bg-primary text-white hover:bg-primary/90 disabled:opacity-50"
                 >
-                  Xác nhận áp dụng
+                  {isApplyingReconcile ? (
+                    <span className="flex items-center gap-1.5">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Đang áp dụng...
+                    </span>
+                  ) : (
+                    'Xác nhận áp dụng'
+                  )}
                 </Button>
               </div>
             </>
