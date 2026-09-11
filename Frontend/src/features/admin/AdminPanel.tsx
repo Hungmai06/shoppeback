@@ -933,7 +933,7 @@ export default function AdminPanel() {
                   <input
                     type="file"
                     ref={fileInputRef}
-                    accept=".csv"
+                    accept=".csv,.xlsx,.xls"
                     onChange={handleCSVImport}
                     className="hidden"
                   />

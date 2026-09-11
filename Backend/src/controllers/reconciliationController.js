@@ -5,18 +5,29 @@ const XLSX = require('xlsx');
 const { getDatabase } = require('../config/db');
 
 async function readRowsFromFile(filePath, originalName = '') {
-  const ext = path.extname(originalName || filePath).toLowerCase();
-  if (ext === '.xlsx' || ext === '.xls') {
-    const workbook = XLSX.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    return XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+  // First try XLSX parser which handles CSV (UTF-8, UTF-16, BOM), TSV, XLSX, XLS automatically
+  try {
+    const workbook = XLSX.readFile(filePath, { raw: false, cellDates: true });
+    if (workbook.SheetNames && workbook.SheetNames.length > 0) {
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      if (rows && rows.length > 0) {
+        return rows;
+      }
+    }
+  } catch (e) {
+    console.warn('XLSX parser fallback to csv-parser:', e.message);
   }
 
+  // Fallback to csv-parser with mapHeaders for BOM stripping
   const rawRows = [];
   await new Promise((resolve, reject) => {
     fs.createReadStream(filePath)
-      .pipe(csv({ separator: detectSeparator(filePath) }))
+      .pipe(csv({
+        separator: detectSeparator(filePath),
+        mapHeaders: ({ header }) => (header || '').replace(/^\uFEFF/, '').trim()
+      }))
       .on('data', (row) => {
         rawRows.push(row);
       })

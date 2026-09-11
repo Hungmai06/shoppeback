@@ -31,16 +31,28 @@ const upload = multer({
   storage: storage,
   fileFilter: function (req, file, cb) {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (ext === '.csv') {
+    const allowed = ['.csv', '.xlsx', '.xls', '.tsv', '.txt'];
+    if (allowed.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Chỉ chấp nhận các tệp định dạng CSV!'), false);
+      cb(new Error('Chỉ chấp nhận các tệp định dạng CSV hoặc Excel (.csv, .xlsx, .xls)!'), false);
     }
   }
 });
 
+const handleUpload = (req, res, next) => {
+  upload.single('file')(req, res, function (err) {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ message: `Lỗi tải tệp: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ message: err.message });
+    }
+    next();
+  });
+};
+
 // Admin reconciliation endpoints
-router.post('/upload', protect, adminOnly, upload.single('file'), uploadAndAnalyze);
+router.post('/upload', protect, adminOnly, handleUpload, uploadAndAnalyze);
 router.post('/apply', protect, adminOnly, applyReconciliation);
 router.get('/logs', protect, adminOnly, getReconciliationLogs);
 
