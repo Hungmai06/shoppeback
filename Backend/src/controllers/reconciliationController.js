@@ -200,8 +200,8 @@ function extractRowFields(row) {
     }
   }
 
-  // === PURCHASE TIME ===
-  // "Thời Gian Đặt Hàng" → "thoigiandathang"
+  // === PURCHASE TIME & CLICK TIME ===
+  // "Thời Gian Đặt Hàng" → "thoigiandathang", "Thời gian Click" → "thoigianclick"
   for (const normKey of ['thoigiandathang', 'thoigiantao', 'thoigiandat', 'purchasetime', 'ordertime']) {
     if (normMap[normKey] && normMap[normKey].val) {
       purchaseTime = normMap[normKey].val;
@@ -210,10 +210,34 @@ function extractRowFields(row) {
   }
   if (!purchaseTime) {
     for (const [nk, entry] of Object.entries(normMap)) {
-      if ((nk.includes('thoigian') || nk.includes('ngaydat')) && entry.val) {
+      if ((nk.includes('thoigian') || nk.includes('ngaydat')) && !nk.includes('click') && entry.val) {
         purchaseTime = entry.val;
         break;
       }
+    }
+  }
+
+  let clickTime = null;
+  for (const normKey of ['thoigianclick', 'clicktime', 'thoidiemclick']) {
+    if (normMap[normKey] && normMap[normKey].val) {
+      clickTime = normMap[normKey].val;
+      break;
+    }
+  }
+
+  // === SHOP ID & ITEM ID ===
+  let shopId = '';
+  let itemId = '';
+  for (const normKey of ['shopid', 'idshop']) {
+    if (normMap[normKey] && normMap[normKey].val) {
+      shopId = normMap[normKey].val;
+      break;
+    }
+  }
+  for (const normKey of ['itemid', 'iditem', 'productid', 'idproduct']) {
+    if (normMap[normKey] && normMap[normKey].val) {
+      itemId = normMap[normKey].val;
+      break;
     }
   }
 
@@ -224,7 +248,10 @@ function extractRowFields(row) {
     orderAmount,
     commission,
     shopeeStatus,
-    purchaseTime
+    purchaseTime,
+    clickTime,
+    shopId,
+    itemId
   };
 }
 
@@ -353,54 +380,109 @@ function mapShopeeStatus(shopeeStatus) {
 }
 
 /**
- * Thuật toán quét đối soát thông minh khi SubID bị trống:
- * Tự động kết nối log click / đơn chờ trong CSDL dựa trên tên sản phẩm & khung giờ mua hàng.
+ * Thuật toán quét đối soát nghiêm ngặt (Strict Matching):
+ * Dựa vào ID sản phẩm (Item Id), ID Shop (Shop Id), Tên Item, Thời gian đặt hàng và Thời gian Click từ file CSV.
+ * Chỉ gán đơn khi vừa KHỚP ĐÚNG SẢN PHẨM/SHOP VÀ nằm trong KHUNG GIỜ NGẮN (< 2 tiếng).
+ * Nếu không thỏa mãn cả 2 điều kiện nghiêm ngặt này -> Giữ nguyên user_id = null (Chưa xác định thành viên).
  */
-function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClickLogsFull, pendingOrders) {
-  if (!purchaseTimeStr) return null;
+function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClickLogsFull, pendingOrders, extraOptions = {}) {
+  const { clickTimeStr, shopId, itemId } = extraOptions;
+  if (!purchaseTimeStr && !clickTimeStr) return null;
 
   let purchaseMs = 0;
-  try {
-    const formatted = formatToMySQLDateTime(purchaseTimeStr);
-    const dateObj = new Date(formatted.replace(' ', 'T'));
-    if (!isNaN(dateObj.getTime())) {
-      purchaseMs = dateObj.getTime();
-    }
-  } catch (e) {}
+  if (purchaseTimeStr) {
+    try {
+      const formatted = formatToMySQLDateTime(purchaseTimeStr);
+      const dateObj = new Date(formatted.replace(' ', 'T'));
+      if (!isNaN(dateObj.getTime())) {
+        purchaseMs = dateObj.getTime();
+      }
+    } catch (e) {}
+  }
 
-  if (!purchaseMs) return null;
+  let csvClickMs = 0;
+  if (clickTimeStr) {
+    try {
+      const formatted = formatToMySQLDateTime(clickTimeStr);
+      const dateObj = new Date(formatted.replace(' ', 'T'));
+      if (!isNaN(dateObj.getTime())) {
+        csvClickMs = dateObj.getTime();
+      }
+    } catch (e) {}
+  }
 
-  const maxWindowMs = 24 * 3600 * 1000; // Khung giờ tối đa 24 tiếng
+  const baseRefMs = purchaseMs || csvClickMs;
+  if (!baseRefMs) return null;
+
+  // Khung giờ nghiêm ngặt: Tối đa 2 tiếng trước thời điểm mua hàng
+  const maxWindowMs = 2 * 3600 * 1000;
   const candidateScores = new Map();
 
-  // 1. Quét các đơn hàng pending trong CSDL (được lưu tự động khi user bấm link qua orderController.logClick)
+  // Helper kiểm tra trùng khớp mã sản phẩm / shop ID / tên sản phẩm
+  const isProductMatch = (pName, pUrlOrName) => {
+    if (!pName && !pUrlOrName && !itemId && !shopId) return false;
+    const p1 = (pName || '').toLowerCase();
+    const p2 = (pUrlOrName || '').toLowerCase();
+
+    // 1. Khớp theo Item ID trực tiếp từ CSV
+    if (itemId && String(itemId).trim().length >= 4) {
+      const cleanItemId = String(itemId).trim().toLowerCase();
+      if (p1.includes(cleanItemId) || p2.includes(cleanItemId)) {
+        return true;
+      }
+    }
+
+    // 2. Khớp theo Shop ID trực tiếp từ CSV
+    if (shopId && String(shopId).trim().length >= 4) {
+      const cleanShopId = String(shopId).trim().toLowerCase();
+      if (p1.includes(cleanShopId) || p2.includes(cleanShopId)) {
+        return true;
+      }
+    }
+
+    // 3. Tra cứu Regex Item ID / Shop ID từ URL (ví dụ i.123456.78910 hoặc product/123/456)
+    const matchItem1 = p1.match(/i\.(\d+)\.(\d+)/) || p1.match(/product\/(\d+)\/(\d+)/) || p1.match(/\.(\d{6,})/);
+    const matchItem2 = p2.match(/i\.(\d+)\.(\d+)/) || p2.match(/product\/(\d+)\/(\d+)/) || p2.match(/\.(\d{6,})/);
+
+    if (matchItem1 && matchItem2 && matchItem1[0] === matchItem2[0]) {
+      return true; // Khớp 100% Item ID / Shop ID
+    }
+
+    // 4. So sánh cụm từ tên sản phẩm
+    const cleanP1 = p1.replace(/[^a-z0-9]/g, '');
+    const cleanP2 = p2.replace(/[^a-z0-9]/g, '');
+    if (cleanP1.length >= 6 && cleanP2.length >= 6) {
+      const sub1 = cleanP1.substring(0, 15);
+      const sub2 = cleanP2.substring(0, 15);
+      if (cleanP1.includes(sub2) || cleanP2.includes(sub1)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // 1. Quét các đơn hàng pending trong CSDL
   if (pendingOrders && pendingOrders.length > 0) {
     for (const pending of pendingOrders) {
       if (!pending.user_id) continue;
       const pendingMs = new Date(pending.created_at).getTime();
       if (isNaN(pendingMs)) continue;
 
-      const diffMs = purchaseMs - pendingMs;
-      // Đơn chờ tạo trước thời gian mua (hoặc chênh lệch đồng hồ < 10 phút) và trong 24 tiếng
+      const diffMs = baseRefMs - pendingMs;
+      // Nằm trong khung giờ ngắn (-10 phút clock skew đến 2 tiếng)
       if (diffMs >= -600000 && diffMs <= maxWindowMs) {
-        let score = 20;
-        if (diffMs <= 2 * 3600 * 1000) score += 30; // trong vòng 2 tiếng
-
-        if (productName && pending.product_name) {
-          const p1 = productName.toLowerCase();
-          const p2 = pending.product_name.toLowerCase();
-          if (p1.includes(p2.substring(0, 10)) || p2.includes(p1.substring(0, 10))) {
-            score += 40;
+        if (isProductMatch(productName, pending.product_name)) {
+          let score = 90;
+          if (csvClickMs) {
+            const clickDiff = Math.abs(csvClickMs - pendingMs);
+            if (clickDiff <= 600000) score += 10;
           }
-        }
-
-        const existing = candidateScores.get(pending.user_id) || { score: 0, userId: pending.user_id, clickId: pending.click_id };
-        if (score > existing.score) {
           candidateScores.set(pending.user_id, {
             score,
             userId: pending.user_id,
             clickId: pending.click_id || pending.id,
-            reason: `Khớp tự động từ Đơn chờ hệ thống (chênh ${Math.max(0, Math.round(diffMs / 60000))} phút)`
+            reason: `Khớp Đơn chờ & Sản phẩm/Shop ID trong khung giờ (${Math.max(0, Math.round(diffMs / 60000))} phút)`
           });
         }
       }
@@ -414,27 +496,23 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
       const clickMs = new Date(log.click_time || log.created_at).getTime();
       if (isNaN(clickMs)) continue;
 
-      const diffMs = purchaseMs - clickMs;
+      const diffMs = baseRefMs - clickMs;
       if (diffMs >= -600000 && diffMs <= maxWindowMs) {
-        let score = 15;
-        if (diffMs <= 2 * 3600 * 1000) score += 25; // trong vòng 2 tiếng
-
-        if (productName && log.product_url) {
-          const p1 = productName.toLowerCase();
-          const url = log.product_url.toLowerCase();
-          if (url.includes('shopee.vn') || p1.length > 5) {
-            score += 15;
+        if (isProductMatch(productName, log.product_url)) {
+          let score = 80;
+          if (csvClickMs) {
+            const clickDiff = Math.abs(csvClickMs - clickMs);
+            if (clickDiff <= 600000) score += 15;
           }
-        }
-
-        const existing = candidateScores.get(log.user_id) || { score: 0, userId: log.user_id, clickId: log.id };
-        if (score > existing.score) {
-          candidateScores.set(log.user_id, {
-            score,
-            userId: log.user_id,
-            clickId: log.id,
-            reason: `Quét khớp thông minh theo Lượt click & Khung giờ (chênh ${Math.max(0, Math.round(diffMs / 60000))} phút)`
-          });
+          const existing = candidateScores.get(log.user_id) || { score: 0 };
+          if (score > existing.score) {
+            candidateScores.set(log.user_id, {
+              score,
+              userId: log.user_id,
+              clickId: log.id,
+              reason: `Khớp Mã/Tên sản phẩm/Shop ID & Khung giờ click (${Math.max(0, Math.round(diffMs / 60000))} phút)`
+            });
+          }
         }
       }
     }
@@ -449,11 +527,12 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
     }
   }
 
-  if (best && best.score >= 20) {
+  // Yêu cầu điểm tối thiểu 70 (BẮT BUỘC phải khớp đúng Sản phẩm/Shop ID VÀ trong khung giờ < 2 tiếng)
+  if (best && best.score >= 70) {
     return best;
   }
 
-  return null;
+  return null; // Nếu không đủ điều kiện nghiêm ngặt -> Giữ nguyên user_id = null (Chưa xác định thành viên)
 }
 
 // Helper to group rows by orderId and count invalid rows
@@ -477,33 +556,36 @@ function groupRowsByOrderId(rows) {
         orderAmount: fields.orderAmount || 0,
         commission: fields.commission || 0,
         shopeeStatus: fields.shopeeStatus || '',
-        purchaseTime: fields.purchaseTime
+        purchaseTime: fields.purchaseTime,
+        clickTime: fields.clickTime || null,
+        shopId: fields.shopId || '',
+        itemId: fields.itemId || ''
       });
     } else {
       const existing = grouped.get(lowerId);
       
-      // Update subId if existing is empty
       if (!existing.subId && fields.subId) {
         existing.subId = fields.subId;
       }
-      
-      // Add product name if not already included
       if (fields.productName && !existing.productNames.includes(fields.productName)) {
         existing.productNames.push(fields.productName);
       }
-      
-      // Sum amounts and commission
       existing.orderAmount += fields.orderAmount || 0;
       existing.commission += fields.commission || 0;
-      
-      // Update status if needed
       if (fields.shopeeStatus && !existing.shopeeStatus) {
         existing.shopeeStatus = fields.shopeeStatus;
       }
-      
-      // Update purchaseTime if not set
       if (!existing.purchaseTime && fields.purchaseTime) {
         existing.purchaseTime = fields.purchaseTime;
+      }
+      if (!existing.clickTime && fields.clickTime) {
+        existing.clickTime = fields.clickTime;
+      }
+      if (!existing.shopId && fields.shopId) {
+        existing.shopId = fields.shopId;
+      }
+      if (!existing.itemId && fields.itemId) {
+        existing.itemId = fields.itemId;
       }
     }
   }
@@ -521,7 +603,10 @@ function groupRowsByOrderId(rows) {
       orderAmount: item.orderAmount,
       commission: item.commission,
       shopeeStatus: item.shopeeStatus,
-      purchaseTime: item.purchaseTime
+      purchaseTime: item.purchaseTime,
+      clickTime: item.clickTime,
+      shopId: item.shopId,
+      itemId: item.itemId
     };
   });
 
@@ -625,7 +710,7 @@ async function uploadAndAnalyze(req, res) {
     }
 
     for (const order of ordersToProcess) {
-      const { orderId, subId, productName, orderAmount, commission, shopeeStatus, purchaseTime } = order;
+      const { orderId, subId, productName, orderAmount, commission, shopeeStatus, purchaseTime, clickTime, shopId, itemId } = order;
 
       // Clean SubID (sometimes sub_id contains spaces or @)
       const cleanSubId = subId ? subId.trim() : '';
@@ -657,7 +742,7 @@ async function uploadAndAnalyze(req, res) {
           targetUserId = currentDbUserId || null; // keep existing
         } else {
           // Smart Match fallback using click_logs & pending orders
-          smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders);
+          smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { clickTimeStr: clickTime, shopId, itemId });
           if (smartMatchInfo) {
             targetUserId = smartMatchInfo.userId;
           }
@@ -818,7 +903,7 @@ async function applyReconciliation(req, res) {
     await db.run('BEGIN TRANSACTION');
 
     for (const order of ordersToProcess) {
-      const { orderId, subId, productName, orderAmount, commission, shopeeStatus, purchaseTime } = order;
+      const { orderId, subId, productName, orderAmount, commission, shopeeStatus, purchaseTime, clickTime, shopId, itemId } = order;
 
       const cleanSubId = subId ? subId.trim() : '';
       const mappedStatus = mapShopeeStatus(shopeeStatus);
@@ -848,7 +933,7 @@ async function applyReconciliation(req, res) {
           targetUserId = currentDbUserId || null; // keep existing user
         } else {
           // Smart Match fallback using click_logs & pending orders
-          smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders);
+          smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { clickTimeStr: clickTime, shopId, itemId });
           if (smartMatchInfo) {
             targetUserId = smartMatchInfo.userId;
             targetClickId = smartMatchInfo.clickId || null;
