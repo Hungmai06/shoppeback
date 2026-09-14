@@ -6,13 +6,13 @@ const { ensureUuid } = require('../services/shopeeService');
 
 function generateAccessToken(id) {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'supersecretkey', {
-    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
+    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '30d',
   });
 }
 
 function generateRefreshToken(id) {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'supersecretkey', {
-    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '90d',
   });
 }
 
