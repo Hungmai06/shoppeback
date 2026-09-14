@@ -60,26 +60,26 @@ export default function WalletPage() {
 
   const pendingCashback = isLoggedIn 
     ? userOrders.filter(o => o.status === 'pending').reduce((sum, o) => sum + o.estimatedCashback, 0)
-    : 0; // 0 when not logged in
+    : 0;
 
-  const totalApprovedCashback100 = isLoggedIn
-    ? userOrders.filter(o => o.status === 'approved').reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback), 0)
-    : 0; // 0 when not logged in
+  const approvedCashback = isLoggedIn
+    ? userOrders.filter(o => o.status === 'approved' || o.status === 'paid').reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback), 0)
+    : 0;
 
-  const approvedCashback = totalApprovedCashback100 * 0.5;
+  const referralEarnings = isLoggedIn ? (currentUser.referralEarnings || 0) : 0;
 
   const paidWithdrawals = isLoggedIn
     ? withdrawals.filter(w => w.userId === currentUser.id && w.status === 'approved').reduce((sum, w) => sum + w.amount, 0)
-    : 0; // Mock paid
+    : 0;
 
   const pendingWithdrawals = isLoggedIn
     ? withdrawals.filter(w => w.userId === currentUser.id && w.status === 'pending').reduce((sum, w) => sum + w.amount, 0)
-    : 0; // Mock pending withdraw
+    : 0;
 
-  // Available to withdraw: Approved cashback (50%) - (Approved withdrawals + Pending withdrawals)
+  // Available to withdraw: (Approved cashback + Referral earnings) - (Approved withdrawals + Pending withdrawals)
   const availableBalance = isLoggedIn
-    ? Math.max(0, approvedCashback - (paidWithdrawals + pendingWithdrawals))
-    : 0; // 0 when not logged in
+    ? Math.max(0, (currentUser.balance !== undefined ? currentUser.balance : (approvedCashback + referralEarnings - paidWithdrawals - pendingWithdrawals)))
+    : 0;
 
   const handleWithdrawalRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -376,7 +376,7 @@ export default function WalletPage() {
             <div className="space-y-4 pt-6 border-t border-slate-800 text-xs">
               <div className="flex justify-between items-center">
                 <span className="text-slate-400 font-medium">Đã tích lũy:</span>
-                <span className="font-bold text-emerald-400">{totalApprovedCashback100.toLocaleString('vi-VN')}đ</span>
+                <span className="font-bold text-emerald-400">{approvedCashback.toLocaleString('vi-VN')}đ</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-400 font-medium">Đã giải ngân:</span>
