@@ -263,13 +263,7 @@ export default function AdminPanel() {
     .filter(w => w.status === 'approved')
     .reduce((sum, w) => sum + w.amount, 0);
 
-  const totalEstimatedRevenue = adminStats?.summary?.netProfit ?? orders
-    .filter(o => o.status === 'approved' || o.status === 'paid')
-    .reduce((sum, o) => {
-      const totalComm = o.orderAmount * (settings.commissionPercentage / 100);
-      const userCash = (o.realCashback || o.estimatedCashback) * 0.5;
-      return sum + Math.max(0, totalComm - userCash);
-    }, 0);
+
 
 
   // Filtered lists

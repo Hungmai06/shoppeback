@@ -96,9 +96,13 @@ export interface AdminStats {
     platformTotalRevenue: number;
     platformTotalCashbackOwed: number;
     netProfit: number;
+    remainingAfterPayout?: number;
   };
   statusDistribution: { name: string; value: number }[];
   monthlyAnalytics: { name: string; revenue: number; cashback: number; profit: number }[];
+  dailyAnalytics?: { date: string; day: number; dayLabel: string; revenue: number; cashback: number; profit: number; orderCount: number }[];
+  selectedMonth?: string;
+  availableMonths?: { key: string; label: string }[];
   topUsers?: { userId: string; userName: string; earnings: number; orderCount: number }[];
   topProducts?: { name: string; count: number; totalAmount: number }[];
 }
@@ -172,7 +176,7 @@ interface AppState {
   fetchAdminOrders: (page?: number, limit?: number, search?: string, status?: string) => Promise<void>;
   fetchAdminWithdrawals: () => Promise<void>;
   fetchAdminUsers: () => Promise<void>;
-  fetchAdminStats: (range?: string) => Promise<void>;
+  fetchAdminStats: (range?: string, month?: string) => Promise<void>;
   exportOrdersCSV: () => void;
   fetchReconciliationLogs: () => Promise<void>;
   uploadReconciliationCSV: (file: File) => Promise<any>;
