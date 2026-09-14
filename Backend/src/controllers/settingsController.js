@@ -186,6 +186,7 @@ async function adminGetStats(req, res) {
     });
 
     const netProfit = platformTotalRevenue - platformTotalCashbackOwed;
+    const remainingAfterPayout = Math.max(0, platformTotalRevenue - totalPaidWithdrawals);
 
     // Attach user names to top users
     const allUsers = await db.all("SELECT id, name, email FROM users");
@@ -265,6 +266,76 @@ async function adminGetStats(req, res) {
 
     const chartData = Object.values(monthlyStatsMap);
 
+    // === DAILY ANALYTICS FOR SELECTED MONTH ===
+    const selectedMonth = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const [selYearStr, selMonthStr] = selectedMonth.split('-');
+    const selYear = parseInt(selYearStr) || now.getFullYear();
+    const selMonth = parseInt(selMonthStr) || (now.getMonth() + 1);
+
+    const daysInSelMonth = new Date(selYear, selMonth, 0).getDate();
+
+    const dailyMap = {};
+    for (let day = 1; day <= daysInSelMonth; day++) {
+      const dayStr = String(day).padStart(2, '0');
+      const monthPadded = String(selMonth).padStart(2, '0');
+      const dateKey = `${selYear}-${monthPadded}-${dayStr}`;
+      dailyMap[dateKey] = {
+        date: dateKey,
+        day,
+        dayLabel: `${dayStr}/${monthPadded}`,
+        revenue: 0,
+        cashback: 0,
+        profit: 0,
+        orderCount: 0
+      };
+    }
+
+    const availableMonths = [];
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const mLabel = `Tháng ${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+      availableMonths.push({ key: mKey, label: mLabel });
+    }
+
+    const extractYearMonthDay = (val) => {
+      if (!val) return '';
+      const str = String(val).trim();
+      const matchIso = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+      if (matchIso) return `${matchIso[1]}-${String(matchIso[2]).padStart(2, '0')}-${String(matchIso[3]).padStart(2, '0')}`;
+      const matchVn = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      if (matchVn) return `${matchVn[3]}-${String(matchVn[2]).padStart(2, '0')}-${String(matchVn[1]).padStart(2, '0')}`;
+      const num = Number(str);
+      if (!isNaN(num) && num > 20000 && num < 100000) {
+        const d = new Date((num - 25569) * 86400 * 1000);
+        if (!isNaN(d.getTime())) return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      }
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return '';
+    };
+
+    const selMonthStart = `${selYear}-${String(selMonth).padStart(2, '0')}-01 00:00:00`;
+    const selMonthEnd = `${selYear}-${String(selMonth).padStart(2, '0')}-${String(daysInSelMonth).padStart(2, '0')} 23:59:59`;
+    const selectedMonthOrders = await db.all(`SELECT real_cashback, estimated_cashback, shopee_commission, status, created_at FROM orders WHERE created_at >= ? AND created_at <= ?`, [selMonthStart, selMonthEnd]);
+
+    selectedMonthOrders.forEach(o => {
+      const dateKey = extractYearMonthDay(o.created_at);
+      if (dailyMap[dateKey]) {
+        const userCb = (o.real_cashback !== null && o.real_cashback !== undefined) ? o.real_cashback : (o.estimated_cashback || 0);
+        const shopeeComm = (o.shopee_commission !== null && o.shopee_commission !== undefined) ? o.shopee_commission : (userCb * 2);
+
+        if (o.status === 'approved' || o.status === 'paid') {
+          dailyMap[dateKey].revenue += shopeeComm;
+          dailyMap[dateKey].cashback += userCb;
+          dailyMap[dateKey].profit += Math.max(0, shopeeComm - userCb);
+        }
+        dailyMap[dateKey].orderCount += 1;
+      }
+    });
+
+    const dailyAnalytics = Object.values(dailyMap);
+
     res.json({
       summary: {
         totalUsers,
@@ -273,7 +344,8 @@ async function adminGetStats(req, res) {
         pendingWithdrawalsTotal,
         platformTotalRevenue,
         platformTotalCashbackOwed,
-        netProfit
+        netProfit,
+        remainingAfterPayout
       },
       statusDistribution: [
         { name: 'Đang chờ xử lý', value: statusCounts.pending },
@@ -283,6 +355,9 @@ async function adminGetStats(req, res) {
         { name: 'Hoàn hàng', value: statusCounts.returned }
       ],
       monthlyAnalytics: chartData,
+      dailyAnalytics,
+      selectedMonth,
+      availableMonths,
       topUsers,
       topProducts
     });

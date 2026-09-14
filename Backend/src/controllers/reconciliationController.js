@@ -352,6 +352,110 @@ function mapShopeeStatus(shopeeStatus) {
   return 'pending';
 }
 
+/**
+ * Thuật toán quét đối soát thông minh khi SubID bị trống:
+ * Tự động kết nối log click / đơn chờ trong CSDL dựa trên tên sản phẩm & khung giờ mua hàng.
+ */
+function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClickLogsFull, pendingOrders) {
+  if (!purchaseTimeStr) return null;
+
+  let purchaseMs = 0;
+  try {
+    const formatted = formatToMySQLDateTime(purchaseTimeStr);
+    const dateObj = new Date(formatted.replace(' ', 'T'));
+    if (!isNaN(dateObj.getTime())) {
+      purchaseMs = dateObj.getTime();
+    }
+  } catch (e) {}
+
+  if (!purchaseMs) return null;
+
+  const maxWindowMs = 24 * 3600 * 1000; // Khung giờ tối đa 24 tiếng
+  const candidateScores = new Map();
+
+  // 1. Quét các đơn hàng pending trong CSDL (được lưu tự động khi user bấm link qua orderController.logClick)
+  if (pendingOrders && pendingOrders.length > 0) {
+    for (const pending of pendingOrders) {
+      if (!pending.user_id) continue;
+      const pendingMs = new Date(pending.created_at).getTime();
+      if (isNaN(pendingMs)) continue;
+
+      const diffMs = purchaseMs - pendingMs;
+      // Đơn chờ tạo trước thời gian mua (hoặc chênh lệch đồng hồ < 10 phút) và trong 24 tiếng
+      if (diffMs >= -600000 && diffMs <= maxWindowMs) {
+        let score = 20;
+        if (diffMs <= 2 * 3600 * 1000) score += 30; // trong vòng 2 tiếng
+
+        if (productName && pending.product_name) {
+          const p1 = productName.toLowerCase();
+          const p2 = pending.product_name.toLowerCase();
+          if (p1.includes(p2.substring(0, 10)) || p2.includes(p1.substring(0, 10))) {
+            score += 40;
+          }
+        }
+
+        const existing = candidateScores.get(pending.user_id) || { score: 0, userId: pending.user_id, clickId: pending.click_id };
+        if (score > existing.score) {
+          candidateScores.set(pending.user_id, {
+            score,
+            userId: pending.user_id,
+            clickId: pending.click_id || pending.id,
+            reason: `Khớp tự động từ Đơn chờ hệ thống (chênh ${Math.max(0, Math.round(diffMs / 60000))} phút)`
+          });
+        }
+      }
+    }
+  }
+
+  // 2. Quét bảng click_logs
+  if (allClickLogsFull && allClickLogsFull.length > 0) {
+    for (const log of allClickLogsFull) {
+      if (!log.user_id) continue;
+      const clickMs = new Date(log.click_time || log.created_at).getTime();
+      if (isNaN(clickMs)) continue;
+
+      const diffMs = purchaseMs - clickMs;
+      if (diffMs >= -600000 && diffMs <= maxWindowMs) {
+        let score = 15;
+        if (diffMs <= 2 * 3600 * 1000) score += 25; // trong vòng 2 tiếng
+
+        if (productName && log.product_url) {
+          const p1 = productName.toLowerCase();
+          const url = log.product_url.toLowerCase();
+          if (url.includes('shopee.vn') || p1.length > 5) {
+            score += 15;
+          }
+        }
+
+        const existing = candidateScores.get(log.user_id) || { score: 0, userId: log.user_id, clickId: log.id };
+        if (score > existing.score) {
+          candidateScores.set(log.user_id, {
+            score,
+            userId: log.user_id,
+            clickId: log.id,
+            reason: `Quét khớp thông minh theo Lượt click & Khung giờ (chênh ${Math.max(0, Math.round(diffMs / 60000))} phút)`
+          });
+        }
+      }
+    }
+  }
+
+  if (candidateScores.size === 0) return null;
+
+  let best = null;
+  for (const candidate of candidateScores.values()) {
+    if (!best || candidate.score > best.score) {
+      best = candidate;
+    }
+  }
+
+  if (best && best.score >= 20) {
+    return best;
+  }
+
+  return null;
+}
+
 // Helper to group rows by orderId and count invalid rows
 function groupRowsByOrderId(rows) {
   const grouped = new Map();
@@ -473,13 +577,16 @@ async function uploadAndAnalyze(req, res) {
       if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id, u.id);
     }
 
-    // Read all click_logs to map random clickId/sub_id -> user_id
-    const allClickLogs = await db.all('SELECT id, user_id, sub_id FROM click_logs WHERE user_id IS NOT NULL');
+    // Read all click_logs with click_time & product_url for exact & smart time-window matching
+    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time FROM click_logs WHERE user_id IS NOT NULL');
     const clickSubIdToUserIdMap = new Map();
-    for (const log of allClickLogs) {
+    for (const log of allClickLogsFull) {
       if (log.id && log.user_id) clickSubIdToUserIdMap.set(log.id, log.user_id);
       if (log.sub_id && log.user_id) clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
     }
+
+    // Read all pending orders in system created on link click (via orderController.logClick)
+    const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, created_at FROM orders WHERE status = 'pending' AND user_id IS NOT NULL");
 
     // Read all existing orders
     const allOrders = await db.all('SELECT id, status, user_id, order_amount, real_cashback, estimated_cashback FROM orders');
@@ -518,7 +625,7 @@ async function uploadAndAnalyze(req, res) {
     }
 
     for (const order of ordersToProcess) {
-      const { orderId, subId, productName, orderAmount, commission, shopeeStatus } = order;
+      const { orderId, subId, productName, orderAmount, commission, shopeeStatus, purchaseTime } = order;
 
       // Clean SubID (sometimes sub_id contains spaces or @)
       const cleanSubId = subId ? subId.trim() : '';
@@ -532,12 +639,9 @@ async function uploadAndAnalyze(req, res) {
       const currentDbStatus = dbOrder ? dbOrder.status : '';
       const currentDbUserId = dbOrder ? dbOrder.userId : '';
 
-      // Determine targetUserId:
-      // - If CSV has a valid subId that exists in system → use it
-      // - If CSV has a subId that does NOT exist in system → mark as missing (likely typo)
-      // - If CSV has no subId but order exists → keep existing user_id
-      // - If CSV has no subId and order is new → import with null user_id (unassigned)
       let targetUserId = null;
+      let smartMatchInfo = null;
+
       if (cleanSubId) {
         if (clickSubIdToUserIdMap.has(cleanSubId)) {
           targetUserId = clickSubIdToUserIdMap.get(cleanSubId);
@@ -552,7 +656,11 @@ async function uploadAndAnalyze(req, res) {
         if (exists) {
           targetUserId = currentDbUserId || null; // keep existing
         } else {
-          targetUserId = null; // new unassigned order
+          // Smart Match fallback using click_logs & pending orders
+          smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders);
+          if (smartMatchInfo) {
+            targetUserId = smartMatchInfo.userId;
+          }
         }
       }
 
@@ -625,7 +733,9 @@ async function uploadAndAnalyze(req, res) {
           shopeeStatus: mappedStatus,
           status: 'matched',
           reason: targetUserId
-            ? `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}`
+            ? (smartMatchInfo 
+                ? `Khớp thông minh cho User ${targetUserId} (${smartMatchInfo.reason})` 
+                : `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}`)
             : `Tạo đơn hàng mới (chưa xác định thành viên) ở trạng thái ${mappedStatus}`
         });
       }
@@ -655,7 +765,7 @@ async function applyReconciliation(req, res) {
   try {
     const db = await getDatabase();
     
-    // Fetch users, click_logs, orders for sync
+    // Fetch users, click_logs, pending orders for sync
     const allUsers = await db.all('SELECT id, affiliate_sub_id FROM users');
     const userIds = new Set(allUsers.map(u => u.id));
     const affiliateSubIdToUserIdMap = new Map();
@@ -663,10 +773,10 @@ async function applyReconciliation(req, res) {
       if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id, u.id);
     }
 
-    const allClickLogs = await db.all('SELECT id, user_id, sub_id FROM click_logs WHERE user_id IS NOT NULL');
+    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time FROM click_logs WHERE user_id IS NOT NULL');
     const clickSubIdToUserIdMap = new Map();
     const clickIdMap = new Map();
-    for (const log of allClickLogs) {
+    for (const log of allClickLogsFull) {
       if (log.id && log.user_id) {
         clickSubIdToUserIdMap.set(log.id, log.user_id);
         clickIdMap.set(log.id, log.id);
@@ -676,6 +786,8 @@ async function applyReconciliation(req, res) {
         clickIdMap.set(log.sub_id, log.id);
       }
     }
+
+    const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, created_at FROM orders WHERE status = 'pending' AND user_id IS NOT NULL");
 
     const allOrders = await db.all('SELECT id, status, user_id, order_amount, real_cashback, estimated_cashback FROM orders');
     const existingOrdersMap = new Map(allOrders.map(o => [
@@ -718,6 +830,8 @@ async function applyReconciliation(req, res) {
 
       let targetUserId = null;
       let targetClickId = null;
+      let smartMatchInfo = null;
+
       if (cleanSubId) {
         if (clickSubIdToUserIdMap.has(cleanSubId)) {
           targetUserId = clickSubIdToUserIdMap.get(cleanSubId);
@@ -733,7 +847,12 @@ async function applyReconciliation(req, res) {
         if (exists) {
           targetUserId = currentDbUserId || null; // keep existing user
         } else {
-          targetUserId = null; // new unassigned order, allowed
+          // Smart Match fallback using click_logs & pending orders
+          smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders);
+          if (smartMatchInfo) {
+            targetUserId = smartMatchInfo.userId;
+            targetClickId = smartMatchInfo.clickId || null;
+          }
         }
       }
 

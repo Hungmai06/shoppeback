@@ -762,9 +762,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchAdminStats: async (range = 'all') => {
+  fetchAdminStats: async (range = 'all', month = '') => {
     try {
-      const res = await fetch(`${API_BASE}/settings/admin/stats?range=${range}`, { headers: getHeaders() });
+      let url = `${API_BASE}/settings/admin/stats?range=${range}`;
+      if (month) url += `&month=${month}`;
+      const res = await fetch(url, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         set({ adminStats: data });

@@ -6,7 +6,7 @@ import {
   LogOut, RefreshCw, Plus, Search,
   Filter, Check, X, Lock, Unlock, Trash2, Edit2, Download,
   Upload, BarChart3, FileSpreadsheet,
-  Settings2, Activity
+  Settings2, Activity, Eye
 } from 'lucide-react';
 import {
   Button, Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -66,6 +66,7 @@ export default function AdminPanel() {
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [statsRange, setStatsRange] = useState<'all' | 'today' | '7days' | '30days' | 'this_month'>('all');
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>('');
 
   // Order Pagination & Loading states
   const [orderPage, setOrderPage] = useState(1);
@@ -81,10 +82,11 @@ export default function AdminPanel() {
   React.useEffect(() => {
     if (currentUser?.role === 'admin') {
       if (activeTab === 'dashboard') {
-        fetchAdminStats(statsRange);
+        fetchAdminStats(statsRange, selectedMonthFilter);
       } else if (activeTab === 'users') {
         fetchAdminUsers();
       } else if (activeTab === 'orders') {
+        if (users.length === 0) fetchAdminUsers();
         setIsLoadingOrders(true);
         const delay = setTimeout(async () => {
           await fetchAdminOrders(orderPage, ordersPerPage, orderSearch, orderStatusFilter);
@@ -97,7 +99,7 @@ export default function AdminPanel() {
         fetchReconciliationLogs();
       }
     }
-  }, [activeTab, orderPage, orderSearch, orderStatusFilter, statsRange, currentUser]);
+  }, [activeTab, orderPage, orderSearch, orderStatusFilter, statsRange, selectedMonthFilter, currentUser]);
 
   // Selected items for Modals
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
@@ -131,6 +133,44 @@ export default function AdminPanel() {
   const [editUserHolder, setEditUserHolder] = useState('');
   const [editUserPhone, setEditUserPhone] = useState('');
   const [editUserPassword, setEditUserPassword] = useState('');
+
+  // User orders viewer modal state
+  const [viewingUserOrders, setViewingUserOrders] = useState<UserProfile | null>(null);
+  const [userOrdersList, setUserOrdersList] = useState<any[]>([]);
+  const [isLoadingUserOrders, setIsLoadingUserOrders] = useState(false);
+
+  const openUserOrdersModal = async (user: UserProfile) => {
+    setViewingUserOrders(user);
+    setIsLoadingUserOrders(true);
+    setUserOrdersList([]);
+    try {
+      const token = localStorage.getItem('token');
+      const apiBase = import.meta.env.VITE_API_BASE || '/api';
+      const res = await fetch(`${apiBase}/orders/admin?search=${encodeURIComponent(user.id)}&limit=100`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const mapped = (data.orders || []).map((o: any) => ({
+          id: o.id,
+          productName: o.product_name,
+          orderAmount: o.order_amount,
+          estimatedCashback: o.estimated_cashback,
+          realCashback: o.real_cashback !== null && o.real_cashback !== undefined ? o.real_cashback : o.estimated_cashback,
+          status: o.status,
+          createdTime: o.created_at
+        }));
+        setUserOrdersList(mapped);
+      }
+    } catch (err) {
+      console.error('Fetch user orders error:', err);
+    } finally {
+      setIsLoadingUserOrders(false);
+    }
+  };
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
@@ -665,7 +705,7 @@ export default function AdminPanel() {
                   { title: "Tổng thành viên", value: totalUsersCount, desc: "Tài khoản người dùng", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" />, tab: 'users' },
                   { title: "Tổng đơn hàng", value: totalOrdersCount, desc: "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" />, tab: 'orders' },
                   { title: "Tổng hoa hồng sàn (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Tổng hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
-                  { title: "Hoa hồng giữ lại (Lợi nhuận)", value: `${Math.round(adminStats?.summary?.netProfit || totalEstimatedRevenue).toLocaleString('vi-VN')}đ`, desc: "Sau khi khấu trừ hoàn tiền cho khách", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
+                  { title: "Số tiền còn lại (Lợi nhuận)", value: `${Math.round(adminStats?.summary?.remainingAfterPayout !== undefined ? adminStats.summary.remainingAfterPayout : Math.max(0, (adminStats?.summary?.platformTotalRevenue || 0) - (totalCashbackPaid || 0))).toLocaleString('vi-VN')}đ`, desc: "Sau khi trừ số tiền đã chi trả cho khách", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
                   { title: "Tiền đã & chờ chi", value: `${(totalCashbackPaid).toLocaleString('vi-VN')}đ`, desc: `Chờ duyệt: ${(adminStats?.summary?.pendingWithdrawalsTotal || 0).toLocaleString('vi-VN')}đ`, color: "text-warning", icon: <Wallet className="h-5 w-5 text-warning" />, tab: 'withdrawals' }
                 ].map((card, idx) => (
                   <Card 
@@ -744,6 +784,141 @@ export default function AdminPanel() {
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* DAILY ANALYTICS & MONTHLY SELECTION SECTION */}
+              <div className="flex flex-col gap-6">
+                <Card className="border-border/50">
+                  <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Activity className="h-4.5 w-4.5 text-primary" />
+                        Báo cáo Doanh thu & Lợi nhuận Chi tiết Theo Ngày trong Tháng
+                      </CardTitle>
+                      <CardDescription>
+                        Theo dõi biến động chi tiết từng ngày trong tháng được chọn (từ ngày 01 đến cuối tháng)
+                      </CardDescription>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <span className="text-xs font-bold text-text-secondary whitespace-nowrap">Chọn tháng xem báo cáo:</span>
+                      <select
+                        value={selectedMonthFilter || adminStats?.selectedMonth || ''}
+                        onChange={(e) => setSelectedMonthFilter(e.target.value)}
+                        className="bg-white border border-border text-xs rounded-input py-2 px-3 font-bold text-primary outline-none focus:ring-2 focus:ring-primary/10 cursor-pointer shadow-sm"
+                      >
+                        {(adminStats?.availableMonths || []).map((m: any) => (
+                          <option key={m.key} value={m.key}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Daily Area Chart */}
+                    <div className="h-72 pl-0 border border-border/40 rounded-input p-2 bg-bg/30">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={(adminStats?.dailyAnalytics || []).map((d: any) => ({
+                            date: d.dayLabel,
+                            DoanhThu: d.revenue,
+                            HoanTien: d.cashback,
+                            LoiNhuan: d.profit,
+                            DonHang: d.orderCount
+                          }))}
+                          margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient id="colorDailyRevenue" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="colorDailyProfit" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#22C55E" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#22C55E" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <XAxis dataKey="date" stroke="#6B7280" fontSize={10} tickLine={false} axisLine={false} />
+                          <YAxis stroke="#6B7280" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val} />
+                          <Tooltip
+                            formatter={(val: any, name: any) => [
+                              name === 'Số đơn hàng' ? `${val} đơn` : `${Number(val).toLocaleString('vi-VN')}đ`,
+                              name
+                            ]}
+                            contentStyle={{ borderRadius: 12, border: '1px solid #ECECEC', fontSize: '12px' }}
+                          />
+                          <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                          <Area type="monotone" dataKey="DoanhThu" name="Hoa hồng Shopee (100%)" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDailyRevenue)" strokeWidth={2} />
+                          <Area type="monotone" dataKey="LoiNhuan" name="Lợi nhuận Admin" stroke="#22C55E" fillOpacity={1} fill="url(#colorDailyProfit)" strokeWidth={2} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Daily Detail Data Table */}
+                    <div className="border border-border/50 rounded-input overflow-hidden shadow-sm">
+                      <div className="bg-bg/80 px-4 py-2.5 border-b border-border text-xs font-bold text-text flex justify-between items-center">
+                        <span>Bảng Thống Kê Chi Tiết Từng Ngày ({adminStats?.selectedMonth ? `Tháng ${adminStats.selectedMonth.substring(5)}/${adminStats.selectedMonth.substring(0, 4)}` : ''})</span>
+                        <span className="text-text-secondary text-[11px]">Tổng số: {(adminStats?.dailyAnalytics || []).length} ngày</span>
+                      </div>
+                      <div className="max-h-[300px] overflow-y-auto">
+                        <TableContainer>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Ngày</TableHead>
+                              <TableHead className="text-center">Số Đơn Hàng</TableHead>
+                              <TableHead className="text-right">Hoa Hồng Shopee (100%)</TableHead>
+                              <TableHead className="text-right">Hoàn Tiền Khách</TableHead>
+                              <TableHead className="text-right">Lợi Nhuận Giữ Lại</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {adminStats?.dailyAnalytics && adminStats.dailyAnalytics.length > 0 ? (
+                              adminStats.dailyAnalytics.map((dayItem: any) => (
+                                <TableRow key={dayItem.date} className={dayItem.orderCount > 0 ? 'bg-blue-50/20 font-semibold' : ''}>
+                                  <TableCell className="font-bold text-text text-xs">{dayItem.dayLabel}</TableCell>
+                                  <TableCell className="text-center font-bold text-xs">
+                                    {dayItem.orderCount > 0 ? (
+                                      <Badge variant="info">{dayItem.orderCount} đơn</Badge>
+                                    ) : (
+                                      <span className="text-text-secondary font-normal">0</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right font-bold text-xs text-blue-600">
+                                    {Math.round(dayItem.revenue).toLocaleString('vi-VN')}đ
+                                  </TableCell>
+                                  <TableCell className="text-right font-bold text-xs text-primary">
+                                    {Math.round(dayItem.cashback).toLocaleString('vi-VN')}đ
+                                  </TableCell>
+                                  <TableCell className="text-right font-bold text-xs text-success">
+                                    {Math.round(dayItem.profit).toLocaleString('vi-VN')}đ
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            ) : (
+                              <TableRow>
+                                <TableCell colSpan={5} className="text-center py-6 text-xs text-text-secondary">
+                                  Không có dữ liệu cho tháng được chọn
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </TableContainer>
+                      </div>
+
+                      {/* Summary Row */}
+                      {adminStats?.dailyAnalytics && adminStats.dailyAnalytics.length > 0 && (
+                        <div className="bg-bg/90 p-3 border-t border-border flex flex-wrap justify-between items-center text-xs font-black text-text gap-2">
+                          <span>Tổng cộng trong tháng:</span>
+                          <div className="flex gap-4">
+                            <span>Đơn hàng: <span className="text-primary font-mono">{adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.orderCount || 0), 0)}</span></span>
+                            <span>Hoa hồng sàn: <span className="text-blue-600 font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.revenue || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
+                            <span>Hoàn tiền khách: <span className="text-primary font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.cashback || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
+                            <span>Lợi nhuận Admin: <span className="text-success font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.profit || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -919,7 +1094,14 @@ export default function AdminPanel() {
                             )}
                           </TableCell>
                           <TableCell className="text-center">
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => openUserOrdersModal(u)}
+                                className="p-1.5 rounded-full hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-colors"
+                                title="Xem danh sách đơn hàng của người này"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
                               <button
                                 onClick={() => openUserEditModal(u)}
                                 className="p-1.5 rounded-full hover:bg-border/30 text-text-secondary hover:text-text transition-colors"
@@ -1031,6 +1213,7 @@ export default function AdminPanel() {
                     className="w-full bg-white border border-border text-xs rounded-input py-2.5 px-3"
                   >
                     <option value="all">Tất cả trạng thái</option>
+                    <option value="unassigned">⚠️ Đơn chưa xác định (chưa gán User)</option>
                     <option value="pending">Đang chờ xử lý</option>
                     <option value="approved">Hoàn thành</option>
                     <option value="rejected">Hủy</option>
@@ -1810,7 +1993,7 @@ export default function AdminPanel() {
           <form onSubmit={handleSaveOrderDetails} className="flex flex-col gap-4 text-left font-sans">
             <div className="bg-bg p-4 rounded-input border border-border/50 font-semibold text-xs space-y-2">
               <p><span className="text-text-secondary">Sản phẩm:</span> <span className="text-text font-bold">{editingOrder?.productName}</span></p>
-              <p><span className="text-text-secondary">Thành viên:</span> <span className="text-text font-bold font-mono">{editingOrder?.userId}</span></p>
+              <p><span className="text-text-secondary">Thành viên hiện tại:</span> <span className="text-text font-bold font-mono">{editingOrder?.userId || <span className="text-warning font-semibold italic">(Chưa xác định thành viên)</span>}</span></p>
               <p><span className="text-text-secondary">Giá trị đơn:</span> <span className="text-text font-bold">{editingOrder?.orderAmount.toLocaleString('vi-VN')}đ</span></p>
               <p><span className="text-text-secondary">Hoa hồng Shopee ước tính:</span> <span className="text-text font-bold">{editingOrder?.estimatedCashback.toLocaleString('vi-VN')}đ</span></p>
               {editingOrder?.createdTime && (
@@ -1818,17 +2001,48 @@ export default function AdminPanel() {
               )}
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-text/80">Gán cho thành viên (User ID hoặc Email)</label>
+            <div className="flex flex-col gap-1.5 relative">
+              <label className="text-xs font-semibold text-text/80">
+                Gán cho thành viên (Nhập mã User ID hoặc Email)
+              </label>
               <input
                 type="text"
                 value={editOrderUserId}
                 onChange={(e) => setEditOrderUserId(e.target.value)}
-                placeholder="Nhập Mã User ID (ví dụ USR101) hoặc Email..."
+                placeholder="Gõ hoặc dán Mã User ID (vd: USR101, USR102) hoặc Email/Tên..."
                 className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
               />
+
+              {/* Dynamic Suggestions List as Admin types */}
+              {users && users.length > 0 && editOrderUserId.trim().length > 0 && (
+                <div className="bg-white border border-border rounded-input shadow-lg max-h-[160px] overflow-y-auto p-1 text-xs space-y-1 z-10">
+                  {users
+                    .filter(u => 
+                      u.id.toLowerCase().includes(editOrderUserId.toLowerCase()) ||
+                      u.name.toLowerCase().includes(editOrderUserId.toLowerCase()) ||
+                      (u.email && u.email.toLowerCase().includes(editOrderUserId.toLowerCase()))
+                    )
+                    .slice(0, 5)
+                    .map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => setEditOrderUserId(u.id)}
+                        className="px-3 py-2 hover:bg-primary/10 rounded cursor-pointer flex justify-between items-center transition-all"
+                      >
+                        <div>
+                          <span className="font-bold text-text">{u.name}</span>
+                          <span className="text-text-secondary text-[11px] ml-2">({u.email || 'No email'})</span>
+                        </div>
+                        <span className="font-mono text-primary font-bold bg-primary/10 px-2 py-0.5 rounded text-[11px]">
+                          {u.id}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+
               <p className="text-[11px] text-text-secondary font-medium">
-                * Nếu thay đổi, đơn hàng sẽ được chuyển sang tài khoản của thành viên này quản lý.
+                💡 <b>Mẹo:</b> Nhập trực tiếp mã <b>User ID</b> (vd: <code>USR101</code>) hoặc <b>Email</b>. Nhấp vào kết quả gợi ý bên dưới nếu cần.
               </p>
             </div>
 
@@ -2047,6 +2261,120 @@ export default function AdminPanel() {
                 Xác nhận từ chối
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* USER ORDERS LIST POPUP MODAL */}
+      <Dialog isOpen={viewingUserOrders !== null} onClose={() => setViewingUserOrders(null)} className="max-w-4xl">
+        <DialogHeader>
+          <div className="flex justify-between items-center pr-6">
+            <div>
+              <DialogTitle className="flex items-center gap-2">
+                <ShoppingBag className="h-5 w-5 text-primary" />
+                Danh sách đơn hàng: {viewingUserOrders?.name}
+              </DialogTitle>
+              <p className="text-xs text-text-secondary font-mono mt-0.5">
+                Mã User ID: <span className="font-bold text-text">{viewingUserOrders?.id}</span> | Email: <span className="font-bold text-text">{viewingUserOrders?.email}</span>
+              </p>
+            </div>
+            {viewingUserOrders && (
+              <Badge variant={viewingUserOrders.role === 'admin' ? 'danger' : 'outline'} className="text-xs">
+                {viewingUserOrders.role === 'admin' ? 'ADMIN' : 'THÀNH VIÊN'}
+              </Badge>
+            )}
+          </div>
+        </DialogHeader>
+        <DialogContent className="flex flex-col gap-4 text-left font-sans">
+          {/* Quick Summary Stats Bar */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-bg p-3.5 rounded-input border border-border/50 text-xs font-semibold">
+            <div>
+              <span className="text-text-secondary">Tổng số đơn hàng:</span>{' '}
+              <span className="text-text font-bold">{userOrdersList.length} đơn</span>
+            </div>
+            <div>
+              <span className="text-text-secondary">Tổng giá trị mua hàng:</span>{' '}
+              <span className="text-blue-600 font-bold">
+                {userOrdersList.reduce((acc, o) => acc + (o.orderAmount || 0), 0).toLocaleString('vi-VN')}đ
+              </span>
+            </div>
+            <div>
+              <span className="text-text-secondary">Tổng tiền hoàn tích lũy:</span>{' '}
+              <span className="text-primary font-bold">
+                {userOrdersList
+                  .filter(o => o.status === 'approved' || o.status === 'paid')
+                  .reduce((acc, o) => acc + (o.realCashback || o.estimatedCashback || 0), 0)
+                  .toLocaleString('vi-VN')}đ
+              </span>
+            </div>
+          </div>
+
+          {/* Orders Table */}
+          <div className="max-h-[380px] overflow-y-auto border border-border rounded-input">
+            <TableContainer>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Mã Đơn</TableHead>
+                  <TableHead>Sản Phẩm</TableHead>
+                  <TableHead className="text-right">Giá Trị</TableHead>
+                  <TableHead className="text-right">Hoàn Tiền Khách</TableHead>
+                  <TableHead>Ngày Đặt</TableHead>
+                  <TableHead>Trạng Thái</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoadingUserOrders ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-12 text-xs text-text-secondary">
+                      <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
+                      Đang tải danh sách đơn hàng của thành viên...
+                    </TableCell>
+                  </TableRow>
+                ) : userOrdersList.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-12 text-xs text-text-secondary font-medium">
+                      Thành viên này chưa có đơn hàng nào phát sinh trên hệ thống.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  userOrdersList.map((o) => (
+                    <TableRow key={o.id}>
+                      <TableCell className="font-bold text-primary text-xs font-mono">{o.id}</TableCell>
+                      <TableCell className="max-w-[200px] truncate font-semibold text-xs">
+                        <span title={o.productName}>{o.productName}</span>
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-xs">
+                        {Math.round(o.orderAmount || 0).toLocaleString('vi-VN')}đ
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-xs text-primary">
+                        {Math.round(o.realCashback || o.estimatedCashback || 0).toLocaleString('vi-VN')}đ
+                      </TableCell>
+                      <TableCell className="text-xs font-semibold text-text-secondary whitespace-nowrap">
+                        {o.createdTime ? o.createdTime.substring(0, 16) : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {o.status === 'pending' && <Badge variant="info">Đang chờ xử lý</Badge>}
+                        {o.status === 'approved' && <Badge variant="success">Hoàn thành</Badge>}
+                        {o.status === 'rejected' && <Badge variant="danger">Hủy</Badge>}
+                        {o.status === 'returned' && <Badge variant="warning" className="bg-orange-50 text-orange-600 border-orange-200">Hoàn hàng</Badge>}
+                        {o.status === 'paid' && <Badge variant="warning">Đã thanh toán</Badge>}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </TableContainer>
+          </div>
+
+          <div className="flex justify-end pt-3 border-t border-border/40">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setViewingUserOrders(null)}
+              className="font-bold"
+            >
+              Đóng cửa sổ
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

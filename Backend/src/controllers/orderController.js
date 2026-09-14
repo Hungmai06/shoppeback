@@ -93,17 +93,27 @@ async function adminGetOrders(req, res) {
 
     if (search) {
       const searchParam = `%${search}%`;
-      query += ' AND (o.id LIKE ? OR o.product_name LIKE ? OR o.user_id LIKE ? OR u.name LIKE ? OR u.email LIKE ?)';
-      countQuery += ' AND (o.id LIKE ? OR o.product_name LIKE ? OR o.user_id LIKE ? OR u.name LIKE ? OR u.email LIKE ?)';
+      const sLower = search.toLowerCase();
+      let userNullCondition = '';
+      if (sLower.includes('chưa xác định') || sLower.includes('chua xac dinh') || sLower.includes('chưa gán') || sLower.includes('unassigned') || sLower === 'null') {
+        userNullCondition = ' OR o.user_id IS NULL';
+      }
+      query += ` AND (o.id LIKE ? OR o.product_name LIKE ? OR o.user_id LIKE ? OR u.name LIKE ? OR u.email LIKE ?${userNullCondition})`;
+      countQuery += ` AND (o.id LIKE ? OR o.product_name LIKE ? OR o.user_id LIKE ? OR u.name LIKE ? OR u.email LIKE ?${userNullCondition})`;
       params.push(searchParam, searchParam, searchParam, searchParam, searchParam);
       countParams.push(searchParam, searchParam, searchParam, searchParam, searchParam);
     }
 
     if (status && status !== 'all') {
-      query += ' AND o.status = ?';
-      countQuery += ' AND o.status = ?';
-      params.push(status);
-      countParams.push(status);
+      if (status === 'unassigned') {
+        query += ' AND o.user_id IS NULL';
+        countQuery += ' AND o.user_id IS NULL';
+      } else {
+        query += ' AND o.status = ?';
+        countQuery += ' AND o.status = ?';
+        params.push(status);
+        countParams.push(status);
+      }
     }
 
     query += ' ORDER BY o.created_at DESC LIMIT ? OFFSET ?';
