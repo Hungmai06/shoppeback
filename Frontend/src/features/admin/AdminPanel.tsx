@@ -133,6 +133,7 @@ export default function AdminPanel() {
   const [editUserHolder, setEditUserHolder] = useState('');
   const [editUserPhone, setEditUserPhone] = useState('');
   const [editUserPassword, setEditUserPassword] = useState('');
+  const [editUserBalance, setEditUserBalance] = useState('');
 
   // User orders viewer modal state
   const [viewingUserOrders, setViewingUserOrders] = useState<UserProfile | null>(null);
@@ -434,6 +435,7 @@ export default function AdminPanel() {
       setEditUserAccount(user.accountNumber || '');
       setEditUserHolder(user.accountHolder || '');
       setEditUserPhone(user.phone || '');
+      setEditUserBalance(String(user.balance || 0));
       setEditUserPassword('');
     } else {
       setEditUserName('');
@@ -443,6 +445,7 @@ export default function AdminPanel() {
       setEditUserAccount('');
       setEditUserHolder('');
       setEditUserPhone('');
+      setEditUserBalance('0');
       setEditUserPassword('');
     }
     setIsUserModalOpen(true);
@@ -464,7 +467,8 @@ export default function AdminPanel() {
         bankName: editUserBank,
         accountNumber: editUserAccount,
         accountHolder: editUserHolder,
-        phone: editUserPhone
+        phone: editUserPhone,
+        balance: parseFloat(editUserBalance) || 0
       });
       if (success) {
         toast.success('Cập nhật thông tin thành viên thành công!');
@@ -1908,6 +1912,13 @@ export default function AdminPanel() {
 
             {selectedUser && (
               <>
+                <Input
+                  label="Số dư khả dụng hiện tại (₫)"
+                  type="number"
+                  value={editUserBalance}
+                  onChange={(e) => setEditUserBalance(e.target.value)}
+                  placeholder="0"
+                />
                 <div className="grid grid-cols-2 gap-4">
                   <Input label="Ngân hàng" value={editUserBank} onChange={(e) => setEditUserBank(e.target.value)} />
                   <Input label="Số tài khoản" value={editUserAccount} onChange={(e) => setEditUserAccount(e.target.value)} />

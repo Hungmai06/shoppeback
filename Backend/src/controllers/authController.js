@@ -347,7 +347,7 @@ async function adminGetUsers(req, res) {
 
 async function adminUpdateUser(req, res) {
   const { id } = req.params;
-  const { name, email, role, bankName, accountNumber, accountHolder, phone } = req.body;
+  const { name, email, role, bankName, accountNumber, accountHolder, phone, balance } = req.body;
 
   try {
     const db = await getDatabase();
@@ -355,6 +355,8 @@ async function adminUpdateUser(req, res) {
     if (!user) {
       return res.status(404).json({ message: 'Không tìm thấy người dùng' });
     }
+
+    const parsedBalance = (balance !== undefined && balance !== null && balance !== '') ? parseFloat(balance) : user.balance;
 
     await db.run(
       `UPDATE users
@@ -365,9 +367,10 @@ async function adminUpdateUser(req, res) {
            bank_name = COALESCE(?, bank_name),
            account_number = COALESCE(?, account_number),
            account_holder = COALESCE(?, account_holder),
+           balance = ?,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [name, email, role, phone, bankName, accountNumber, accountHolder ? accountHolder.toUpperCase() : null, id]
+      [name, email, role, phone, bankName, accountNumber, accountHolder ? accountHolder.toUpperCase() : null, isNaN(parsedBalance) ? user.balance : parsedBalance, id]
     );
 
     res.json({ message: 'Cập nhật thông tin thành viên thành công' });
