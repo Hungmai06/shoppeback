@@ -1233,7 +1233,6 @@ export default function AdminPanel() {
                         <TableHead className="text-right">Giá Trị Đơn</TableHead>
                         <TableHead className="text-right">Hoa Hồng Shopee (100%)</TableHead>
                         <TableHead className="text-right">Hoàn Tiền Khách</TableHead>
-                        <TableHead className="text-right">Hoa Hồng Còn Lại (Lợi Nhuận)</TableHead>
                         <TableHead>Ngày Đặt</TableHead>
                         <TableHead>Trạng Thái</TableHead>
                         <TableHead className="text-center">Thao Tác</TableHead>
@@ -1242,23 +1241,21 @@ export default function AdminPanel() {
                     <TableBody>
                       {isLoadingOrders ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center py-16 text-xs text-text-secondary font-medium">
+                          <TableCell colSpan={9} className="text-center py-16 text-xs text-text-secondary font-medium">
                             <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
                             Đang tải danh sách đơn hàng...
                           </TableCell>
                         </TableRow>
                       ) : paginatedOrders.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center py-16 text-xs text-text-secondary font-medium">
+                          <TableCell colSpan={9} className="text-center py-16 text-xs text-text-secondary font-medium">
                             Chưa có đơn hàng nào phát sinh hoặc không tìm thấy đơn hàng phù hợp với từ khóa tìm kiếm.
                           </TableCell>
                         </TableRow>
                       ) : (
                         paginatedOrders.map((o) => {
-                          const shopeeComm = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
-                          const cashbackPercent = settings?.cashbackPercentage ?? 50;
-                          const userCashback = shopeeComm * (cashbackPercent / 100);
-                          const adminProfit = Math.max(0, shopeeComm - userCashback);
+                          const userCashback = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
+                          const shopeeComm = o.shopeeCommission !== undefined && o.shopeeCommission !== null ? o.shopeeCommission : userCashback * 2;
                           return (
                             <TableRow key={o.id}>
                               <TableCell className="font-bold text-primary">{o.id}</TableCell>
@@ -1278,7 +1275,6 @@ export default function AdminPanel() {
                               <TableCell className="text-right font-semibold">{Math.round(o.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
                               <TableCell className="text-right font-semibold text-text-secondary">{Math.round(shopeeComm).toLocaleString('vi-VN')}đ</TableCell>
                               <TableCell className="text-right font-bold text-primary">{Math.round(userCashback).toLocaleString('vi-VN')}đ</TableCell>
-                              <TableCell className="text-right font-bold text-success">{Math.round(adminProfit).toLocaleString('vi-VN')}đ</TableCell>
                               <TableCell className="text-xs font-semibold text-text-secondary">
                                 {o.createdTime ? o.createdTime.substring(0, 16) : '-'}
                               </TableCell>

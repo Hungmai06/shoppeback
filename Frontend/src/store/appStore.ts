@@ -7,6 +7,7 @@ export interface Order {
   orderAmount: number;
   estimatedCashback: number;
   realCashback?: number;
+  shopeeCommission?: number;
   status: 'pending' | 'approved' | 'rejected' | 'returned' | 'paid';
   createdTime: string;
   userId: string;
@@ -386,6 +387,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           orderAmount: o.order_amount,
           estimatedCashback: o.estimated_cashback,
           realCashback: o.real_cashback || undefined,
+          shopeeCommission: o.shopee_commission !== null && o.shopee_commission !== undefined ? Number(o.shopee_commission) : undefined,
           status: o.status,
           createdTime: o.created_at,
           userId: o.user_id,
@@ -642,6 +644,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           orderAmount: o.order_amount,
           estimatedCashback: o.estimated_cashback,
           realCashback: o.real_cashback || undefined,
+          shopeeCommission: o.shopee_commission !== null && o.shopee_commission !== undefined ? Number(o.shopee_commission) : undefined,
           status: o.status,
           createdTime: o.created_at,
           userId: o.user_id,
@@ -787,8 +790,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const headers = ['Mã đơn hàng', 'Mã thành viên', 'Tên sản phẩm', 'Giá trị đơn (₫)', 'Hoa hồng Shopee (₫)', 'Hoàn tiền khách (₫)', 'Ngày tạo', 'Trạng thái', 'Ghi chú'];
     const rows = orders.map(o => {
-      const shopeeComm = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
-      const userCashback = shopeeComm * (cashbackPercent / 100);
+      const userCashback = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
+      const shopeeComm = o.shopeeCommission !== undefined && o.shopeeCommission !== null ? o.shopeeCommission : userCashback * 2;
       let statusStr: string = o.status;
       if (o.status === 'pending') statusStr = 'Đang chờ xử lý';
       if (o.status === 'approved') statusStr = 'Hoàn thành';

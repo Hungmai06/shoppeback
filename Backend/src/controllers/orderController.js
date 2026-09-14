@@ -190,36 +190,80 @@ async function adminUpdateOrderStatus(req, res) {
       [status, targetUserId, updatedRealCashback, updatedNotes, id]
     );
 
-    // Update user balance if transitioning to approved
-    if (status === 'approved' && order.status !== 'approved' && targetUserId) {
-      const userCashback = updatedRealCashback;
-      
+    // Handle user balance update logic
+    const wasApproved = order.status === 'approved';
+    const isNowApproved = status === 'approved';
+    const oldUserId = order.user_id;
+
+    // 1. If order was approved but is now cancelled/returned, deduct cashback from old user
+    if (wasApproved && !isNowApproved && oldUserId) {
+      const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? order.real_cashback : order.estimated_cashback;
       await db.run(
         `UPDATE users 
-         SET balance = COALESCE(balance, 0) + ?,
-             total_cashback = COALESCE(total_cashback, 0) + ?
+         SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
+             total_cashback = CASE WHEN COALESCE(total_cashback, 0) >= ? THEN total_cashback - ? ELSE 0 END
          WHERE id = ?`,
-        [userCashback, userCashback, targetUserId]
+        [oldCashback, oldCashback, oldCashback, oldCashback, oldUserId]
       );
+    }
 
-      // Check for referral bonus (20%)
-      const currentUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
-      if (currentUserObj && currentUserObj.referred_by) {
-        const refBonus = userCashback * 0.20;
+    // 2. If order is approved (now or previously), and assigned/reassigned to targetUserId
+    if (isNowApproved && targetUserId) {
+      if (!wasApproved || !oldUserId || oldUserId !== targetUserId) {
+        // If user changed from a previous user while approved, deduct from previous user
+        if (wasApproved && oldUserId && oldUserId !== targetUserId) {
+          const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? order.real_cashback : order.estimated_cashback;
+          await db.run(
+            `UPDATE users 
+             SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
+                 total_cashback = CASE WHEN COALESCE(total_cashback, 0) >= ? THEN total_cashback - ? ELSE 0 END
+             WHERE id = ?`,
+            [oldCashback, oldCashback, oldCashback, oldCashback, oldUserId]
+          );
+        }
+
+        // Credit new targetUserId
+        const userCashback = updatedRealCashback;
         await db.run(
           `UPDATE users 
            SET balance = COALESCE(balance, 0) + ?,
-               referral_earnings = COALESCE(referral_earnings, 0) + ?
+               total_cashback = COALESCE(total_cashback, 0) + ?
            WHERE id = ?`,
-          [refBonus, refBonus, currentUserObj.referred_by]
+          [userCashback, userCashback, targetUserId]
         );
-        
-        const refNotifId = `NT${Date.now()}${Math.floor(Math.random()*100)}`;
-        await db.run(
-          `INSERT INTO notifications (id, user_id, title, content, type)
-           VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
-          [refNotifId, currentUserObj.referred_by, `Bạn nhận được +${Math.round(refBonus).toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
-        );
+
+        // Check for referral bonus (20%)
+        const currentUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
+        if (currentUserObj && currentUserObj.referred_by) {
+          const refBonus = userCashback * 0.20;
+          await db.run(
+            `UPDATE users 
+             SET balance = COALESCE(balance, 0) + ?,
+                 referral_earnings = COALESCE(referral_earnings, 0) + ?
+             WHERE id = ?`,
+            [refBonus, refBonus, currentUserObj.referred_by]
+          );
+          
+          const refNotifId = `NT${Date.now()}${Math.floor(Math.random()*100)}`;
+          await db.run(
+            `INSERT INTO notifications (id, user_id, title, content, type)
+             VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
+            [refNotifId, currentUserObj.referred_by, `Bạn nhận được +${Math.round(refBonus).toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
+          );
+        }
+      } else if (wasApproved && oldUserId === targetUserId) {
+        // Same user, check if cashback amount changed
+        const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? order.real_cashback : order.estimated_cashback;
+        const diff = updatedRealCashback - oldCashback;
+        if (diff !== 0) {
+          await db.run(
+            `UPDATE users 
+             SET balance = CASE WHEN (COALESCE(balance, 0) + ?) >= 0 THEN (COALESCE(balance, 0) + ?) ELSE 0 END,
+                 total_cashback = CASE WHEN (COALESCE(total_cashback, 0) + ?) >= 0 THEN (COALESCE(total_cashback, 0) + ?) ELSE 0 END
+             WHERE id = ?`,
+            [diff, diff, diff, diff, targetUserId]
+          );
+        }
       }
     }
 

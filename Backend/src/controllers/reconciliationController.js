@@ -975,8 +975,9 @@ async function applyReconciliation(req, res) {
           [mappedStatus, targetUserId, userCashback, commission, orderAmount, productName, dbOrder.id]
         );
 
-        // Calculate and add money to user if status transitioned to approved
-        if (targetUserId && mappedStatus === 'approved' && currentDbStatus !== 'approved') {
+        // Calculate and add money to user if status transitioned to approved OR if order was previously unassigned/assigned to another user
+        const shouldCreditUser = targetUserId && mappedStatus === 'approved' && (currentDbStatus !== 'approved' || !currentDbUserId || currentDbUserId !== targetUserId);
+        if (shouldCreditUser) {
           const userCashback = commission * cashbackRate;
           await db.run(
             `UPDATE users 
