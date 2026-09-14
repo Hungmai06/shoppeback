@@ -785,8 +785,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   exportOrdersCSV: () => {
     const orders = get().orders;
-    const settings = get().settings;
-    const cashbackPercent = settings?.cashbackPercentage ?? 50;
 
     const headers = ['Mã đơn hàng', 'Mã thành viên', 'Tên sản phẩm', 'Giá trị đơn (₫)', 'Hoa hồng Shopee (₫)', 'Hoàn tiền khách (₫)', 'Ngày tạo', 'Trạng thái', 'Ghi chú'];
     const rows = orders.map(o => {
