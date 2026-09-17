@@ -62,6 +62,64 @@ function normalizeHeader(header) {
     .replace(/[^a-z0-9]/g, ''); // keep only alphanumeric
 }
 
+// Helper to resolve SubID (like CLK17890541480500jsjwp) to target UserId and ClickId using prefix/substring matching
+function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, clickSubIdToUserIdMap }) {
+  if (!cleanSubId) return { targetUserId: null, targetClickId: null };
+
+  const trimmed = cleanSubId.trim();
+
+  // 1. Direct exact map lookup
+  if (clickSubIdToUserIdMap.has(trimmed)) {
+    return {
+      targetUserId: clickSubIdToUserIdMap.get(trimmed),
+      targetClickId: trimmed
+    };
+  }
+  if (userIds.has(trimmed)) {
+    return { targetUserId: trimmed, targetClickId: null };
+  }
+  if (affiliateSubIdToUserIdMap.has(trimmed)) {
+    return { targetUserId: affiliateSubIdToUserIdMap.get(trimmed), targetClickId: null };
+  }
+
+  // 2. Extract base CLK pattern (e.g., CLK17890541480500 from CLK17890541480500jsjwp)
+  const clkMatch = trimmed.match(/clk\d+/i);
+  if (clkMatch) {
+    const baseClk = clkMatch[0]; // e.g. CLK17890541480500
+    for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
+      const lowerKey = key.toLowerCase();
+      const lowerBase = baseClk.toLowerCase();
+      const lowerTrimmed = trimmed.toLowerCase();
+      if (
+        lowerKey === lowerBase ||
+        lowerKey.startsWith(lowerBase) ||
+        lowerBase.startsWith(lowerKey) ||
+        lowerTrimmed.startsWith(lowerKey) ||
+        lowerKey.startsWith(lowerTrimmed)
+      ) {
+        return {
+          targetUserId: userId,
+          targetClickId: key
+        };
+      }
+    }
+  }
+
+  // 3. Fallback prefix/substring scan
+  const lowerSub = trimmed.toLowerCase();
+  for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
+    const lowerKey = key.toLowerCase();
+    if (lowerSub.startsWith(lowerKey) || lowerKey.startsWith(lowerSub)) {
+      return {
+        targetUserId: userId,
+        targetClickId: key
+      };
+    }
+  }
+
+  return { targetUserId: null, targetClickId: null };
+}
+
 // Helper to parse numbers from Shopee CSV format (e.g., "1.200.000₫", "25.000", "25,000", "1.200.000,50")
 function parseShopeeNumber(val) {
   if (val === null || val === undefined) return 0;
@@ -435,11 +493,14 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
 
   // Direct match by ID / click_id in pendingOrders
   if (pendingOrders && pendingOrders.length > 0) {
+    const targetOId = (orderId || '').toLowerCase();
+    const targetSub = (cleanSubId || '').toLowerCase();
+    const subClkMatch = targetSub.match(/clk\d+/i);
+    const baseSubClk = subClkMatch ? subClkMatch[0].toLowerCase() : '';
+
     for (const pending of pendingOrders) {
       const pId = (pending.id || '').toLowerCase();
       const pClick = (pending.click_id || '').toLowerCase();
-      const targetOId = (orderId || '').toLowerCase();
-      const targetSub = (cleanSubId || '').toLowerCase();
 
       if (targetOId && (pId === targetOId || pClick === targetOId)) {
         return {
@@ -450,14 +511,22 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
           reason: `Khớp trực tiếp Mã đơn (${pending.id})`
         };
       }
-      if (targetSub && (pId === targetSub || pClick === targetSub)) {
-        return {
-          score: 200,
-          userId: pending.user_id || targetUserId,
-          clickId: pending.click_id || pending.id,
-          pendingOrderId: pending.id,
-          reason: `Khớp trực tiếp Click/SubID (${pending.id})`
-        };
+      if (targetSub) {
+        if (
+          pId === targetSub || 
+          pClick === targetSub || 
+          (baseSubClk && (pId.startsWith(baseSubClk) || pClick.startsWith(baseSubClk) || baseSubClk.startsWith(pId) || baseSubClk.startsWith(pClick))) ||
+          targetSub.startsWith(pId) || 
+          targetSub.startsWith(pClick)
+        ) {
+          return {
+            score: 200,
+            userId: pending.user_id || targetUserId,
+            clickId: pending.click_id || pending.id,
+            pendingOrderId: pending.id,
+            reason: `Khớp Mã Click/SubID (${pending.id})`
+          };
+        }
       }
     }
   }
@@ -841,12 +910,13 @@ async function uploadAndAnalyze(req, res) {
       let smartMatchInfo = null;
 
       if (cleanSubId) {
-        if (clickSubIdToUserIdMap.has(cleanSubId)) {
-          targetUserId = clickSubIdToUserIdMap.get(cleanSubId);
-        } else if (userIds.has(cleanSubId)) {
-          targetUserId = cleanSubId;
-        } else if (affiliateSubIdToUserIdMap.has(cleanSubId)) {
-          targetUserId = affiliateSubIdToUserIdMap.get(cleanSubId);
+        const resolved = resolveSubIdToUserId(cleanSubId, {
+          userIds,
+          affiliateSubIdToUserIdMap,
+          clickSubIdToUserIdMap
+        });
+        if (resolved.targetUserId) {
+          targetUserId = resolved.targetUserId;
         }
       }
 
@@ -929,6 +999,22 @@ async function uploadAndAnalyze(req, res) {
         }
       } else {
         // Totally new order or updating pending CLK order
+        if (!targetUserId && (!smartMatchInfo || !smartMatchInfo.pendingOrderId)) {
+          // Skip importing unmatched CSV order with no sub_id or user association
+          report.missingCount++;
+          report.details.push({
+            id: orderId,
+            name: productName,
+            amount: orderAmount,
+            cashback: userCashback,
+            subId: '',
+            shopeeStatus: mappedStatus,
+            status: 'ignored',
+            reason: 'Bỏ qua không import do không có Sub_id / không thuộc về User nào'
+          });
+          continue;
+        }
+
         report.matchedCount++;
         report.details.push({
           id: orderId,
@@ -939,10 +1025,8 @@ async function uploadAndAnalyze(req, res) {
           shopeeStatus: mappedStatus,
           status: 'matched',
           reason: (smartMatchInfo && smartMatchInfo.pendingOrderId)
-            ? `Cập nhật Đơn chờ ${smartMatchInfo.pendingOrderId} theo giá CSV cho User ${targetUserId || 'chưa gán'} (${smartMatchInfo.reason})`
-            : (targetUserId 
-                ? `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}` 
-                : `Tạo đơn hàng mới (chưa xác định thành viên) ở trạng thái ${mappedStatus}`)
+            ? `Cập nhật Đơn chờ ${smartMatchInfo.pendingOrderId} theo giá CSV cho User ${targetUserId} (${smartMatchInfo.reason})`
+            : `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}`
         });
       }
     }
@@ -1039,13 +1123,14 @@ async function applyReconciliation(req, res) {
       let smartMatchInfo = null;
 
       if (cleanSubId) {
-        if (clickSubIdToUserIdMap.has(cleanSubId)) {
-          targetUserId = clickSubIdToUserIdMap.get(cleanSubId);
-          targetClickId = clickIdMap.get(cleanSubId) || null;
-        } else if (userIds.has(cleanSubId)) {
-          targetUserId = cleanSubId;
-        } else if (affiliateSubIdToUserIdMap.has(cleanSubId)) {
-          targetUserId = affiliateSubIdToUserIdMap.get(cleanSubId);
+        const resolved = resolveSubIdToUserId(cleanSubId, {
+          userIds,
+          affiliateSubIdToUserIdMap,
+          clickSubIdToUserIdMap
+        });
+        if (resolved.targetUserId) {
+          targetUserId = resolved.targetUserId;
+          targetClickId = resolved.targetClickId || null;
         }
       }
 
@@ -1206,11 +1291,16 @@ async function applyReconciliation(req, res) {
 
         updatedCount++;
       } else {
-        // Insert new order from CSV
-        const orderTime = formatToMySQLDateTime(purchaseTime);
-
-        // If smart match found a temporary pending order created on link click, update it in-place so its ID, amount, cashback, and product name are updated to match the CSV file
+        // Totally new order or updating pending CLK order
         const pendingIdToUpdate = (smartMatchInfo && smartMatchInfo.pendingOrderId) ? smartMatchInfo.pendingOrderId : null;
+
+        // Skip importing unmatched CSV order if there is no user and no matching pending click order
+        if (!targetUserId && !pendingIdToUpdate) {
+          ignoredCount++;
+          continue;
+        }
+
+        const orderTime = formatToMySQLDateTime(purchaseTime);
 
         if (pendingIdToUpdate) {
           await db.run(

@@ -223,7 +223,7 @@ export default function UserDashboard() {
 
   const getStatusBadge = (status: Order['status']) => {
     switch (status) {
-      case 'pending': return <Badge variant="info">Đang chờ xử lý</Badge>;
+      case 'pending': return <Badge variant="info">Đang chờ đối soát</Badge>;
       case 'approved': return <Badge variant="success">Hoàn thành</Badge>;
       case 'rejected': return <Badge variant="danger">Hủy</Badge>;
       case 'returned': return <Badge variant="warning" className="bg-orange-50 text-orange-600 border-orange-200">Hoàn hàng</Badge>;
