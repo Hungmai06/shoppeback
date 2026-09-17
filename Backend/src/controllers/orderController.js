@@ -327,17 +327,23 @@ async function adminDeleteOrder(req, res) {
 }
 
 async function adminClearAllOrders(req, res) {
-  const { type } = req.query; // 'all' or 'unassigned'
+  const { type } = req.query; // 'all', 'unassigned', or 'full-clean'
 
   try {
     const db = await getDatabase();
     if (type === 'unassigned') {
       const result = await db.run('DELETE FROM orders WHERE user_id IS NULL OR user_id = ""');
-      res.json({ message: `Đã xóa ${result.changes || 0} đơn hàng chưa xác định thành công` });
-    } else {
-      const result = await db.run('DELETE FROM orders');
-      res.json({ message: `Đã xóa toàn bộ ${result.changes || 0} đơn hàng thành công` });
+      return res.json({ message: `Đã xóa ${result.changes || 0} đơn hàng chưa xác định thành công` });
     }
+
+    await db.run('DELETE FROM orders');
+    await db.run('DELETE FROM click_logs');
+    await db.run('DELETE FROM withdrawals');
+    await db.run('DELETE FROM notifications');
+    await db.run('DELETE FROM reconciliation_logs');
+    await db.run('UPDATE users SET balance = 0, total_cashback = 0, pending_cashback = 0');
+
+    res.json({ message: 'Đã xóa sạch dữ liệu đơn hàng, lượt click, rút tiền và reset ví thành viên về 0đ thành công!' });
   } catch (error) {
     console.error('Admin Clear All Orders Error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ khi xóa dữ liệu đơn hàng' });
