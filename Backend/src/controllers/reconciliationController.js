@@ -80,7 +80,7 @@ function extractRowFields(row) {
 
   // === ORDER ID ===
   // Priority: "ID đơn hàng" > "Mã đơn hàng" > ordersn/orderid
-  for (const normKey of ['iddonhang', 'madonhang', 'ordersn', 'orderid', 'id', 'sn']) {
+  for (const normKey of ['iddonhang', 'madonhang', 'madon', 'ordersn', 'orderid', 'id', 'sn', 'madinhdanh']) {
     if (normMap[normKey] && normMap[normKey].val) {
       orderId = normMap[normKey].val;
       break;
@@ -88,7 +88,7 @@ function extractRowFields(row) {
   }
   if (!orderId) {
     for (const [nk, entry] of Object.entries(normMap)) {
-      if ((nk.includes('iddon') || nk.includes('madon') || nk.includes('ordersn')) && entry.val) {
+      if ((nk.includes('iddon') || nk.includes('madon') || nk.includes('ordersn') || nk.includes('orderid')) && entry.val) {
         orderId = entry.val;
         break;
       }
@@ -97,15 +97,15 @@ function extractRowFields(row) {
 
   // === SUB ID (User identifier) ===
   // Priority: "Sub_id1" exact match
-  for (const normKey of ['subid1', 'subid', 'sub1']) {
-    if (normMap[normKey] !== undefined) {
+  for (const normKey of ['subid1', 'subid', 'sub1', 'sub_id1', 'sub_id']) {
+    if (normMap[normKey] !== undefined && normMap[normKey].val) {
       subId = normMap[normKey].val;
       break;
     }
   }
   if (!subId) {
     for (const [nk, entry] of Object.entries(normMap)) {
-      if (nk.includes('subid1') || nk.includes('subid')) {
+      if ((nk.includes('subid') || nk.includes('sub_id')) && entry.val) {
         subId = entry.val;
         break;
       }
@@ -114,7 +114,7 @@ function extractRowFields(row) {
 
   // === PRODUCT NAME ===
   // Priority: "Tên Item" > "Tên sản phẩm" > product/item
-  for (const normKey of ['tenitem', 'tensanpham', 'itemname', 'productname', 'tensp']) {
+  for (const normKey of ['tenitem', 'tensanpham', 'tensp', 'itemname', 'productname', 'sanpham', 'item']) {
     if (normMap[normKey] && normMap[normKey].val) {
       productName = normMap[normKey].val;
       break;
@@ -122,7 +122,7 @@ function extractRowFields(row) {
   }
   if (!productName) {
     for (const [nk, entry] of Object.entries(normMap)) {
-      if ((nk.includes('tenitem') || nk.includes('tensanpham') || nk.includes('itemname') || nk.includes('productname')) && entry.val) {
+      if ((nk.includes('tenitem') || nk.includes('tensanpham') || nk.includes('tensp') || nk.includes('itemname') || nk.includes('productname') || nk.includes('sanpham')) && entry.val) {
         productName = entry.val;
         break;
       }
@@ -131,10 +131,10 @@ function extractRowFields(row) {
 
   // === ORDER AMOUNT ===
   // Shopee CSV: "Giá trị đơn hàng (₫)" → normKey = "giatridonhangd"
-  // Priority exact: "giatridonhangd", "giatridonhang", "ordervalue"
   const amountCandidates = [
     'giatridonhangd', 'giatridonhang', 'giatrionhangd', 'giatrionhang',
-    'ordervalue', 'tongtien', 'orderamount'
+    'giadonhang', 'giadon', 'giatri', 'tongtien', 'ordervalue', 'orderamount',
+    'totalamount', 'amount', 'price'
   ];
   for (const normKey of amountCandidates) {
     if (normMap[normKey] && normMap[normKey].val) {
@@ -146,9 +146,8 @@ function extractRowFields(row) {
     }
   }
   if (!orderAmount) {
-    // Fallback partial: look for giatri + don
     for (const [nk, entry] of Object.entries(normMap)) {
-      if (nk.includes('giatridon') && entry.val) {
+      if ((nk.includes('giatri') || nk.includes('giadon') || nk.includes('tongtien') || nk.includes('amount') || nk.includes('value')) && entry.val) {
         const parsed = parseFloat(entry.val.replace(/[^0-9.-]+/g, ''));
         if (!isNaN(parsed) && parsed > 0) { orderAmount = parsed; break; }
       }
@@ -156,9 +155,7 @@ function extractRowFields(row) {
   }
 
   // === COMMISSION ===
-  // Shopee CSV: "Hoa hồng ròng tiếp thị liên kết(₫)" → normKey = "hoahongrongtipthi..."
-  // Also: "Tổng hoa hồng đơn hàng(₫)" → "tonghoahongdonhangd"
-  // Also: "Hoa hồng đơn hàng từ Shopee(₫)" → "hoahongdonhangtushopeed"
+  // Shopee CSV: "Hoa hồng ròng tiếp thị liên kết(₫)"
   const commCandidates = [
     'hoahongrongtipthilienketd',     // Hoa hồng ròng tiếp thị liên kết(₫)
     'hoahongrongtipthilienket',
@@ -168,13 +165,16 @@ function extractRowFields(row) {
     'hoahongdonhangtushopee',
     'tonghoahongsanphamd',
     'tonghoahongsanpham',
+    'hoahongtong',
+    'hoahongsan',
     'hoahong',
-    'commission'
+    'commission',
+    'comm'
   ];
   for (const normKey of commCandidates) {
     if (normMap[normKey] && normMap[normKey].val) {
       const parsed = parseFloat(normMap[normKey].val.replace(/[^0-9.-]+/g, ''));
-      if (!isNaN(parsed)) {
+      if (!isNaN(parsed) && parsed > 0) {
         commission = parsed;
         break;
       }
@@ -182,7 +182,7 @@ function extractRowFields(row) {
   }
   if (!commission) {
     for (const [nk, entry] of Object.entries(normMap)) {
-      if ((nk.includes('hoahong') || nk.includes('commission')) && entry.val) {
+      if ((nk.includes('hoahong') || nk.includes('commission') || nk.includes('comm')) && entry.val) {
         const parsed = parseFloat(entry.val.replace(/[^0-9.-]+/g, ''));
         if (!isNaN(parsed) && parsed > 0) { commission = parsed; break; }
       }
@@ -1075,32 +1075,59 @@ async function applyReconciliation(req, res) {
         // Insert new order from CSV
         const orderTime = formatToMySQLDateTime(purchaseTime);
 
-        // If smart match found a temporary pending order created on link click, clean it up so CSV order replaces it 100%
-        const pendingIdToDelete = smartMatchInfo ? smartMatchInfo.pendingOrderId : null;
-        if (pendingIdToDelete) {
-          await db.run('DELETE FROM orders WHERE id = ? AND status = "pending"', [pendingIdToDelete]);
-        }
-        if (targetClickId) {
-          await db.run('DELETE FROM orders WHERE (id = ? OR click_id = ?) AND status = "pending"', [targetClickId, targetClickId]);
-        }
+        // If smart match found a temporary pending order created on link click, update it in-place so its ID, amount, cashback, and product name are updated to match the CSV file
+        const pendingIdToUpdate = (smartMatchInfo && smartMatchInfo.pendingOrderId) ? smartMatchInfo.pendingOrderId : null;
 
-        await db.run(
-          `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [
-            orderId,
-            targetUserId,
-            targetClickId,
-            productName,
-            'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=200', // default shopee image placeholder
-            orderAmount,
-            userCashback, // 50% cashback for user
-            userCashback, // 50% cashback for user
-            commission,   // 100% total shopee commission for admin
-            mappedStatus,
-            orderTime
-          ]
-        );
+        if (pendingIdToUpdate) {
+          await db.run(
+            `UPDATE orders
+             SET id = ?,
+                 product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
+                 order_amount = CASE WHEN ? > 0 THEN ? ELSE order_amount END,
+                 shopee_commission = ?,
+                 estimated_cashback = ?,
+                 real_cashback = ?,
+                 status = ?,
+                 user_id = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [
+              orderId,
+              productName,
+              productName,
+              orderAmount,
+              orderAmount,
+              commission,
+              userCashback,
+              userCashback,
+              mappedStatus,
+              targetUserId,
+              pendingIdToUpdate
+            ]
+          );
+        } else {
+          if (targetClickId) {
+            await db.run('DELETE FROM orders WHERE (id = ? OR click_id = ?) AND status = "pending"', [targetClickId, targetClickId]);
+          }
+
+          await db.run(
+            `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [
+              orderId,
+              targetUserId,
+              targetClickId,
+              productName,
+              'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=200',
+              orderAmount,
+              userCashback,
+              userCashback,
+              commission,
+              mappedStatus,
+              orderTime
+            ]
+          );
+        }
 
         // Calculate and add money to user if new order is already approved
         // Calculate and add money to user if new order is already approved
