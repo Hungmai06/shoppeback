@@ -68,32 +68,35 @@ function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, 
 
   const trimmed = cleanSubId.trim();
 
-  // 1. Direct exact map lookup
-  if (clickSubIdToUserIdMap.has(trimmed)) {
-    return {
-      targetUserId: clickSubIdToUserIdMap.get(trimmed),
-      targetClickId: trimmed
-    };
+  const lowerTrimmed = trimmed.toLowerCase();
+
+  // 1. Direct exact or case-insensitive map lookup
+  for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
+    if (key.toLowerCase() === lowerTrimmed) {
+      return { targetUserId: userId, targetClickId: key };
+    }
   }
-  if (userIds.has(trimmed)) {
-    return { targetUserId: trimmed, targetClickId: null };
+  for (const uid of userIds) {
+    if (uid.toLowerCase() === lowerTrimmed) {
+      return { targetUserId: uid, targetClickId: null };
+    }
   }
-  if (affiliateSubIdToUserIdMap.has(trimmed)) {
-    return { targetUserId: affiliateSubIdToUserIdMap.get(trimmed), targetClickId: null };
+  for (const [sub, uid] of affiliateSubIdToUserIdMap.entries()) {
+    if (sub.toLowerCase() === lowerTrimmed) {
+      return { targetUserId: uid, targetClickId: null };
+    }
   }
 
   // 2. Extract base CLK pattern (e.g., CLK17890541480500 from CLK17890541480500jsjwp)
   const clkMatch = trimmed.match(/clk\d+/i);
   if (clkMatch) {
-    const baseClk = clkMatch[0]; // e.g. CLK17890541480500
+    const baseClk = clkMatch[0].toLowerCase(); // e.g. clk17890541480500
     for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
       const lowerKey = key.toLowerCase();
-      const lowerBase = baseClk.toLowerCase();
-      const lowerTrimmed = trimmed.toLowerCase();
       if (
-        lowerKey === lowerBase ||
-        lowerKey.startsWith(lowerBase) ||
-        lowerBase.startsWith(lowerKey) ||
+        lowerKey === baseClk ||
+        lowerKey.startsWith(baseClk) ||
+        baseClk.startsWith(lowerKey) ||
         lowerTrimmed.startsWith(lowerKey) ||
         lowerKey.startsWith(lowerTrimmed)
       ) {
@@ -106,10 +109,9 @@ function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, 
   }
 
   // 3. Fallback prefix/substring scan
-  const lowerSub = trimmed.toLowerCase();
   for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
     const lowerKey = key.toLowerCase();
-    if (lowerSub.startsWith(lowerKey) || lowerKey.startsWith(lowerSub)) {
+    if (lowerTrimmed.startsWith(lowerKey) || lowerKey.startsWith(lowerTrimmed)) {
       return {
         targetUserId: userId,
         targetClickId: key
@@ -854,6 +856,10 @@ async function uploadAndAnalyze(req, res) {
 
     // Read all pending/CLK orders in system created on link click or manually assigned
     const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE status = 'pending' OR id LIKE 'CLK%'");
+    for (const p of pendingOrders) {
+      if (p.id && p.user_id) clickSubIdToUserIdMap.set(p.id, p.user_id);
+      if (p.click_id && p.user_id) clickSubIdToUserIdMap.set(p.click_id, p.user_id);
+    }
 
     // Read all existing orders
     const allOrders = await db.all('SELECT id, status, user_id, order_amount, real_cashback, estimated_cashback FROM orders');
@@ -999,8 +1005,8 @@ async function uploadAndAnalyze(req, res) {
         }
       } else {
         // Totally new order or updating pending CLK order
-        if (!targetUserId && (!smartMatchInfo || !smartMatchInfo.pendingOrderId)) {
-          // Skip importing unmatched CSV order with no sub_id or user association
+        if (!cleanSubId && !targetUserId && (!smartMatchInfo || !smartMatchInfo.pendingOrderId)) {
+          // Skip importing unmatched CSV order ONLY if it has NO Sub_id1 AND no user match
           report.missingCount++;
           report.details.push({
             id: orderId,
@@ -1010,7 +1016,7 @@ async function uploadAndAnalyze(req, res) {
             subId: '',
             shopeeStatus: mappedStatus,
             status: 'ignored',
-            reason: 'Bỏ qua không import do không có Sub_id / không thuộc về User nào'
+            reason: 'Bỏ qua không import do không có Sub_id1 & không thuộc về User nào'
           });
           continue;
         }
@@ -1021,12 +1027,14 @@ async function uploadAndAnalyze(req, res) {
           name: productName,
           amount: orderAmount,
           cashback: userCashback,
-          subId: targetUserId,
+          subId: targetUserId || cleanSubId,
           shopeeStatus: mappedStatus,
           status: 'matched',
           reason: (smartMatchInfo && smartMatchInfo.pendingOrderId)
-            ? `Cập nhật Đơn chờ ${smartMatchInfo.pendingOrderId} theo giá CSV cho User ${targetUserId} (${smartMatchInfo.reason})`
-            : `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}`
+            ? `Cập nhật Đơn chờ ${smartMatchInfo.pendingOrderId} theo giá CSV cho User ${targetUserId || 'chưa gán'} (${smartMatchInfo.reason})`
+            : (targetUserId 
+                ? `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}` 
+                : `Tạo đơn hàng mới với SubID (${cleanSubId}) ở trạng thái ${mappedStatus}`)
         });
       }
     }
@@ -1078,6 +1086,16 @@ async function applyReconciliation(req, res) {
     }
 
     const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE status = 'pending' OR id LIKE 'CLK%'");
+    for (const p of pendingOrders) {
+      if (p.id && p.user_id) {
+        clickSubIdToUserIdMap.set(p.id, p.user_id);
+        clickIdMap.set(p.id, p.id);
+      }
+      if (p.click_id && p.user_id) {
+        clickSubIdToUserIdMap.set(p.click_id, p.user_id);
+        clickIdMap.set(p.click_id, p.id);
+      }
+    }
 
     const allOrders = await db.all('SELECT id, status, user_id, order_amount, real_cashback, estimated_cashback FROM orders');
     const existingOrdersMap = new Map(allOrders.map(o => [
@@ -1294,8 +1312,8 @@ async function applyReconciliation(req, res) {
         // Totally new order or updating pending CLK order
         const pendingIdToUpdate = (smartMatchInfo && smartMatchInfo.pendingOrderId) ? smartMatchInfo.pendingOrderId : null;
 
-        // Skip importing unmatched CSV order if there is no user and no matching pending click order
-        if (!targetUserId && !pendingIdToUpdate) {
+        // Skip importing unmatched CSV order ONLY if it has NO Sub_id1, no user, and no pending click order
+        if (!cleanSubId && !targetUserId && !pendingIdToUpdate) {
           ignoredCount++;
           continue;
         }
