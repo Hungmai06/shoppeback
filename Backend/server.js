@@ -91,8 +91,11 @@ if (isClusterEnabled && cluster.isPrimary) {
     next();
   });
 
-  // Serve static uploads with aggressive browser caching
+  const path = require('path');
+  // Serve static uploads and public images with aggressive browser caching
   app.use('/uploads', express.static('uploads', { maxAge: '7d' }));
+  app.use('/public', express.static(path.join(__dirname, 'src/public'), { maxAge: '7d' }));
+  app.use(express.static(path.join(__dirname, 'src/public'), { maxAge: '7d' }));
 
   // 6. Bind API Routes
   app.use('/api/auth', require('./src/routes/authRoutes'));

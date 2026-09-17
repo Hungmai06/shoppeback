@@ -34,6 +34,20 @@ export default function LandingPage() {
     productName: ''
   });
 
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; step: number } | null>(null);
+
+  const purchasingSteps = [
+    { step: 1, badge: "BƯỚC 1", title: "Đăng ký / Đăng nhập tài khoản", image: null },
+    { step: 2, badge: "BƯỚC 2", title: "Bước 2", image: "/1.jpg" },
+    { step: 3, badge: "BƯỚC 3", title: "Bước 3", image: "/2.jpg" },
+    { step: 4, badge: "BƯỚC 4", title: "Bước 4", image: "/3.jpg" },
+    { step: 5, badge: "BƯỚC 5", title: "Bước 5", image: "/4.jpg" },
+    { step: 6, badge: "BƯỚC 6", title: "Bước 6", image: "/5.jpg" },
+    { step: 7, badge: "BƯỚC 7", title: "Bước 7", image: "/6.jpg" },
+    { step: 8, badge: "BƯỚC 8", title: "Bước 8", image: "/7.jpg" }
+  ];
+
+
 
 
   const parseShopeeUrlFallback = (input: string) => {
@@ -544,6 +558,140 @@ export default function LandingPage() {
             ))}
           </div>
         )}
+
+        {/* 8-STEP CASHBACK PURCHASING GUIDE WITH DIRECT IMAGES */}
+        <div className="bg-white border border-border/80 rounded-card p-6 md:p-10 card-shadow text-left mt-8 mb-12 max-w-7xl mx-auto hover:shadow-soft transition-all duration-300">
+          <div className="text-center max-w-3xl mx-auto mb-10">
+            <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-primary/10 text-primary font-extrabold text-xs uppercase tracking-wider rounded-full mb-3">
+              🚀 Quy trình mua hàng hoàn tiền
+            </span>
+            <h2 className="text-2xl md:text-4xl font-black text-text mb-3 leading-tight">
+              Hướng Dẫn <span className="gradient-text">8 Bước Mua Hàng</span>
+            </h2>
+            <p className="text-xs md:text-sm text-text-secondary leading-relaxed">
+              Các bước lần lượt từ Bước 1 đến Bước 8 với hình ảnh hiển thị trực tiếp hỗ trợ mua sắm hoàn tiền dễ dàng.
+            </p>
+          </div>
+
+          {/* 8 Steps Grid Layout (Direct Image Display on Every Step Card) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {purchasingSteps.map((s) => (
+              <div
+                key={s.step}
+                className="bg-white border border-border/80 hover:border-primary/50 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden"
+              >
+                {/* Card Top Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-black px-3 py-1 rounded-full bg-primary text-white shadow-xs">
+                    {s.badge}
+                  </span>
+                  <span className="text-xs font-bold text-text-secondary font-mono">
+                    {s.step} / 8
+                  </span>
+                </div>
+
+                {/* Card Body / Image Content */}
+                {s.step === 1 ? (
+                  <div className="flex-1 flex flex-col justify-between bg-gradient-to-br from-bg to-orange-50/40 p-5 rounded-xl border border-primary/20 min-h-[220px]">
+                    <div className="flex flex-col items-center text-center my-auto">
+                      <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
+                        <Users className="h-7 w-7" />
+                      </div>
+                      <h4 className="font-extrabold text-text text-sm mb-1">Đăng ký / Đăng nhập</h4>
+                      <p className="text-[11px] text-text-secondary leading-relaxed mb-3">
+                        Đăng nhập để hệ thống tự động ghi nhận tiền hoàn vào tài khoản của bạn.
+                      </p>
+                      {currentUser ? (
+                        <Badge variant="success" className="py-1 px-3 text-[11px] font-bold">
+                          Đã đăng nhập ({currentUser.name})
+                        </Badge>
+                      ) : (
+                        <Badge variant="warning" className="py-1 px-3 text-[11px] font-bold">
+                          Chưa đăng nhập
+                        </Badge>
+                      )}
+                    </div>
+                    <Button
+                      onClick={() => {
+                        if (!currentUser) openAuthModal('login');
+                        else navigate('/dashboard');
+                      }}
+                      className="w-full font-bold text-xs py-2.5 mt-2"
+                    >
+                      {currentUser ? 'Vào Dashboard cá nhân' : 'Đăng ký / Đăng nhập ngay'}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col gap-2">
+                    <div
+                      onClick={() => setLightboxImage({ src: s.image!, step: s.step })}
+                      className="w-full h-64 sm:h-72 bg-bg border border-border/60 rounded-xl overflow-hidden cursor-pointer relative group/img flex items-center justify-center shadow-inner"
+                    >
+                      <img
+                        src={s.image!}
+                        alt={`Hình ảnh ${s.badge}`}
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          const stepNum = s.step - 1;
+                          if (!target.src.includes('png')) {
+                            target.src = `/${stepNum}.png`;
+                          }
+                        }}
+                        className="w-full h-full object-contain p-1.5 group-hover/img:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1.5">
+                        <Search className="h-4 w-4" /> Phóng to ảnh {s.badge}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* LIGHTBOX MODAL FOR FULL-SCREEN IMAGE VIEWING */}
+        <AnimatePresence>
+          {lightboxImage && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLightboxImage(null)}
+              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
+            >
+              <motion.div
+                initial={{ scale: 0.85, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.85, y: 20 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white rounded-2xl overflow-hidden max-w-4xl max-h-[90vh] shadow-2xl relative flex flex-col cursor-default"
+              >
+                <div className="p-4 bg-white border-b border-border flex items-center justify-between">
+                  <span className="font-extrabold text-sm text-text flex items-center gap-2">
+                    <span className="px-3 py-1 bg-primary text-white rounded-full text-xs">
+                      BƯỚC {lightboxImage.step}
+                    </span>
+                    Ảnh minh họa quy trình mua hàng
+                  </span>
+                  <button
+                    onClick={() => setLightboxImage(null)}
+                    className="w-8 h-8 rounded-full bg-bg hover:bg-border text-text font-bold text-sm flex items-center justify-center transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="p-4 bg-black flex justify-center items-center overflow-auto">
+                  <img
+                    src={lightboxImage.src}
+                    alt={`Phóng to Bước ${lightboxImage.step}`}
+                    className="max-h-[75vh] w-auto object-contain rounded-lg"
+                  />
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* IMPORTANT NOTICE FOR CASHBACK ACCURACY */}
         <div className="bg-white border border-border/80 rounded-card p-6 md:p-8 card-shadow text-left mt-8 mb-12 max-w-7xl mx-auto hover:shadow-soft transition-all duration-300">
