@@ -116,12 +116,73 @@ export default function AdminPanel() {
   const [editOrderUserId, setEditOrderUserId] = useState<string>('');
   const [deletingOrder, setDeletingOrder] = useState<Order | null>(null);
 
-  // Reconciliation states for Orders Tab
+  // Reconciliation & Clear Database states for Orders Tab
   const [reconcileModalData, setReconcileModalData] = useState<any>(null);
   const [isImportReconcileModalOpen, setIsImportReconcileModalOpen] = useState(false);
   const [isCSVHelpModalOpen, setIsCSVHelpModalOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isApplyingReconcile, setIsApplyingReconcile] = useState(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [isClearUnassignedModalOpen, setIsClearUnassignedModalOpen] = useState(false);
+  const [isClearingOrders, setIsClearingOrders] = useState(false);
+
+  const handleClearAllOrders = async () => {
+    setIsClearingOrders(true);
+    try {
+      const token = localStorage.getItem('token');
+      const apiBase = import.meta.env.VITE_API_BASE || '/api';
+      const res = await fetch(`${apiBase}/orders/admin/clear-all`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message || 'Đã xóa sạch toàn bộ dữ liệu đơn hàng và reset ví thành viên!');
+        setIsClearAllModalOpen(false);
+        fetchAdminOrders(1, ordersPerPage, orderSearch, orderStatusFilter);
+        fetchAdminStats(statsRange, selectedMonthFilter);
+      } else {
+        const err = await res.json();
+        toast.error(err.message || 'Có lỗi xảy ra khi xóa toàn bộ đơn hàng');
+      }
+    } catch (err: any) {
+      toast.error('Lỗi khi gửi yêu cầu xóa đơn hàng');
+    } finally {
+      setIsClearingOrders(false);
+    }
+  };
+
+  const handleClearUnassignedOrders = async () => {
+    setIsClearingOrders(true);
+    try {
+      const token = localStorage.getItem('token');
+      const apiBase = import.meta.env.VITE_API_BASE || '/api';
+      const res = await fetch(`${apiBase}/orders/admin/clear-all?type=unassigned`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message || 'Đã xóa tất cả đơn hàng chưa xác định thành công!');
+        setIsClearUnassignedModalOpen(false);
+        fetchAdminOrders(1, ordersPerPage, orderSearch, orderStatusFilter);
+        fetchAdminStats(statsRange, selectedMonthFilter);
+      } else {
+        const err = await res.json();
+        toast.error(err.message || 'Có lỗi xảy ra khi xóa đơn hàng chưa gán');
+      }
+    } catch (err: any) {
+      toast.error('Lỗi khi gửi yêu cầu xóa đơn hàng chưa gán');
+    } finally {
+      setIsClearingOrders(false);
+    }
+  };
 
   const downloadSampleReconciliationCSV = () => {
     const csvContent =
@@ -1222,6 +1283,21 @@ export default function AdminPanel() {
                     className="flex items-center gap-1.5 border-border font-bold text-xs"
                   >
                     <Download className="h-4 w-4" /> Xuất file báo cáo
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsClearUnassignedModalOpen(true)}
+                    className="flex items-center gap-1.5 border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 font-bold text-xs"
+                    title="Xóa tất cả các đơn hàng chưa xác định thành viên (user_id = null)"
+                  >
+                    <Trash2 className="h-4 w-4 text-amber-600" /> Xóa đơn chưa gán
+                  </Button>
+                  <Button
+                    onClick={() => setIsClearAllModalOpen(true)}
+                    className="flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 font-bold text-xs shadow-sm"
+                    title="Xóa sạch toàn bộ đơn hàng, lượt click, rút tiền và reset ví thành viên về 0đ"
+                  >
+                    <Trash2 className="h-4 w-4" /> Xóa tất cả đơn hàng & Reset ví
                   </Button>
                 </div>
               </div>
@@ -2508,6 +2584,60 @@ export default function AdminPanel() {
           <div className="flex justify-end pt-2 border-t border-border/40">
             <Button type="button" variant="ghost" onClick={() => setIsCSVHelpModalOpen(false)} className="font-bold">
               Đóng hướng dẫn
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION MODAL: CLEAR ALL ORDERS & RESET BALANCES */}
+      <Dialog isOpen={isClearAllModalOpen} onClose={() => setIsClearAllModalOpen(false)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <Trash2 className="w-5 h-5 text-red-600" />
+            Xác Nhận Xóa Toàn Bộ Dữ Liệu Hệ Thống
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-4 text-left font-sans text-xs">
+          <div className="bg-red-50 border border-red-200 p-3.5 rounded-input space-y-2 text-red-900 font-medium">
+            <p className="font-bold text-red-950 text-sm">⚠️ Cảnh báo hành động nguy hiểm:</p>
+            <ul className="list-disc list-inside space-y-1 text-xs text-red-800">
+              <li>Xóa toàn bộ <b>tất cả đơn hàng (orders)</b> trong hệ thống.</li>
+              <li>Xóa lịch sử <b>lượt click (click_logs)</b> và <b>lịch sử rút tiền (withdrawals)</b>.</li>
+              <li>Xóa nhật ký đối soát <b>reconciliation_logs</b> và <b>thông báo (notifications)</b>.</li>
+              <li>Đưa số dư <b>ví thành viên (balance & total_cashback) của toàn bộ user về 0đ</b>.</li>
+              <li>Chỉ giữ lại danh sách tài khoản <b>Users</b> và cấu hình <b>System Settings</b>.</li>
+            </ul>
+          </div>
+          <p className="font-bold text-text text-xs">Bạn có chắc chắn muốn tiến hành xóa sạch dữ liệu để đối soát lại từ đầu?</p>
+          <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+            <Button type="button" variant="ghost" onClick={() => setIsClearAllModalOpen(false)} disabled={isClearingOrders} className="font-bold">
+              Hủy bỏ
+            </Button>
+            <Button type="button" onClick={handleClearAllOrders} disabled={isClearingOrders} className="bg-red-600 text-white hover:bg-red-700 font-bold flex items-center gap-1.5">
+              {isClearingOrders ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Đồng ý Xóa Toàn Bộ & Reset Ví
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION MODAL: CLEAR UNASSIGNED ORDERS */}
+      <Dialog isOpen={isClearUnassignedModalOpen} onClose={() => setIsClearUnassignedModalOpen(false)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <Trash2 className="w-5 h-5 text-amber-600" />
+            Xóa Đơn Hàng Chưa Xác Định (Chưa gán User)
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-4 text-left font-sans text-xs">
+          <p className="text-text-secondary">
+            Hành động này sẽ xóa tất cả các đơn hàng chưa có thành viên sở hữu (<code>user_id = null</code>). Các đơn hàng đã gán cho thành viên sẽ được giữ nguyên.
+          </p>
+          <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+            <Button type="button" variant="ghost" onClick={() => setIsClearUnassignedModalOpen(false)} disabled={isClearingOrders} className="font-bold">
+              Hủy bỏ
+            </Button>
+            <Button type="button" onClick={handleClearUnassignedOrders} disabled={isClearingOrders} className="bg-amber-600 text-white hover:bg-amber-700 font-bold flex items-center gap-1.5">
+              {isClearingOrders ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Xác Nhận Xóa Đơn Chưa Gán
             </Button>
           </div>
         </DialogContent>
