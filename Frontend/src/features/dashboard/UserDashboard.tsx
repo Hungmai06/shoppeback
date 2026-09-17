@@ -124,16 +124,10 @@ export default function UserDashboard() {
 
   const approvedCashback = Math.round(userOrders
     .filter(o => o.status === 'approved' || o.status === 'paid')
-    .reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback), 0));
+    .reduce((sum, o) => sum + (o.realCashback !== undefined ? o.realCashback : o.estimatedCashback), 0));
 
-  const alreadyWithdrawn = Math.round(userWithdrawals
-    .filter(w => w.status === 'approved' || w.status === 'pending')
-    .reduce((sum, w) => sum + w.amount, 0));
-
-  const referralEarnings = Math.round(currentUser?.referralEarnings || 0);
-
-  // Available balance for withdrawal
-  const availableBalance = Math.max(0, (currentUser?.balance !== undefined ? currentUser.balance : (approvedCashback + referralEarnings - alreadyWithdrawn)));
+  // Available balance for withdrawal from authoritative DB balance
+  const availableBalance = Math.max(0, currentUser?.balance || 0);
 
   // Chart Data preparation
   const monthlyData = [

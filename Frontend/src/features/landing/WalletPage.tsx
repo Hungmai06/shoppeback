@@ -66,19 +66,13 @@ export default function WalletPage() {
     ? userOrders.filter(o => o.status === 'approved' || o.status === 'paid').reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback), 0)
     : 0;
 
-  const referralEarnings = isLoggedIn ? (currentUser.referralEarnings || 0) : 0;
-
   const paidWithdrawals = isLoggedIn
     ? withdrawals.filter(w => w.userId === currentUser.id && w.status === 'approved').reduce((sum, w) => sum + w.amount, 0)
     : 0;
 
-  const pendingWithdrawals = isLoggedIn
-    ? withdrawals.filter(w => w.userId === currentUser.id && w.status === 'pending').reduce((sum, w) => sum + w.amount, 0)
-    : 0;
-
-  // Available to withdraw: (Approved cashback + Referral earnings) - (Approved withdrawals + Pending withdrawals)
+  // Available to withdraw: Authoritative balance from user profile / DB
   const availableBalance = isLoggedIn
-    ? Math.max(0, (currentUser.balance !== undefined ? currentUser.balance : (approvedCashback + referralEarnings - paidWithdrawals - pendingWithdrawals)))
+    ? Math.max(0, currentUser.balance || 0)
     : 0;
 
   const handleWithdrawalRequest = async (e: React.FormEvent) => {

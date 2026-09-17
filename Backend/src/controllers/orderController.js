@@ -155,16 +155,17 @@ async function adminUpdateOrderStatus(req, res) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    // Determine target user ID (allow admin to reassign order to another user)
+    // Determine target user ID (allow admin to reassign order to another user or unassign)
     let targetUserId = order.user_id;
-    if (userId !== undefined && userId !== null && userId !== '') {
-      // If user passed an email, resolve to ID if needed
-      if (userId.includes('@')) {
-        const foundUser = await db.get('SELECT id FROM users WHERE email = ?', [userId.trim()]);
+    if (userId !== undefined) {
+      if (userId === null || String(userId).trim() === '') {
+        targetUserId = null; // Explicit unassignment by admin
+      } else if (String(userId).trim().includes('@')) {
+        const foundUser = await db.get('SELECT id FROM users WHERE email = ?', [String(userId).trim()]);
         if (foundUser) targetUserId = foundUser.id;
-        else targetUserId = userId.trim();
+        else targetUserId = String(userId).trim();
       } else {
-        targetUserId = userId.trim();
+        targetUserId = String(userId).trim();
       }
     }
 
@@ -194,10 +195,10 @@ async function adminUpdateOrderStatus(req, res) {
     const wasApproved = order.status === 'approved';
     const isNowApproved = status === 'approved';
     const oldUserId = order.user_id;
+    const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? order.real_cashback : (order.estimated_cashback || 0);
 
-    // 1. If order was approved but is now cancelled/returned, deduct cashback from old user
-    if (wasApproved && !isNowApproved && oldUserId) {
-      const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? order.real_cashback : order.estimated_cashback;
+    // 1. If order was approved for oldUserId, but is now NOT approved OR targetUserId changed (or became null):
+    if (wasApproved && oldUserId && (!isNowApproved || targetUserId !== oldUserId)) {
       await db.run(
         `UPDATE users 
          SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
@@ -205,23 +206,24 @@ async function adminUpdateOrderStatus(req, res) {
          WHERE id = ?`,
         [oldCashback, oldCashback, oldCashback, oldCashback, oldUserId]
       );
+
+      // Deduct referral bonus if old user had a referrer
+      const oldUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [oldUserId]);
+      if (oldUserObj && oldUserObj.referred_by) {
+        const refBonus = oldCashback * 0.20;
+        await db.run(
+          `UPDATE users 
+           SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
+               referral_earnings = CASE WHEN COALESCE(referral_earnings, 0) >= ? THEN referral_earnings - ? ELSE 0 END
+           WHERE id = ?`,
+          [refBonus, refBonus, refBonus, refBonus, oldUserObj.referred_by]
+        );
+      }
     }
 
     // 2. If order is approved (now or previously), and assigned/reassigned to targetUserId
     if (isNowApproved && targetUserId) {
       if (!wasApproved || !oldUserId || oldUserId !== targetUserId) {
-        // If user changed from a previous user while approved, deduct from previous user
-        if (wasApproved && oldUserId && oldUserId !== targetUserId) {
-          const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? order.real_cashback : order.estimated_cashback;
-          await db.run(
-            `UPDATE users 
-             SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
-                 total_cashback = CASE WHEN COALESCE(total_cashback, 0) >= ? THEN total_cashback - ? ELSE 0 END
-             WHERE id = ?`,
-            [oldCashback, oldCashback, oldCashback, oldCashback, oldUserId]
-          );
-        }
-
         // Credit new targetUserId
         const userCashback = updatedRealCashback;
         await db.run(
@@ -253,7 +255,6 @@ async function adminUpdateOrderStatus(req, res) {
         }
       } else if (wasApproved && oldUserId === targetUserId) {
         // Same user, check if cashback amount changed
-        const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? order.real_cashback : order.estimated_cashback;
         const diff = updatedRealCashback - oldCashback;
         if (diff !== 0) {
           await db.run(

@@ -791,7 +791,7 @@ async function uploadAndAnalyze(req, res) {
             changeReason += (changeReason ? ' & ' : '') + `Cập nhật trạng thái từ ${currentDbStatus} -> ${mappedStatus}`;
           }
           if (amountChanged || commissionChanged) {
-            changeReason += (changeReason ? ' & ' : '') + `Cập nhật số tiền/hoa hồng`;
+            changeReason += (changeReason ? ' & ' : '') + `Cập nhật giá đơn theo CSV (${(dbOrder.orderAmount || 0).toLocaleString('vi-VN')}đ -> ${(orderAmount || 0).toLocaleString('vi-VN')}đ)`;
           }
 
           report.matchedCount++;
@@ -803,7 +803,7 @@ async function uploadAndAnalyze(req, res) {
             subId: targetUserId,
             shopeeStatus: mappedStatus,
             status: 'matched',
-            reason: changeReason || 'Cập nhật thông tin đơn hàng'
+            reason: changeReason || 'Cập nhật thông tin đơn hàng theo file CSV đối soát'
           });
         }
       } else {
@@ -950,10 +950,17 @@ async function applyReconciliation(req, res) {
           continue;
         }
 
-        const statusChanged = currentDbStatus !== mappedStatus;
-        const userChanged = currentDbUserId !== targetUserId;
+        const oldStatus = currentDbStatus;
+        const oldUserId = currentDbUserId;
+        const oldCashback = dbOrder.cashback || 0;
+        const newStatus = mappedStatus;
+        const newUserId = targetUserId;
+        const newCashback = userCashback;
+
+        const statusChanged = oldStatus !== newStatus;
+        const userChanged = oldUserId !== newUserId;
         const amountChanged = Math.abs((dbOrder.orderAmount || 0) - (orderAmount || 0)) > 1;
-        const commissionChanged = Math.abs((dbOrder.cashback || 0) - (userCashback || 0)) > 1;
+        const commissionChanged = Math.abs(oldCashback - newCashback) > 1;
 
         if (!statusChanged && !userChanged && !amountChanged && !commissionChanged) {
           // Nothing to update, skip silently
@@ -961,64 +968,103 @@ async function applyReconciliation(req, res) {
           continue;
         }
 
-        // Only update if something actually changed
+        // Always update order with exact CSV price, commission, cashback and product name
         await db.run(
           `UPDATE orders
            SET status = ?,
                user_id = ?,
                real_cashback = ?,
+               estimated_cashback = ?,
                shopee_commission = ?,
                order_amount = ?,
                product_name = ?,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [mappedStatus, targetUserId, userCashback, commission, orderAmount, productName, dbOrder.id]
+          [newStatus, newUserId, newCashback, newCashback, commission, orderAmount, productName, dbOrder.id]
         );
 
-        // Calculate and add money to user if status transitioned to approved OR if order was previously unassigned/assigned to another user
-        const shouldCreditUser = targetUserId && mappedStatus === 'approved' && (currentDbStatus !== 'approved' || !currentDbUserId || currentDbUserId !== targetUserId);
-        if (shouldCreditUser) {
-          const userCashback = commission * cashbackRate;
+        // 1. If order was previously approved for oldUserId, but is now NOT approved OR targetUserId changed
+        const wasApproved = oldStatus === 'approved';
+        const isNowApproved = newStatus === 'approved';
+
+        if (wasApproved && oldUserId && (!isNowApproved || oldUserId !== newUserId)) {
           await db.run(
             `UPDATE users 
-             SET balance = COALESCE(balance, 0) + ?,
-                 total_cashback = COALESCE(total_cashback, 0) + ?
+             SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
+                 total_cashback = CASE WHEN COALESCE(total_cashback, 0) >= ? THEN total_cashback - ? ELSE 0 END
              WHERE id = ?`,
-            [userCashback, userCashback, targetUserId]
+            [oldCashback, oldCashback, oldCashback, oldCashback, oldUserId]
           );
 
-          // Check for referral bonus (20% of user cashback)
-          const targetUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
-          if (targetUserObj && targetUserObj.referred_by) {
-            const refBonus = userCashback * 0.20;
+          const oldUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [oldUserId]);
+          if (oldUserObj && oldUserObj.referred_by) {
+            const refBonus = oldCashback * 0.20;
             await db.run(
               `UPDATE users 
-               SET balance = COALESCE(balance, 0) + ?,
-                   referral_earnings = COALESCE(referral_earnings, 0) + ?
+               SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
+                   referral_earnings = CASE WHEN COALESCE(referral_earnings, 0) >= ? THEN referral_earnings - ? ELSE 0 END
                WHERE id = ?`,
-              [refBonus, refBonus, targetUserObj.referred_by]
-            );
-            const refNotifId = `NT${Date.now()}${Math.floor(Math.random()*100)}`;
-            await db.run(
-              `INSERT INTO notifications (id, user_id, title, content, type)
-               VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
-              [refNotifId, targetUserObj.referred_by, `Bạn nhận được +${Math.round(refBonus).toLocaleString('vi-VN')}đ hoa hồng giới thiệu từ giao dịch của thành viên.`]
+              [refBonus, refBonus, refBonus, refBonus, oldUserObj.referred_by]
             );
           }
         }
 
-        // Notify user only if status changed to approved OR user_id reassigned (and user exists)
-        if (targetUserId && ((statusChanged && mappedStatus === 'approved') || userChanged)) {
+        // 2. If order is now approved and assigned to newUserId
+        if (isNowApproved && newUserId) {
+          if (!wasApproved || !oldUserId || oldUserId !== newUserId) {
+            // New approval or user transfer -> credit full newCashback
+            await db.run(
+              `UPDATE users 
+               SET balance = COALESCE(balance, 0) + ?,
+                   total_cashback = COALESCE(total_cashback, 0) + ?
+               WHERE id = ?`,
+              [newCashback, newCashback, newUserId]
+            );
+
+            const targetUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [newUserId]);
+            if (targetUserObj && targetUserObj.referred_by) {
+              const refBonus = newCashback * 0.20;
+              await db.run(
+                `UPDATE users 
+                 SET balance = COALESCE(balance, 0) + ?,
+                     referral_earnings = COALESCE(referral_earnings, 0) + ?
+                 WHERE id = ?`,
+                [refBonus, refBonus, targetUserObj.referred_by]
+              );
+              const refNotifId = `NT${Date.now()}${Math.floor(Math.random()*100)}`;
+              await db.run(
+                `INSERT INTO notifications (id, user_id, title, content, type)
+                 VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
+                [refNotifId, targetUserObj.referred_by, `Bạn nhận được +${Math.round(refBonus).toLocaleString('vi-VN')}đ hoa hồng giới thiệu từ giao dịch của thành viên.`]
+              );
+            }
+          } else if (wasApproved && oldUserId === newUserId) {
+            // Same user, adjust balance for difference between CSV price/cashback and old lookup cashback
+            const diff = newCashback - oldCashback;
+            if (Math.abs(diff) > 0.01) {
+              await db.run(
+                `UPDATE users 
+                 SET balance = CASE WHEN (COALESCE(balance, 0) + ?) >= 0 THEN (COALESCE(balance, 0) + ?) ELSE 0 END,
+                     total_cashback = CASE WHEN (COALESCE(total_cashback, 0) + ?) >= 0 THEN (COALESCE(total_cashback, 0) + ?) ELSE 0 END
+                 WHERE id = ?`,
+                [diff, diff, diff, diff, newUserId]
+              );
+            }
+          }
+        }
+
+        // Notify user if status changed to approved or user reassigned
+        if (newUserId && ((statusChanged && isNowApproved) || userChanged)) {
           const notifId = `NT${Date.now()}${Math.floor(10 + Math.random() * 90)}`;
-          const amountDisplay = (commission * cashbackRate).toLocaleString('vi-VN');
+          const amountDisplay = newCashback.toLocaleString('vi-VN');
           await db.run(
             `INSERT INTO notifications (id, user_id, title, content, type)
              VALUES (?, ?, ?, ?, 'order')`,
             [
               notifId,
-              targetUserId,
-              'Đơn hàng đã được duyệt hoàn tiền',
-              `Đơn hàng ${orderId} (${(productName || 'Sản phẩm').substring(0, 20)}...) đã đối soát thành công cho bạn. Số tiền hoàn +${amountDisplay}đ đã được cộng.`
+              newUserId,
+              'Đơn hàng đã được đối soát & cập nhật giá CSV',
+              `Đơn hàng ${orderId} (${(productName || 'Sản phẩm').substring(0, 20)}...) đã được đối soát thành công theo giá CSV. Tiền hoàn +${amountDisplay}đ.`
             ]
           );
         }

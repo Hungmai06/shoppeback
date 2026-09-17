@@ -16,32 +16,15 @@ async function requestWithdrawal(req, res) {
     const db = await getDatabase();
     const userId = req.user.id;
 
-    // Calculate user's current available balance
-    const orders = await db.all('SELECT status, real_cashback, estimated_cashback FROM orders WHERE user_id = ?', [userId]);
-    const withdrawals = await db.all('SELECT amount, status FROM withdrawals WHERE user_id = ?', [userId]);
-
-    const userObj = await db.get('SELECT referral_earnings FROM users WHERE id = ?', [userId]);
-    const refEarnings = userObj ? (userObj.referral_earnings || 0) : 0;
-
-    const approvedCashback = orders
-      .filter(o => o.status === 'approved' || o.status === 'paid')
-      .reduce((sum, o) => sum + (o.real_cashback || o.estimated_cashback), 0);
-
-    const paidWithdrawals = withdrawals
-      .filter(w => w.status === 'approved')
-      .reduce((sum, w) => sum + w.amount, 0);
-
-    const pendingWithdrawals = withdrawals
-      .filter(w => w.status === 'pending')
-      .reduce((sum, w) => sum + w.amount, 0);
-
-    const availableBalance = Math.max(0, (approvedCashback + refEarnings) - (paidWithdrawals + pendingWithdrawals));
+    // Read user's authoritative balance from DB
+    const userObj = await db.get('SELECT balance FROM users WHERE id = ?', [userId]);
+    const availableBalance = Math.max(0, userObj ? (userObj.balance || 0) : 0);
 
     if (withdrawAmount > availableBalance) {
       return res.status(400).json({ message: `Số dư khả dụng không đủ. Số dư khả dụng hiện tại: ${availableBalance.toLocaleString('vi-VN')}đ` });
     }
 
-    // Begin database transaction to record withdrawal and update user's default bank info
+    // Begin database transaction to record withdrawal, deduct balance, and update default bank info
     await db.run('BEGIN TRANSACTION');
 
     const withdrawalId = `WD${Date.now()}`;
@@ -51,15 +34,16 @@ async function requestWithdrawal(req, res) {
       [withdrawalId, userId, withdrawAmount, bankName, accountNumber, accountHolder.toUpperCase()]
     );
 
-    // Auto-update user's bank details if they were empty or updated
+    // Deduct withdraw amount from user's balance
     await db.run(
       `UPDATE users
-       SET bank_name = ?,
+       SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
+           bank_name = ?,
            account_number = ?,
            account_holder = ?,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [bankName, accountNumber, accountHolder.toUpperCase(), userId]
+      [withdrawAmount, withdrawAmount, bankName, accountNumber, accountHolder.toUpperCase(), userId]
     );
 
     // Create user notification
@@ -140,6 +124,8 @@ async function adminUpdateWithdrawalStatus(req, res) {
       return res.status(400).json({ message: 'Yêu cầu rút tiền này đã được xử lý từ trước' });
     }
 
+    await db.run('BEGIN TRANSACTION');
+
     await db.run(
       `UPDATE withdrawals
        SET status = ?,
@@ -149,12 +135,23 @@ async function adminUpdateWithdrawalStatus(req, res) {
       [status, notes || null, id]
     );
 
+    // If rejected, refund withdrawal amount back to user's balance
+    if (status === 'rejected') {
+      await db.run(
+        `UPDATE users
+         SET balance = COALESCE(balance, 0) + ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [withdrawal.amount, withdrawal.user_id]
+      );
+    }
+
     // Create user notification
     const notifId = `NT${Date.now()}`;
     const title = status === 'approved' ? 'Rút tiền thành công' : 'Yêu cầu rút tiền bị từ chối';
     const content = status === 'approved'
       ? `Yêu cầu rút ${withdrawal.amount.toLocaleString('vi-VN')}đ đã được duyệt thành công. Tiền sẽ được chuyển tới tài khoản của bạn.`
-      : `Yêu cầu rút ${withdrawal.amount.toLocaleString('vi-VN')}đ bị từ chối. Lý do: ${notes || 'Thông tin tài khoản không hợp lệ'}`;
+      : `Yêu cầu rút ${withdrawal.amount.toLocaleString('vi-VN')}đ bị từ chối và đã được hoàn lại vào ví. Lý do: ${notes || 'Thông tin tài khoản không hợp lệ'}`;
 
     await db.run(
       `INSERT INTO notifications (id, user_id, title, content, type)
@@ -162,8 +159,12 @@ async function adminUpdateWithdrawalStatus(req, res) {
       [notifId, withdrawal.user_id, title, content]
     );
 
+    await db.run('COMMIT');
+
     res.json({ message: `Đã cập nhật trạng thái yêu cầu rút tiền thành công` });
   } catch (error) {
+    const db = await getDatabase();
+    await db.run('ROLLBACK');
     console.error('Admin Update Withdrawal Status Error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ khi cập nhật yêu cầu rút tiền' });
   }

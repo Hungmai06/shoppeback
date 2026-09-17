@@ -92,7 +92,7 @@ export default function TrackingPage() {
   const approvedCashback = isLoggedIn 
     ? activeOrders
       .filter(o => o.status === 'approved' || o.status === 'paid')
-      .reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback) * 0.5, 0)
+      .reduce((sum, o) => sum + (o.realCashback !== undefined ? o.realCashback : o.estimatedCashback), 0)
     : 0;
 
   const getStatusBadge = (status: Order['status']) => {
@@ -208,7 +208,7 @@ export default function TrackingPage() {
                     </td>
                     <td className="py-4 px-4 text-right font-semibold text-text">{order.orderAmount.toLocaleString('vi-VN')}đ</td>
                     <td className="py-4 px-4 text-right font-bold text-primary">
-                      {order.estimatedCashback.toLocaleString('vi-VN')}đ
+                      {(order.realCashback !== undefined ? order.realCashback : order.estimatedCashback).toLocaleString('vi-VN')}đ
                     </td>
                     <td className="py-4 px-4 text-center">{getStatusBadge(order.status)}</td>
                   </tr>

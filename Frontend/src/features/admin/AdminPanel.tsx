@@ -5,7 +5,7 @@ import {
   ShieldCheck, Users, ShoppingBag, Wallet,
   LogOut, RefreshCw, Plus, Search,
   Filter, Check, X, Lock, Unlock, Trash2, Edit2, Download,
-  Upload, BarChart3, FileSpreadsheet,
+  Upload, BarChart3, FileSpreadsheet, HelpCircle,
   Settings2, Activity, Eye
 } from 'lucide-react';
 import {
@@ -119,8 +119,27 @@ export default function AdminPanel() {
   // Reconciliation states for Orders Tab
   const [reconcileModalData, setReconcileModalData] = useState<any>(null);
   const [isImportReconcileModalOpen, setIsImportReconcileModalOpen] = useState(false);
+  const [isCSVHelpModalOpen, setIsCSVHelpModalOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isApplyingReconcile, setIsApplyingReconcile] = useState(false);
+
+  const downloadSampleReconciliationCSV = () => {
+    const csvContent =
+      "ID đơn hàng,Sub_id1,Tên Item,Giá trị đơn hàng (₫),Hoa hồng ròng tiếp thị liên kết(₫),Trạng thái đặt hàng,Thời Gian Đặt Hàng,Thời gian Click,ID Shop,ID Item\n" +
+      "240917SP88123,USR101,Áo thun Polo Nam Cotton Cao Cấp Shopee Mall,250000,25000,Hoàn thành,17/09/2026 14:30:00,17/09/2026 14:15:00,987654321,123456789\n" +
+      "240917SP88124,USR102,Giày Sneaker Thể Thao Nam Nữ Unisex,450000,45000,Hoàn thành,17/09/2026 15:10:00,17/09/2026 14:50:00,987654321,987654321\n" +
+      "240917SP88125,,Nước hoa nam Bleu De Chanel EDP 100ml,1200000,120000,Giao thành công,17/09/2026 16:00:00,17/09/2026 15:30:00,888777666,555444333\n";
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'shopee_reconciliation_sample.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Đã tải xuống file CSV đối soát mẫu thành công!');
+  };
 
   // User CRUD states
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -1154,7 +1173,7 @@ export default function AdminPanel() {
                   <h2 className="text-2xl font-black text-text">Quản lý đối soát đơn hàng</h2>
                   <p className="text-xs text-text-secondary mt-1">Phê duyệt, từ chối đối soát đơn hàng thủ công hoặc cập nhật doanh thu thực nhận bằng file CSV.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {/* Hidden Input for CSV Upload */}
                   <input
                     type="file"
@@ -1177,6 +1196,22 @@ export default function AdminPanel() {
                         <Upload className="h-4 w-4" /> Nhập file đối soát CSV
                       </>
                     )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={downloadSampleReconciliationCSV}
+                    className="flex items-center gap-1.5 border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 font-bold text-xs"
+                    title="Tải file đối soát CSV ví dụ đúng định dạng"
+                  >
+                    <Download className="h-4 w-4 text-primary" /> Tải mẫu CSV đối soát
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsCSVHelpModalOpen(true)}
+                    className="flex items-center gap-1.5 border-border font-bold text-xs hover:bg-bg"
+                    title="Xem ví dụ & Quy tắc đối soát CSV"
+                  >
+                    <HelpCircle className="h-4 w-4 text-amber-500" /> Hướng dẫn & Ví dụ
                   </Button>
                   <Button
                     variant="outline"
@@ -2003,14 +2038,26 @@ export default function AdminPanel() {
             </div>
 
             <div className="flex flex-col gap-1.5 relative">
-              <label className="text-xs font-semibold text-text/80">
-                Gán cho thành viên (Nhập mã User ID hoặc Email)
-              </label>
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-semibold text-text/80">
+                  Gán cho thành viên (Nhập mã User ID hoặc Email)
+                </label>
+                {editOrderUserId && (
+                  <button
+                    type="button"
+                    onClick={() => setEditOrderUserId('')}
+                    className="text-xs font-bold text-danger hover:underline flex items-center gap-1"
+                    title="Bỏ gán thành viên cho đơn hàng này"
+                  >
+                    <X className="w-3.5 h-3.5" /> Xóa gán thành viên
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 value={editOrderUserId}
                 onChange={(e) => setEditOrderUserId(e.target.value)}
-                placeholder="Gõ hoặc dán Mã User ID (vd: USR101, USR102) hoặc Email/Tên..."
+                placeholder="Gõ mã User ID (vd: USR101, USR102) hoặc Email... Để trống nếu muốn HỦY GÁN."
                 className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
               />
 
@@ -2043,7 +2090,7 @@ export default function AdminPanel() {
               )}
 
               <p className="text-[11px] text-text-secondary font-medium">
-                💡 <b>Mẹo:</b> Nhập trực tiếp mã <b>User ID</b> (vd: <code>USR101</code>) hoặc <b>Email</b>. Nhấp vào kết quả gợi ý bên dưới nếu cần.
+                💡 <b>Mẹo:</b> Nhập <b>User ID</b> (vd: <code>USR101</code>) hoặc <b>Email</b>. Để trống ô này hoặc nhấp <b>Xóa gán thành viên</b> để chuyển đơn về trạng thái chưa xác định.
               </p>
             </div>
 
@@ -2375,6 +2422,92 @@ export default function AdminPanel() {
               className="font-bold"
             >
               Đóng cửa sổ
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV RECONCILIATION HELP & SAMPLE MODAL */}
+      <Dialog isOpen={isCSVHelpModalOpen} onClose={() => setIsCSVHelpModalOpen(false)} className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <HelpCircle className="w-5 h-5 text-amber-500" />
+            Hướng Dẫn & Ví Dụ Mẫu File CSV Đối Soát Shopee
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent className="flex flex-col gap-4 text-left font-sans text-xs">
+          <div className="bg-amber-50/70 border border-amber-200 p-3.5 rounded-input space-y-2 text-amber-900 font-medium">
+            <p className="font-bold text-amber-950 text-sm flex items-center gap-1.5">
+              📌 Quy tắc đối soát tự động & Giá chuẩn từ CSV:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-xs">
+              <li><b>Giá đơn hàng & Hoa hồng chuẩn:</b> Sau khi đối soát, số tiền đơn hàng và tiền hoàn thành viên sẽ được cập nhật <b>100% theo giá trị thực tế trong file CSV</b> (thay thế cho mọi giá trị tra cứu ước tính trước đó).</li>
+              <li><b>Khớp theo Sub ID:</b> Cột <code>Sub_id1</code> chứa mã User ID (ví dụ <code>USR101</code>) hoặc mã định danh thành viên.</li>
+              <li><b>Khớp thông minh (Smart Match):</b> Nếu không có <code>Sub_id1</code>, hệ thống sẽ tự động quét theo <b>Shop ID, Item ID, Tên sản phẩm</b> và <b>Khung giờ click/đặt hàng ngắn (&lt; 2 tiếng)</b>.</li>
+            </ul>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="font-bold text-text text-xs">Cấu trúc ví dụ các cột chuẩn trong file CSV đối soát:</span>
+              <Button
+                size="sm"
+                onClick={downloadSampleReconciliationCSV}
+                className="text-xs font-bold bg-primary text-white hover:bg-primary/90 flex items-center gap-1 py-1"
+              >
+                <Download className="w-3.5 h-3.5" /> Tải file mẫu .CSV
+              </Button>
+            </div>
+
+            <div className="border border-border rounded-input overflow-x-auto">
+              <table className="w-full text-left text-[11px] font-sans">
+                <thead className="bg-bg border-b border-border font-bold text-text">
+                  <tr>
+                    <th className="p-2 whitespace-nowrap">ID đơn hàng</th>
+                    <th className="p-2 whitespace-nowrap">Sub_id1</th>
+                    <th className="p-2 whitespace-nowrap">Tên Item</th>
+                    <th className="p-2 whitespace-nowrap text-right">Giá trị đơn (₫)</th>
+                    <th className="p-2 whitespace-nowrap text-right">Hoa hồng ròng (₫)</th>
+                    <th className="p-2 whitespace-nowrap">Trạng thái đặt hàng</th>
+                    <th className="p-2 whitespace-nowrap">Thời gian đặt</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40 font-mono">
+                  <tr className="bg-white">
+                    <td className="p-2 font-bold text-primary">240917SP88123</td>
+                    <td className="p-2 text-text font-bold">USR101</td>
+                    <td className="p-2 font-sans font-medium max-w-[150px] truncate">Áo thun Polo Nam Cotton Cao Cấp Shopee Mall</td>
+                    <td className="p-2 text-right font-bold font-sans">250.000đ</td>
+                    <td className="p-2 text-right font-bold text-success font-sans">25.000đ</td>
+                    <td className="p-2 font-sans"><Badge variant="success">Hoàn thành</Badge></td>
+                    <td className="p-2 text-text-secondary whitespace-nowrap font-sans">17/09/2026 14:30</td>
+                  </tr>
+                  <tr className="bg-bg/20">
+                    <td className="p-2 font-bold text-primary">240917SP88124</td>
+                    <td className="p-2 text-text font-bold">USR102</td>
+                    <td className="p-2 font-sans font-medium max-w-[150px] truncate">Giày Sneaker Thể Thao Nam Nữ Unisex</td>
+                    <td className="p-2 text-right font-bold font-sans">450.000đ</td>
+                    <td className="p-2 text-right font-bold text-success font-sans">45.000đ</td>
+                    <td className="p-2 font-sans"><Badge variant="success">Hoàn thành</Badge></td>
+                    <td className="p-2 text-text-secondary whitespace-nowrap font-sans">17/09/2026 15:10</td>
+                  </tr>
+                  <tr className="bg-white">
+                    <td className="p-2 font-bold text-primary">240917SP88125</td>
+                    <td className="p-2 text-danger italic font-semibold font-sans">(Trống - Khớp thông minh)</td>
+                    <td className="p-2 font-sans font-medium max-w-[150px] truncate">Nước hoa nam Bleu De Chanel EDP 100ml</td>
+                    <td className="p-2 text-right font-bold font-sans">1.200.000đ</td>
+                    <td className="p-2 text-right font-bold text-success font-sans">120.000đ</td>
+                    <td className="p-2 font-sans"><Badge variant="success">Giao thành công</Badge></td>
+                    <td className="p-2 text-text-secondary whitespace-nowrap font-sans">17/09/2026 16:00</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-border/40">
+            <Button type="button" variant="ghost" onClick={() => setIsCSVHelpModalOpen(false)} className="font-bold">
+              Đóng hướng dẫn
             </Button>
           </div>
         </DialogContent>

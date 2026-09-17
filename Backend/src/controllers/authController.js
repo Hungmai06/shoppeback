@@ -193,7 +193,7 @@ async function getProfile(req, res) {
       .filter(w => w.status === 'pending')
       .reduce((sum, w) => sum + w.amount, 0);
 
-    const availableBalance = Math.max(0, (approvedCashback + (user.referral_earnings || 0)) - (paidWithdrawals + pendingWithdrawals));
+    const availableBalance = user.balance || 0;
 
     const affiliateSubId = user.affiliate_sub_id || ensureUuid(user.id);
 
@@ -224,7 +224,7 @@ async function getProfile(req, res) {
         approvedCashback,
         paidWithdrawals,
         pendingWithdrawals,
-        availableBalance
+        availableBalance: user.balance || 0
       }
     });
   } catch (error) {
