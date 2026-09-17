@@ -62,12 +62,11 @@ function normalizeHeader(header) {
     .replace(/[^a-z0-9]/g, ''); // keep only alphanumeric
 }
 
-// Helper to resolve SubID (like CLK17890541480500jsjwp) to target UserId and ClickId using prefix/substring matching
-function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, clickSubIdToUserIdMap }) {
+// Helper to resolve SubID (like CLK1789464623170n1y1ho) to target UserId and ClickId using prefix/substring/timestamp matching
+function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, clickSubIdToUserIdMap, allClickLogsFull, pendingOrders }) {
   if (!cleanSubId) return { targetUserId: null, targetClickId: null };
 
   const trimmed = cleanSubId.trim();
-
   const lowerTrimmed = trimmed.toLowerCase();
 
   // 1. Direct exact or case-insensitive map lookup
@@ -87,23 +86,60 @@ function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, 
     }
   }
 
-  // 2. Extract base CLK pattern (e.g., CLK17890541480500 from CLK17890541480500jsjwp)
+  // 2. Extract base CLK pattern & timestamp digits (e.g., CLK1789464623170 from CLK1789464623170n1y1ho)
   const clkMatch = trimmed.match(/clk\d+/i);
   if (clkMatch) {
-    const baseClk = clkMatch[0].toLowerCase(); // e.g. clk17890541480500
+    const baseClk = clkMatch[0].toLowerCase(); // e.g. clk1789464623170
+    const digitsOnly = baseClk.replace(/[^0-9]/g, ''); // e.g. 1789464623170
+
     for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
       const lowerKey = key.toLowerCase();
+      const keyDigits = lowerKey.replace(/[^0-9]/g, '');
+
+      // Check if keys or digits share common timestamp prefix (e.g. first 10-13 digits)
       if (
         lowerKey === baseClk ||
         lowerKey.startsWith(baseClk) ||
         baseClk.startsWith(lowerKey) ||
         lowerTrimmed.startsWith(lowerKey) ||
-        lowerKey.startsWith(lowerTrimmed)
+        lowerKey.startsWith(lowerTrimmed) ||
+        (digitsOnly.length >= 10 && keyDigits.length >= 10 && (digitsOnly.startsWith(keyDigits.substring(0, 10)) || keyDigits.startsWith(digitsOnly.substring(0, 10))))
       ) {
         return {
           targetUserId: userId,
           targetClickId: key
         };
+      }
+    }
+
+    // Timestamp proximity fallback (1789464623170 is Date.now() millisecond timestamp embedded in CLK)
+    if (digitsOnly.length >= 12) {
+      const tsNum = Number(digitsOnly.substring(0, 13));
+      if (!isNaN(tsNum) && tsNum > 1500000000000 && tsNum < 2500000000000) {
+        if (allClickLogsFull && allClickLogsFull.length > 0) {
+          for (const log of allClickLogsFull) {
+            if (!log.user_id) continue;
+            const logTs = new Date(log.click_time || log.created_at || 0).getTime();
+            if (!isNaN(logTs) && Math.abs(logTs - tsNum) <= 180000) { // within 3 minutes of click
+              return {
+                targetUserId: log.user_id,
+                targetClickId: log.id || log.sub_id
+              };
+            }
+          }
+        }
+        if (pendingOrders && pendingOrders.length > 0) {
+          for (const pending of pendingOrders) {
+            if (!pending.user_id) continue;
+            const pTs = new Date(pending.created_at || 0).getTime();
+            if (!isNaN(pTs) && Math.abs(pTs - tsNum) <= 180000) {
+              return {
+                targetUserId: pending.user_id,
+                targetClickId: pending.click_id || pending.id
+              };
+            }
+          }
+        }
       }
     }
   }
@@ -919,7 +955,9 @@ async function uploadAndAnalyze(req, res) {
         const resolved = resolveSubIdToUserId(cleanSubId, {
           userIds,
           affiliateSubIdToUserIdMap,
-          clickSubIdToUserIdMap
+          clickSubIdToUserIdMap,
+          allClickLogsFull,
+          pendingOrders
         });
         if (resolved.targetUserId) {
           targetUserId = resolved.targetUserId;
@@ -1144,7 +1182,9 @@ async function applyReconciliation(req, res) {
         const resolved = resolveSubIdToUserId(cleanSubId, {
           userIds,
           affiliateSubIdToUserIdMap,
-          clickSubIdToUserIdMap
+          clickSubIdToUserIdMap,
+          allClickLogsFull,
+          pendingOrders
         });
         if (resolved.targetUserId) {
           targetUserId = resolved.targetUserId;
