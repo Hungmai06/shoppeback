@@ -381,10 +381,39 @@ function mapShopeeStatus(shopeeStatus) {
 
 /**
  * Thuật toán quét đối soát thông minh & linh hoạt:
- * Dựa vào ID sản phẩm (Item Id), ID Shop (Shop Id), Tên Item/Model Code, và Thời gian.
+ * Khớp Đơn chờ CLK (hoặc đơn gán thủ công), Click log, và User theo ID sản phẩm, ID Shop, Tên sản phẩm/Model Code, và Thời gian.
  */
 function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClickLogsFull, pendingOrders, extraOptions = {}) {
-  const { clickTimeStr, shopId, itemId } = extraOptions;
+  const { clickTimeStr, shopId, itemId, targetUserId, orderId, cleanSubId } = extraOptions;
+
+  // Direct match by ID / click_id in pendingOrders
+  if (pendingOrders && pendingOrders.length > 0) {
+    for (const pending of pendingOrders) {
+      const pId = (pending.id || '').toLowerCase();
+      const pClick = (pending.click_id || '').toLowerCase();
+      const targetOId = (orderId || '').toLowerCase();
+      const targetSub = (cleanSubId || '').toLowerCase();
+
+      if (targetOId && (pId === targetOId || pClick === targetOId)) {
+        return {
+          score: 200,
+          userId: pending.user_id || targetUserId,
+          clickId: pending.click_id || pending.id,
+          pendingOrderId: pending.id,
+          reason: `Khớp trực tiếp Mã đơn (${pending.id})`
+        };
+      }
+      if (targetSub && (pId === targetSub || pClick === targetSub)) {
+        return {
+          score: 200,
+          userId: pending.user_id || targetUserId,
+          clickId: pending.click_id || pending.id,
+          pendingOrderId: pending.id,
+          reason: `Khớp trực tiếp Click/SubID (${pending.id})`
+        };
+      }
+    }
+  }
 
   let purchaseMs = 0;
   if (purchaseTimeStr) {
@@ -409,7 +438,7 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   }
 
   const baseRefMs = purchaseMs || csvClickMs;
-  const candidateScores = new Map();
+  const candidates = [];
 
   // Robust Product Matcher
   const isProductMatch = (pName, pUrlOrName) => {
@@ -474,12 +503,16 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   // 1. Quét các đơn hàng pending trong CSDL
   if (pendingOrders && pendingOrders.length > 0) {
     for (const pending of pendingOrders) {
-      if (!pending.user_id) continue;
-      
       const productMatched = isProductMatch(productName, pending.product_name);
       if (!productMatched) continue;
 
-      let score = 85;
+      let score = 80;
+      if (targetUserId && pending.user_id && pending.user_id === targetUserId) {
+        score += 30;
+      } else if (pending.user_id) {
+        score += 15;
+      }
+
       if (baseRefMs) {
         const pendingMs = new Date(pending.created_at).getTime();
         if (!isNaN(pendingMs)) {
@@ -487,11 +520,13 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
           if (diffMs <= 7200000) score += 15;
           else if (diffMs <= 86400000) score += 10;
         }
+      } else {
+        score += 10;
       }
 
-      candidateScores.set(pending.user_id, {
+      candidates.push({
         score,
-        userId: pending.user_id,
+        userId: pending.user_id || targetUserId,
         clickId: pending.click_id || pending.id,
         pendingOrderId: pending.id,
         reason: `Khớp Đơn chờ (${pending.id}) & Tên sản phẩm/Shop ID`
@@ -507,7 +542,11 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
       const productMatched = isProductMatch(productName, log.product_url);
       if (!productMatched) continue;
 
-      let score = 75;
+      let score = 70;
+      if (targetUserId && log.user_id === targetUserId) {
+        score += 25;
+      }
+
       if (baseRefMs) {
         const clickMs = new Date(log.click_time || log.created_at).getTime();
         if (!isNaN(clickMs)) {
@@ -515,35 +554,29 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
           if (diffMs <= 7200000) score += 15;
           else if (diffMs <= 86400000) score += 10;
         }
+      } else {
+        score += 10;
       }
 
-      const existing = candidateScores.get(log.user_id) || { score: 0 };
-      if (score > existing.score) {
-        candidateScores.set(log.user_id, {
-          score,
-          userId: log.user_id,
-          clickId: log.id,
-          reason: `Khớp Tên sản phẩm/URL (${productName})`
-        });
-      }
+      candidates.push({
+        score,
+        userId: log.user_id,
+        clickId: log.id,
+        reason: `Khớp Lượt click (${log.id}) & Tên sản phẩm`
+      });
     }
   }
 
-  if (candidateScores.size === 0) return null;
+  if (candidates.length === 0) return null;
 
-  let best = null;
-  for (const candidate of candidateScores.values()) {
-    if (!best || candidate.score > best.score) {
-      best = candidate;
-    }
-  }
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
 
-  // Yêu cầu điểm tối thiểu 70 (BẮT BUỘC phải khớp đúng Sản phẩm/Shop ID VÀ trong khung giờ < 2 tiếng)
-  if (best && best.score >= 70) {
+  if (best && best.score >= 65) {
     return best;
   }
 
-  return null; // Nếu không đủ điều kiện nghiêm ngặt -> Giữ nguyên user_id = null (Chưa xác định thành viên)
+  return null;
 }
 
 // Helper to group rows by orderId and count invalid rows
@@ -681,8 +714,8 @@ async function uploadAndAnalyze(req, res) {
       if (log.sub_id && log.user_id) clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
     }
 
-    // Read all pending orders in system created on link click (via orderController.logClick)
-    const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, created_at FROM orders WHERE status = 'pending' AND user_id IS NOT NULL");
+    // Read all pending/CLK orders in system created on link click or manually assigned
+    const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE status = 'pending' OR id LIKE 'CLK%'");
 
     // Read all existing orders
     const allOrders = await db.all('SELECT id, status, user_id, order_amount, real_cashback, estimated_cashback FROM orders');
@@ -748,15 +781,23 @@ async function uploadAndAnalyze(req, res) {
         }
       }
 
-      if (!targetUserId) {
-        if (exists) {
-          targetUserId = currentDbUserId || null; // keep existing
-        } else {
-          // Smart Match fallback using click_logs & pending orders
-          smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { clickTimeStr: clickTime, shopId, itemId });
-          if (smartMatchInfo) {
-            targetUserId = smartMatchInfo.userId;
-          }
+      if (!targetUserId && exists) {
+        targetUserId = currentDbUserId || null;
+      }
+
+      // Always perform smart matching to find matching CLK pending orders to update in-place or identify user
+      smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { 
+        clickTimeStr: clickTime, 
+        shopId, 
+        itemId, 
+        targetUserId, 
+        orderId, 
+        cleanSubId 
+      });
+
+      if (smartMatchInfo) {
+        if (!targetUserId && smartMatchInfo.userId) {
+          targetUserId = smartMatchInfo.userId;
         }
       }
 
@@ -818,7 +859,7 @@ async function uploadAndAnalyze(req, res) {
           });
         }
       } else {
-        // Totally new order
+        // Totally new order or updating pending CLK order
         report.matchedCount++;
         report.details.push({
           id: orderId,
@@ -828,11 +869,11 @@ async function uploadAndAnalyze(req, res) {
           subId: targetUserId,
           shopeeStatus: mappedStatus,
           status: 'matched',
-          reason: targetUserId
-            ? (smartMatchInfo 
-                ? `Khớp thông minh cho User ${targetUserId} (${smartMatchInfo.reason})` 
-                : `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}`)
-            : `Tạo đơn hàng mới (chưa xác định thành viên) ở trạng thái ${mappedStatus}`
+          reason: (smartMatchInfo && smartMatchInfo.pendingOrderId)
+            ? `Cập nhật Đơn chờ ${smartMatchInfo.pendingOrderId} theo giá CSV cho User ${targetUserId || 'chưa gán'} (${smartMatchInfo.reason})`
+            : (targetUserId 
+                ? `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}` 
+                : `Tạo đơn hàng mới (chưa xác định thành viên) ở trạng thái ${mappedStatus}`)
         });
       }
     }
@@ -883,7 +924,7 @@ async function applyReconciliation(req, res) {
       }
     }
 
-    const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, created_at FROM orders WHERE status = 'pending' AND user_id IS NOT NULL");
+    const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE status = 'pending' OR id LIKE 'CLK%'");
 
     const allOrders = await db.all('SELECT id, status, user_id, order_amount, real_cashback, estimated_cashback FROM orders');
     const existingOrdersMap = new Map(allOrders.map(o => [
@@ -939,16 +980,25 @@ async function applyReconciliation(req, res) {
         }
       }
 
-      if (!targetUserId) {
-        if (exists) {
-          targetUserId = currentDbUserId || null; // keep existing user
-        } else {
-          // Smart Match fallback using click_logs & pending orders
-          smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { clickTimeStr: clickTime, shopId, itemId });
-          if (smartMatchInfo) {
-            targetUserId = smartMatchInfo.userId;
-            targetClickId = smartMatchInfo.clickId || null;
-          }
+      if (!targetUserId && exists) {
+        targetUserId = currentDbUserId || null; // keep existing user
+      }
+
+      smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { 
+        clickTimeStr: clickTime, 
+        shopId, 
+        itemId, 
+        targetUserId, 
+        orderId, 
+        cleanSubId 
+      });
+
+      if (smartMatchInfo) {
+        if (!targetUserId && smartMatchInfo.userId) {
+          targetUserId = smartMatchInfo.userId;
+        }
+        if (!targetClickId && smartMatchInfo.clickId) {
+          targetClickId = smartMatchInfo.clickId;
         }
       }
 
@@ -988,11 +1038,16 @@ async function applyReconciliation(req, res) {
                estimated_cashback = ?,
                shopee_commission = ?,
                order_amount = ?,
-               product_name = ?,
+               product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [newStatus, newUserId, newCashback, newCashback, commission, orderAmount, productName, dbOrder.id]
+          [newStatus, newUserId, newCashback, newCashback, commission, orderAmount, productName, productName, dbOrder.id]
         );
+
+        // Delete duplicate CLK pending order if smartMatch matched a different pending order ID
+        if (smartMatchInfo && smartMatchInfo.pendingOrderId && smartMatchInfo.pendingOrderId.toLowerCase() !== lowerOrderId) {
+          await db.run('DELETE FROM orders WHERE id = ?', [smartMatchInfo.pendingOrderId]);
+        }
 
         // 1. If order was previously approved for oldUserId, but is now NOT approved OR targetUserId changed
         const wasApproved = oldStatus === 'approved';
