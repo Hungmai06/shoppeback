@@ -482,6 +482,7 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
             score,
             userId: pending.user_id,
             clickId: pending.click_id || pending.id,
+            pendingOrderId: pending.id,
             reason: `Khớp Đơn chờ & Sản phẩm/Shop ID trong khung giờ (${Math.max(0, Math.round(diffMs / 60000))} phút)`
           });
         }
@@ -1071,8 +1072,17 @@ async function applyReconciliation(req, res) {
 
         updatedCount++;
       } else {
-        // Insert new order
+        // Insert new order from CSV
         const orderTime = formatToMySQLDateTime(purchaseTime);
+
+        // If smart match found a temporary pending order created on link click, clean it up so CSV order replaces it 100%
+        const pendingIdToDelete = smartMatchInfo ? smartMatchInfo.pendingOrderId : null;
+        if (pendingIdToDelete) {
+          await db.run('DELETE FROM orders WHERE id = ? AND status = "pending"', [pendingIdToDelete]);
+        }
+        if (targetClickId) {
+          await db.run('DELETE FROM orders WHERE (id = ? OR click_id = ?) AND status = "pending"', [targetClickId, targetClickId]);
+        }
 
         await db.run(
           `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
