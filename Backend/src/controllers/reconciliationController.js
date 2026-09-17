@@ -61,7 +61,46 @@ function normalizeHeader(header) {
     .replace(/[^a-z0-9]/g, ''); // keep only alphanumeric
 }
 
-// Extract row fields using standard mapping
+// Helper to parse numbers from Shopee CSV format (e.g., "1.200.000₫", "25.000", "25,000", "1.200.000,50")
+function parseShopeeNumber(val) {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') return val;
+
+  let str = String(val).trim();
+  if (!str) return 0;
+
+  // Remove currency symbol ₫, spaces, and quotes
+  str = str.replace(/[₫\s"']/g, '');
+
+  // 1. Format: "1.200.000" or "25.000" (Vietnamese thousands separator dot)
+  if (/^\d{1,3}(\.\d{3})+$/.test(str)) {
+    str = str.replace(/\./g, '');
+  } 
+  // 2. Format: "1.200.000,50" (Vietnamese format with comma decimal)
+  else if (/^\d{1,3}(\.\d{3})+,\d+$/.test(str)) {
+    str = str.replace(/\./g, '').replace(',', '.');
+  } 
+  // 3. Format: "25,000" (US format thousands separator)
+  else if (/^\d+,\d{3}$/.test(str)) {
+    str = str.replace(',', '');
+  } 
+  // 4. Format: "25000,50" (Comma decimal without dot)
+  else if (/^\d+,\d+$/.test(str) && !str.includes('.')) {
+    str = str.replace(',', '.');
+  } 
+  // 5. Fallback check for dot separators in strings like "100.00" vs "100.000"
+  else if (str.includes('.') && !str.includes(',')) {
+    const parts = str.split('.');
+    if (parts.length > 1 && parts.slice(1).every(p => p.length === 3)) {
+      str = parts.join('');
+    }
+  }
+
+  const num = parseFloat(str.replace(/[^0-9.-]+/g, ''));
+  return isNaN(num) ? 0 : num;
+}
+
+// Extract row fields using standard mapping for Shopee Affiliate CSV (all 47 official columns)
 function extractRowFields(row) {
   let orderId = '';
   let subId = '';
@@ -79,8 +118,8 @@ function extractRowFields(row) {
   }
 
   // === ORDER ID ===
-  // Priority: "ID đơn hàng" > "Mã đơn hàng" > ordersn/orderid
-  for (const normKey of ['iddonhang', 'madonhang', 'madon', 'ordersn', 'orderid', 'id', 'sn', 'madinhdanh']) {
+  // Official column: "ID đơn hàng" -> normKey = "iddonhang"
+  for (const normKey of ['iddonhang', 'madonhang', 'madon', 'ordersn', 'orderid', 'checkoutid', 'id', 'sn', 'madinhdanh']) {
     if (normMap[normKey] && normMap[normKey].val) {
       orderId = normMap[normKey].val;
       break;
@@ -95,9 +134,9 @@ function extractRowFields(row) {
     }
   }
 
-  // === SUB ID (User identifier) ===
-  // Priority: "Sub_id1" exact match
-  for (const normKey of ['subid1', 'subid', 'sub1', 'sub_id1', 'sub_id']) {
+  // === SUB ID (User Identifier) ===
+  // Official columns: "Sub_id1", "Sub_id2", "Sub_id3", "Sub_id4", "Sub_id5"
+  for (const normKey of ['subid1', 'sub_id1', 'subid', 'sub_id', 'sub1', 'subid2', 'subid3', 'subid4', 'subid5']) {
     if (normMap[normKey] !== undefined && normMap[normKey].val) {
       subId = normMap[normKey].val;
       break;
@@ -113,8 +152,8 @@ function extractRowFields(row) {
   }
 
   // === PRODUCT NAME ===
-  // Priority: "Tên Item" > "Tên sản phẩm" > product/item
-  for (const normKey of ['tenitem', 'tensanpham', 'tensp', 'itemname', 'productname', 'sanpham', 'item']) {
+  // Official columns: "Tên Item" -> normKey = "tenitem", "Tên Shop" -> normKey = "tenshop"
+  for (const normKey of ['tenitem', 'tensanpham', 'tensp', 'itemname', 'productname', 'tenshop', 'sanpham', 'item']) {
     if (normMap[normKey] && normMap[normKey].val) {
       productName = normMap[normKey].val;
       break;
@@ -130,16 +169,16 @@ function extractRowFields(row) {
   }
 
   // === ORDER AMOUNT ===
-  // Shopee CSV: "Giá trị đơn hàng (₫)" → normKey = "giatridonhangd"
+  // Official column: "Giá trị đơn hàng (₫)" -> normKey = "giatridonhangd", fallback "Giá(₫)"
   const amountCandidates = [
-    'giatridonhangd', 'giatridonhang', 'giatrionhangd', 'giatrionhang',
+    'giatridonhangd', 'giatridonhang', 'giad', 'gia', 'giatrionhangd', 'giatrionhang',
     'giadonhang', 'giadon', 'giatri', 'tongtien', 'ordervalue', 'orderamount',
     'totalamount', 'amount', 'price'
   ];
   for (const normKey of amountCandidates) {
     if (normMap[normKey] && normMap[normKey].val) {
-      const parsed = parseFloat(normMap[normKey].val.replace(/[^0-9.-]+/g, ''));
-      if (!isNaN(parsed) && parsed > 0) {
+      const parsed = parseShopeeNumber(normMap[normKey].val);
+      if (parsed > 0) {
         orderAmount = parsed;
         break;
       }
@@ -148,14 +187,18 @@ function extractRowFields(row) {
   if (!orderAmount) {
     for (const [nk, entry] of Object.entries(normMap)) {
       if ((nk.includes('giatri') || nk.includes('giadon') || nk.includes('tongtien') || nk.includes('amount') || nk.includes('value')) && entry.val) {
-        const parsed = parseFloat(entry.val.replace(/[^0-9.-]+/g, ''));
-        if (!isNaN(parsed) && parsed > 0) { orderAmount = parsed; break; }
+        const parsed = parseShopeeNumber(entry.val);
+        if (parsed > 0) { orderAmount = parsed; break; }
       }
     }
   }
 
-  // === COMMISSION ===
-  // Shopee CSV: "Hoa hồng ròng tiếp thị liên kết(₫)"
+  // === COMMISSION (Hoa hồng ròng tiếp thị liên kết - Final net commission) ===
+  // Official columns:
+  // 1. "Hoa hồng ròng tiếp thị liên kết(₫)" -> normKey = "hoahongrongtipthilienketd"
+  // 2. "Tổng hoa hồng đơn hàng(₫)" -> normKey = "tonghoahongdonhangd"
+  // 3. "Hoa hồng đơn hàng từ Shopee(₫)" -> normKey = "hoahongdonhangtushopeed"
+  // 4. "Tổng hoa hồng sản phẩm(₫)" -> normKey = "tonghoahongsanphamd"
   const commCandidates = [
     'hoahongrongtipthilienketd',     // Hoa hồng ròng tiếp thị liên kết(₫)
     'hoahongrongtipthilienket',
@@ -163,8 +206,10 @@ function extractRowFields(row) {
     'tonghoahongdonhang',
     'hoahongdonhangtushopeed',        // Hoa hồng đơn hàng từ Shopee(₫)
     'hoahongdonhangtushopee',
-    'tonghoahongsanphamd',
+    'tonghoahongsanphamd',            // Tổng hoa hồng sản phẩm(₫)
     'tonghoahongsanpham',
+    'hoahongshopeetrensanphamd',     // Hoa hồng Shopee trên sản phẩm(₫)
+    'hoahongshopeetrensanpham',
     'hoahongtong',
     'hoahongsan',
     'hoahong',
@@ -173,8 +218,8 @@ function extractRowFields(row) {
   ];
   for (const normKey of commCandidates) {
     if (normMap[normKey] && normMap[normKey].val) {
-      const parsed = parseFloat(normMap[normKey].val.replace(/[^0-9.-]+/g, ''));
-      if (!isNaN(parsed) && parsed > 0) {
+      const parsed = parseShopeeNumber(normMap[normKey].val);
+      if (parsed > 0) {
         commission = parsed;
         break;
       }
@@ -183,17 +228,15 @@ function extractRowFields(row) {
   if (!commission) {
     for (const [nk, entry] of Object.entries(normMap)) {
       if ((nk.includes('hoahong') || nk.includes('commission') || nk.includes('comm')) && entry.val) {
-        const parsed = parseFloat(entry.val.replace(/[^0-9.-]+/g, ''));
-        if (!isNaN(parsed) && parsed > 0) { commission = parsed; break; }
+        const parsed = parseShopeeNumber(entry.val);
+        if (parsed > 0) { commission = parsed; break; }
       }
     }
   }
 
   // === STATUS ===
-  // Priority: "Trạng thái đặt hàng" first, then product status
-  // "Trạng thái đặt hàng" → "trangthaidathang"
-  // "Trạng thái sản phẩm liên kết" → "trangthaisanphamlienket"
-  for (const normKey of ['trangthaidathang', 'trangthaidonhang', 'trangthaisanphamlienket', 'trangthai', 'status']) {
+  // Official columns: "Trạng thái đặt hàng" -> normKey = "trangthaidathang", "Trạng thái sản phẩm liên kết" -> normKey = "trangthaisanphamlienket"
+  for (const normKey of ['trangthaidathang', 'trangthaidonhang', 'trangthaisanphamlienket', 'trangthainquoimua', 'trangthai', 'status']) {
     if (normMap[normKey] && normMap[normKey].val) {
       shopeeStatus = normMap[normKey].val;
       break;
@@ -201,8 +244,8 @@ function extractRowFields(row) {
   }
 
   // === PURCHASE TIME & CLICK TIME ===
-  // "Thời Gian Đặt Hàng" → "thoigiandathang", "Thời gian Click" → "thoigianclick"
-  for (const normKey of ['thoigiandathang', 'thoigiantao', 'thoigiandat', 'ngaydathang', 'ngaydat', 'ngaytao', 'purchasetime', 'ordertime', 'createdat', 'date']) {
+  // Official columns: "Thời Gian Đặt Hàng" -> normKey = "thoigiandathang", "Thời gian hoàn thành" -> normKey = "thoigianhoanthanh"
+  for (const normKey of ['thoigiandathang', 'thoigianhoanthanh', 'thoigiantao', 'thoigiandat', 'ngaydathang', 'ngaydat', 'ngaytao', 'purchasetime', 'ordertime', 'createdat', 'date']) {
     if (normMap[normKey] && normMap[normKey].val) {
       purchaseTime = normMap[normKey].val;
       break;
@@ -218,6 +261,7 @@ function extractRowFields(row) {
   }
 
   let clickTime = null;
+  // Official column: "Thời gian Click" -> normKey = "thoigianclick"
   for (const normKey of ['thoigianclick', 'clicktime', 'thoidiemclick', 'ngayclick']) {
     if (normMap[normKey] && normMap[normKey].val) {
       clickTime = normMap[normKey].val;
@@ -226,6 +270,7 @@ function extractRowFields(row) {
   }
 
   // === SHOP ID & ITEM ID ===
+  // Official columns: "Shop id" -> normKey = "shopid", "Item id" -> normKey = "itemid", "ID Model" -> normKey = "idmodel"
   let shopId = '';
   let itemId = '';
   for (const normKey of ['shopid', 'idshop']) {
@@ -234,7 +279,7 @@ function extractRowFields(row) {
       break;
     }
   }
-  for (const normKey of ['itemid', 'iditem', 'productid', 'idproduct']) {
+  for (const normKey of ['itemid', 'iditem', 'idmodel', 'modelid', 'productid', 'idproduct']) {
     if (normMap[normKey] && normMap[normKey].val) {
       itemId = normMap[normKey].val;
       break;
