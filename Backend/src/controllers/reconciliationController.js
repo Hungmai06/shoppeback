@@ -382,6 +382,7 @@ function mapShopeeStatus(shopeeStatus) {
 /**
  * Thuật toán quét đối soát thông minh & linh hoạt:
  * Khớp Đơn chờ CLK (hoặc đơn gán thủ công), Click log, và User theo ID sản phẩm, ID Shop, Tên sản phẩm/Model Code, và Thời gian.
+ * BẮT BUỘC NGHIÊM NGẶT: Nếu file CSV KHÔNG CÓ Sub_id1, chỉ gán thành viên khi khớp Sản phẩm/Shop ID VÀ trong khung thời gian < 2 tiếng!
  */
 function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClickLogsFull, pendingOrders, extraOptions = {}) {
   const { clickTimeStr, shopId, itemId, targetUserId, orderId, cleanSubId } = extraOptions;
@@ -468,14 +469,18 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
     // 4. Tokenized Word Comparison (ignore generic words, check specific model codes)
     const words1 = str1.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
     const words2 = str2.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
-    const stopWords = new Set(['shopee', 'mall', 'san', 'pham', 'chinh', 'hang', 'cao', 'cap', 'nam', 'nu', 'shop', 'mua', 'ban', 'giam', 'gia', 'hot']);
+    const stopWords = new Set([
+      'shopee', 'mall', 'san', 'pham', 'chinh', 'hang', 'cao', 'cap', 'nam', 'nu',
+      'shop', 'mua', 'ban', 'giam', 'gia', 'hot', 'combo', 'bo', 'set', 'moi',
+      'dep', 'thoi', 'trang', 'tiet', 'kiem', 'uu', 'dai', 'freeship', 'do', 'cho'
+    ]);
 
     const keyWords1 = words1.filter(w => !stopWords.has(w));
     const keyWords2 = words2.filter(w => !stopWords.has(w));
 
     // Specific model code check (e.g. tx017, vachino, iphone15, xm4)
     for (const w1 of keyWords1) {
-      if (w1.length >= 4 && (/\d/.test(w1) || w1.length >= 6)) {
+      if (w1.length >= 3 && (/\d/.test(w1) || w1.length >= 5)) {
         if (keyWords2.some(w2 => w2.includes(w1) || w1.includes(w2))) {
           return true;
         }
@@ -493,7 +498,7 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
 
     const clean1 = str1.replace(/[^a-z0-9]/g, '');
     const clean2 = str2.replace(/[^a-z0-9]/g, '');
-    if (clean1.length >= 6 && clean2.length >= 6) {
+    if (clean1.length >= 8 && clean2.length >= 8) {
       if (clean1.includes(clean2) || clean2.includes(clean1)) return true;
     }
 
@@ -503,26 +508,38 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   // 1. Quét các đơn hàng pending trong CSDL
   if (pendingOrders && pendingOrders.length > 0) {
     for (const pending of pendingOrders) {
+      // If targetUserId is set (from Sub_id1 or manual assignment), only check matching pending orders for targetUserId or unassigned pending orders
+      if (targetUserId && pending.user_id && pending.user_id !== targetUserId) {
+        continue;
+      }
+
       const productMatched = isProductMatch(productName, pending.product_name);
       if (!productMatched) continue;
 
-      let score = 80;
+      let score = 70;
       if (targetUserId && pending.user_id && pending.user_id === targetUserId) {
         score += 30;
-      } else if (pending.user_id) {
-        score += 15;
       }
 
-      if (baseRefMs) {
+      let timeWithinWindow = false;
+      if (baseRefMs && pending.created_at) {
         const pendingMs = new Date(pending.created_at).getTime();
         if (!isNaN(pendingMs)) {
           const diffMs = Math.abs(baseRefMs - pendingMs);
-          if (diffMs <= 7200000) score += 15;
-          else if (diffMs <= 86400000) score += 10;
+          if (diffMs <= 7200000) { // < 2 hours
+            score += 25;
+            timeWithinWindow = true;
+          } else if (diffMs <= 21600000) { // < 6 hours
+            score += 10;
+          }
         }
       } else {
         score += 10;
       }
+
+      // STRICT: If CSV has NO targetUserId, require timeWithinWindow to auto-assign!
+      if (!targetUserId && !pending.user_id) continue;
+      if (!targetUserId && !timeWithinWindow) continue;
 
       candidates.push({
         score,
@@ -538,25 +555,30 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   if (allClickLogsFull && allClickLogsFull.length > 0) {
     for (const log of allClickLogsFull) {
       if (!log.user_id) continue;
-      
+      if (targetUserId && log.user_id !== targetUserId) continue;
+
       const productMatched = isProductMatch(productName, log.product_url);
       if (!productMatched) continue;
 
-      let score = 70;
+      let score = 65;
       if (targetUserId && log.user_id === targetUserId) {
         score += 25;
       }
 
+      let timeWithinWindow = false;
       if (baseRefMs) {
         const clickMs = new Date(log.click_time || log.created_at).getTime();
         if (!isNaN(clickMs)) {
           const diffMs = Math.abs(baseRefMs - clickMs);
-          if (diffMs <= 7200000) score += 15;
-          else if (diffMs <= 86400000) score += 10;
+          if (diffMs <= 7200000) { // < 2 hours
+            score += 25;
+            timeWithinWindow = true;
+          }
         }
-      } else {
-        score += 10;
       }
+
+      // STRICT: If CSV has NO targetUserId, require timeWithinWindow to auto-assign!
+      if (!targetUserId && !timeWithinWindow) continue;
 
       candidates.push({
         score,
@@ -572,7 +594,8 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
 
-  if (best && best.score >= 65) {
+  // STRICT threshold 85 required for auto-assigning when no explicit Sub_id
+  if (best && best.score >= 85) {
     return best;
   }
 
