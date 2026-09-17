@@ -56,6 +56,7 @@ async function readRowsFromFile(filePath, originalName = '') {
 function normalizeHeader(header) {
   return header.toLowerCase()
     .replace(/đ/g, 'd')
+    .replace(/₫/g, 'd') // map ₫ to d so (₫) becomes (d) -> d
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // remove Vietnamese accents
     .replace(/[^a-z0-9]/g, ''); // keep only alphanumeric
