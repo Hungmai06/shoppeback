@@ -34,6 +34,7 @@ services:
       - SHOPEE_AFFILIATE_ID=173401900099
       - ADDLIVETAG_API_KEY=${ADDLIVETAG_API_KEY:-}
       - CLUSTER_MODE=false
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-335312329426-br7u9qiohc9c8a5aqu7e3k4jlrrbptr6.apps.googleusercontent.com}
     volumes:
       - ./Backend/uploads:/app/uploads
     depends_on:
@@ -44,6 +45,8 @@ services:
     build:
       context: ./Frontend
       dockerfile: Dockerfile
+      args:
+        - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID:-335312329426-br7u9qiohc9c8a5aqu7e3k4jlrrbptr6.apps.googleusercontent.com}
     container_name: hoantien_frontend
     restart: always
     ports:
