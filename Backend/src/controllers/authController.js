@@ -497,9 +497,165 @@ async function refreshToken(req, res) {
   }
 }
 
+/**
+ * Xử lý đăng nhập / đăng ký tự động qua Google OAuth trực tiếp (google-auth-library)
+ * Hỗ trợ cả credential (ID token JWT) hoặc accessToken từ @react-oauth/google
+ */
+async function loginWithGoogle(req, res) {
+  const { credential, idToken, accessToken, referralCode } = req.body;
+  const tokenToVerify = credential || idToken || accessToken;
+
+  if (!tokenToVerify) {
+    return res.status(400).json({ message: 'Thiếu mã xác thực token Google' });
+  }
+
+  try {
+    const db = await getDatabase();
+    let targetEmail = '';
+    let targetName = '';
+    let targetAvatar = null;
+
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+
+    // 1. Nếu gửi credential / idToken: Xác thực bằng OAuth2Client từ google-auth-library
+    if (credential || idToken) {
+      try {
+        const { OAuth2Client } = require('google-auth-library');
+        const client = new OAuth2Client(googleClientId);
+
+        const ticket = await client.verifyIdToken({
+          idToken: credential || idToken,
+          audience: googleClientId || undefined,
+        });
+        const payload = ticket.getPayload();
+        if (payload) {
+          targetEmail = payload.email ? payload.email.trim().toLowerCase() : '';
+          targetName = payload.name || payload.given_name || (targetEmail ? targetEmail.split('@')[0] : '');
+          targetAvatar = payload.picture || null;
+        }
+      } catch (idTokenErr) {
+        console.warn('verifyIdToken warning:', idTokenErr.message);
+      }
+    }
+
+    // 2. Nếu gửi accessToken từ useGoogleLogin: Xác thực qua Google userinfo API
+    if (!targetEmail && accessToken) {
+      try {
+        const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (userinfoRes.ok) {
+          const profile = await userinfoRes.json();
+          if (profile.email) {
+            targetEmail = profile.email.trim().toLowerCase();
+            targetName = profile.name || profile.given_name || targetEmail.split('@')[0];
+            targetAvatar = profile.picture || null;
+          }
+        } else {
+          console.warn('Google userinfo fetch status:', userinfoRes.status);
+        }
+      } catch (fetchErr) {
+        console.warn('Google userinfo fetch error:', fetchErr.message);
+      }
+    }
+
+    if (!targetEmail) {
+      return res.status(401).json({ message: 'Xác thực Google không thành công hoặc token đã hết hạn' });
+    }
+
+    // 3. Kiểm tra tài khoản đã tồn tại trong CSDL MySQL chưa
+    let user = await db.get('SELECT * FROM users WHERE LOWER(email) = ?', [targetEmail]);
+
+    if (user) {
+      if (user.status === 'banned') {
+        return res.status(403).json({ message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin.' });
+      }
+
+      // Cập nhật avatar nếu tài khoản chưa có
+      if (targetAvatar && (!user.avatar || user.avatar.trim() === '')) {
+        await db.run('UPDATE users SET avatar = ? WHERE id = ?', [targetAvatar, user.id]);
+        user.avatar = targetAvatar;
+      }
+
+      const appAccessToken = generateAccessToken(user.id);
+      const appRefreshToken = generateRefreshToken(user.id);
+      await db.run('UPDATE users SET refresh_token = ? WHERE id = ?', [appRefreshToken, user.id]);
+
+      delete user.password_hash;
+      delete user.refresh_token;
+
+      return res.json({
+        token: appAccessToken,
+        refreshToken: appRefreshToken,
+        user
+      });
+    }
+
+    // 4. Người dùng mới -> Tự động khởi tạo tài khoản User mới trong MySQL
+    const lastUser = await db.get("SELECT id FROM users WHERE role = 'user' ORDER BY created_at DESC LIMIT 1");
+    let nextId = 'USR101';
+    if (lastUser && lastUser.id.startsWith('USR')) {
+      const lastNum = parseInt(lastUser.id.substring(3));
+      if (!isNaN(lastNum)) nextId = `USR${lastNum + 1}`;
+    }
+
+    // Kiểm tra mã giới thiệu (nếu có)
+    let validReferredBy = null;
+    if (referralCode) {
+      const referrer = await db.get('SELECT id FROM users WHERE id = ?', [referralCode.trim().toUpperCase()]);
+      if (referrer) {
+        validReferredBy = referrer.id;
+      }
+    }
+
+    const affiliateSubId = ensureUuid(nextId);
+    const salt = await bcrypt.genSalt(10);
+    const randomSecret = `GOOGLE_AUTH_${Date.now()}_${Math.random()}`;
+    const passwordHash = await bcrypt.hash(randomSecret, salt);
+
+    await db.run(
+      `INSERT INTO users (id, name, email, password_hash, avatar, role, status, referred_by, affiliate_sub_id)
+       VALUES (?, ?, ?, ?, ?, 'user', 'active', ?, ?)`,
+      [
+        nextId,
+        targetName || targetEmail.split('@')[0],
+        targetEmail,
+        passwordHash,
+        targetAvatar,
+        validReferredBy,
+        affiliateSubId
+      ]
+    );
+
+    // Gửi thông báo chào mừng
+    const notifId = `NT${Date.now()}`;
+    await db.run(
+      `INSERT INTO notifications (id, user_id, title, content, type)
+       VALUES (?, ?, 'Chào mừng thành viên mới', 'Chào mừng bạn đã đăng nhập thành công bằng Google! Dán link Shopee để bắt đầu nhận tiền hoàn ngay.', 'system')`,
+      [notifId, nextId]
+    );
+
+    const newUser = await db.get('SELECT id, name, email, avatar, role, status, balance, total_cashback, referred_by, affiliate_sub_id FROM users WHERE id = ?', [nextId]);
+    const appAccessToken = generateAccessToken(nextId);
+    const appRefreshToken = generateRefreshToken(nextId);
+    await db.run('UPDATE users SET refresh_token = ? WHERE id = ?', [appRefreshToken, nextId]);
+
+    return res.status(201).json({
+      token: appAccessToken,
+      refreshToken: appRefreshToken,
+      user: newUser
+    });
+  } catch (error) {
+    console.error('Google Auth Controller Error:', error);
+    return res.status(500).json({ message: 'Lỗi máy chủ khi đăng nhập bằng Google' });
+  }
+}
+
 module.exports = {
   register,
   login,
+  loginWithGoogle,
   getProfile,
   updateProfile,
   getNotifications,
@@ -512,3 +668,4 @@ module.exports = {
   adminToggleUserStatus,
   refreshToken
 };
+

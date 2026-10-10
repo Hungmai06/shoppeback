@@ -127,6 +127,7 @@ interface AppState {
   setCurrentUser: (user: UserProfile | null) => void;
   initializeAuth: () => Promise<void>;
   login: (email: string, password: string) => Promise<UserProfile | null>;
+  loginWithGoogle: (accessToken: string, email?: string, name?: string, avatar?: string, referralCode?: string) => Promise<UserProfile | null>;
   register: (name: string, email: string, password: string, referralCode?: string) => Promise<boolean>;
   logout: () => void;
   updateProfile: (profile: Partial<UserProfile>) => Promise<boolean>;
@@ -336,6 +337,40 @@ export const useAppStore = create<AppState>((set, get) => ({
       return null;
     } catch (error) {
       console.error('Login API error:', error);
+      return null;
+    }
+  },
+
+  loginWithGoogle: async (accessToken, email, name, avatar, referralCode) => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken,
+          email,
+          name,
+          avatar,
+          referralCode
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('token', data.token);
+        if (data.refreshToken) {
+          localStorage.setItem('refreshToken', data.refreshToken);
+        }
+        if (data.user) {
+          localStorage.setItem('user', JSON.stringify(data.user));
+        }
+        set({ currentUser: data.user, isAuthLoading: false });
+        await get().initializeAuth();
+        return data.user as UserProfile;
+      }
+      return null;
+    } catch (error) {
+      console.error('Login with Google API error:', error);
       return null;
     }
   },

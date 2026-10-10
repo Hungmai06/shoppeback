@@ -5,6 +5,7 @@ import { ShoppingBag, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, CardDescription, Input } from '../../components/ui/core';
 import { useAppStore } from '../../store/appStore';
 import { toast } from 'sonner';
+import GoogleLoginButton from '../../components/auth/GoogleLoginButton';
 
 export default function AuthPages() {
   const navigate = useNavigate();
@@ -140,6 +141,20 @@ export default function AuthPages() {
                 <CardDescription>Chào mừng bạn trở lại! Nhập thông tin để tiếp tục.</CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="mb-4">
+                  <GoogleLoginButton text="Đăng nhập bằng Google" />
+                  <div className="relative my-3">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-border/80" />
+                    </div>
+                    <div className="relative flex justify-center text-[10px]">
+                      <span className="bg-white dark:bg-slate-900 px-3 text-text-secondary font-bold uppercase tracking-wider">
+                        Hoặc dùng email
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 <form onSubmit={handleLogin} className="flex flex-col gap-4">
                   <Input
                     label="Địa chỉ Email"
@@ -205,6 +220,20 @@ export default function AuthPages() {
                 <CardDescription>Bắt đầu mua sắm thông minh và tích lũy tiền hoàn hôm nay.</CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="mb-4">
+                  <GoogleLoginButton text="Đăng ký nhanh bằng Google" referralCode={referralCode} />
+                  <div className="relative my-3">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-border/80" />
+                    </div>
+                    <div className="relative flex justify-center text-[10px]">
+                      <span className="bg-white dark:bg-slate-900 px-3 text-text-secondary font-bold uppercase tracking-wider">
+                        Hoặc tạo bằng email
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 <form onSubmit={handleRegister} className="flex flex-col gap-4">
                   <Input
                     label="Họ và tên"

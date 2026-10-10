@@ -4,6 +4,7 @@ const { protect, adminOnly } = require('../middleware/auth');
 const {
   register,
   login,
+  loginWithGoogle,
   getProfile,
   updateProfile,
   getNotifications,
@@ -19,6 +20,7 @@ const {
 
 router.post('/register', register);
 router.post('/login', login);
+router.post('/google', loginWithGoogle);
 router.post('/refresh', refreshToken);
 router.get('/profile', protect, getProfile);
 router.put('/profile', protect, updateProfile);

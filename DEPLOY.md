@@ -190,3 +190,46 @@ docker compose up -d --build
   ```bash
   docker exec -i hoantien_mysql mysql -u root -proot_secure_password_123 affiliateshoppe < backup.sql
   ```
+
+---
+
+## 🔑 BƯỚC 9: Cấu Hình Đăng Nhập Bằng Google (Google OAuth Trực Tiếp - Không cần Supabase)
+
+Hệ thống đã tích hợp trực tiếp **Google Identity Services** qua thư viện `@react-oauth/google` (Frontend) và `google-auth-library` (Backend NodeJS + MySQL):
+
+### 1. Tạo Google OAuth Client ID (Mất ~2 phút)
+1. Truy cập [Google Cloud Console](https://console.cloud.google.com/).
+2. Tạo một Project mới (hoặc chọn project hiện có).
+3. Vào **APIs & Services ➔ OAuth consent screen**:
+   - Chọn **External** ➔ Bấm **Create**.
+   - Điền **App name** (VD: *Hoàn Tiền Shopee*), chọn email hỗ trợ và điền email liên hệ của bạn.
+   - Các bước tiếp theo (Scopes, Test Users) có thể bấm **Save and Continue** (mặc định lấy `email`, `profile`, `openid`).
+4. Vào **APIs & Services ➔ Credentials**:
+   - Bấm **Create Credentials ➔ OAuth client ID**.
+   - Application type: Chọn **Web application**.
+   - Name: *Web Client*.
+   - Tại mục **Authorized JavaScript origins**, thêm:
+     - `http://localhost:5173` (khi chạy máy tính cá nhân)
+     - `https://domain-cua-ban.com` (khi đưa lên hosting/VPS)
+   - Tại mục **Authorized redirect URIs**, thêm:
+     - `http://localhost:5173`
+     - `https://domain-cua-ban.com`
+   - Bấm **Create**.
+5. Bạn sẽ nhận được **Client ID** (chuỗi ký tự kết thúc bằng `.apps.googleusercontent.com`).
+
+### 2. Cập nhật Biến Môi Trường (`.env`)
+- **Frontend** (`Frontend/.env` hoặc `Frontend/.env.development`):
+  ```env
+  VITE_GOOGLE_CLIENT_ID=xxxxxx-xxxxxxxx.apps.googleusercontent.com
+  ```
+- **Backend** (`Backend/.env`):
+  ```env
+  GOOGLE_CLIENT_ID=xxxxxx-xxxxxxxx.apps.googleusercontent.com
+  ```
+
+### 3. Trải nghiệm
+- Người dùng chỉ cần bấm nút **"Đăng nhập bằng Google"** trên Modal hoặc trang Đăng nhập / Đăng ký.
+- Nếu email chưa từng có trong MySQL: Hệ thống **tự động tạo tài khoản mới** (mã `USR...`, ví tiền, mã giới thiệu, affiliate tracking sub ID) và đăng nhập ngay.
+- Nếu email đã có: Hệ thống tự động đồng bộ avatar và đăng nhập cấp JWT Token bình thường.
+
+

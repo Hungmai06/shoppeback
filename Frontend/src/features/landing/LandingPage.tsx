@@ -29,9 +29,7 @@ export default function LandingPage() {
     { step: 3, badge: "BƯỚC 3", title: "Bước 3", image: "/2.jpg" },
     { step: 4, badge: "BƯỚC 4", title: "Bước 4", image: "/3.jpg" },
     { step: 5, badge: "BƯỚC 5", title: "Bước 5", image: "/4.jpg" },
-    { step: 6, badge: "BƯỚC 6", title: "Bước 6", image: "/5.jpg" },
-    { step: 7, badge: "BƯỚC 7", title: "Bước 7", image: "/6.jpg" },
-    { step: 8, badge: "BƯỚC 8", title: "Bước 8", image: "/7.jpg" }
+    { step: 6, badge: "BƯỚC 6", title: "Bước 6", image: "/7.jpg" }
   ];
 
 
@@ -449,22 +447,22 @@ export default function LandingPage() {
           </div>
         )}
 
-        {/* 8-STEP CASHBACK PURCHASING GUIDE WITH DIRECT IMAGES */}
+        {/* 6-STEP CASHBACK PURCHASING GUIDE WITH DIRECT IMAGES */}
         <div className="bg-white border border-border/80 rounded-card p-6 md:p-10 card-shadow text-left mt-8 mb-12 max-w-7xl mx-auto hover:shadow-soft transition-all duration-300">
           <div className="text-center max-w-3xl mx-auto mb-10">
             <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-primary/10 text-primary font-extrabold text-xs uppercase tracking-wider rounded-full mb-3">
               🚀 Quy trình mua hàng hoàn tiền
             </span>
             <h2 className="text-2xl md:text-4xl font-black text-text mb-3 leading-tight">
-              Hướng Dẫn <span className="gradient-text">8 Bước Mua Hàng</span>
+              Hướng Dẫn <span className="gradient-text">6 Bước Mua Hàng</span>
             </h2>
             <p className="text-xs md:text-sm text-text-secondary leading-relaxed">
-              Các bước lần lượt từ Bước 1 đến Bước 8 với hình ảnh hiển thị trực tiếp hỗ trợ mua sắm hoàn tiền dễ dàng.
+              Các bước lần lượt từ Bước 1 đến Bước 6 với hình ảnh hiển thị trực tiếp hỗ trợ mua sắm hoàn tiền dễ dàng.
             </p>
           </div>
 
-          {/* 8 Steps Grid Layout (Direct Image Display on Every Step Card) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* 6 Steps Grid Layout (Direct Image Display on Every Step Card) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {purchasingSteps.map((s) => (
               <div
                 key={s.step}
@@ -476,7 +474,7 @@ export default function LandingPage() {
                     {s.badge}
                   </span>
                   <span className="text-xs font-bold text-text-secondary font-mono">
-                    {s.step} / 8
+                    {s.step} / 6
                   </span>
                 </div>
 
@@ -522,9 +520,8 @@ export default function LandingPage() {
                         alt={`Hình ảnh ${s.badge}`}
                         onError={(e) => {
                           const target = e.currentTarget;
-                          const stepNum = s.step - 1;
-                          if (!target.src.includes('png')) {
-                            target.src = `/${stepNum}.png`;
+                          if (s.image && !target.src.includes('png')) {
+                            target.src = s.image.replace('.jpg', '.png');
                           }
                         }}
                         className="w-full h-full object-contain p-1.5 group-hover/img:scale-105 transition-transform duration-300"

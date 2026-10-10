@@ -4,6 +4,7 @@ import { X, ShoppingBag, UserCheck, ArrowRight, Eye, EyeOff } from 'lucide-react
 import { Button, Input } from '../ui/core';
 import { useAppStore } from '../../store/appStore';
 import { toast } from 'sonner';
+import GoogleLoginButton from './GoogleLoginButton';
 
 export default function AuthModal() {
   const { isAuthModalOpen, authModalMode, closeAuthModal, login, register } = useAppStore();
@@ -209,7 +210,21 @@ export default function AuthModal() {
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-3 mt-2">
+                {/* Google Sign-in Button */}
+                <GoogleLoginButton text="Đăng nhập bằng Google" disabled={loading} />
+
+                <div className="relative my-0.5">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-border/80" />
+                  </div>
+                  <div className="relative flex justify-center text-[10px]">
+                    <span className="bg-white dark:bg-slate-900 px-3 text-text-secondary font-bold uppercase tracking-wider">
+                      Hoặc dùng email
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
                   <Input
                     label="Địa chỉ Email"
                     placeholder="name@example.com"
@@ -289,7 +304,21 @@ export default function AuthModal() {
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-3 mt-1">
+                {/* Google Sign-up Button */}
+                <GoogleLoginButton text="Đăng ký nhanh bằng Google" referralCode={referralCode} disabled={loading} />
+
+                <div className="relative my-0.5">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-border/80" />
+                  </div>
+                  <div className="relative flex justify-center text-[10px]">
+                    <span className="bg-white dark:bg-slate-900 px-3 text-text-secondary font-bold uppercase tracking-wider">
+                      Hoặc tạo bằng email
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
                   <Input
                     label="Họ và tên"
                     placeholder="Nguyễn Văn A"
