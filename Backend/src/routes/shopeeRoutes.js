@@ -1,7 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { optionalAuth } = require('../middleware/auth');
-const { convertShopeeLink, redirectShopeeLink } = require('../controllers/shopeeController');
+const { convertShopeeLink, redirectShopeeLink, getProductInfo } = require('../controllers/shopeeController');
+
+// Tra cứu thông tin sản phẩm và hoa hồng từ AddLiveTag (GET & POST)
+router.get('/product-info', getProductInfo);
+router.post('/product-info', getProductInfo);
 
 // Hỗ trợ cả /api/shopee/convert và /api/shopee/generate-link (POST)
 router.post('/convert', optionalAuth, convertShopeeLink);

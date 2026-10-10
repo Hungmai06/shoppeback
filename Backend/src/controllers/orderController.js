@@ -19,7 +19,7 @@ async function logClick(req, res) {
 
     // Save pending order to orders table so user and admin can see and manage it
     const name = productName || productUrl;
-    const img = productImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400';
+    const img = productImage || '';
     const amount = Number(orderAmount) || 100000;
     const cashback = Number(estimatedCashback) || Math.round(amount * 0.035);
 

@@ -71,6 +71,7 @@ export interface SystemSettings {
   supportFacebook?: string;
   shopeeAffiliateId?: string;
   shopeeCookieUrl?: string;
+  addlivetagApiKey?: string;
   lazadaAffiliateId?: string;
   lazadaCookieUrl?: string;
   tiktokAffiliateId?: string;
@@ -199,6 +200,15 @@ const getHeaders = () => {
   };
 };
 
+const getCachedUser = (): UserProfile | null => {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   theme: 'light',
   toggleTheme: () => set((state) => {
@@ -211,7 +221,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { theme: nextTheme };
   }),
 
-  currentUser: null,
+  currentUser: getCachedUser(),
   isAuthLoading: Boolean(localStorage.getItem('token')),
   users: [],
   userStats: null,
@@ -227,7 +237,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   reconciliationHistory: [],
   favorites: [],
 
-  setCurrentUser: (user) => set({ currentUser: user }),
+  setCurrentUser: (user) => {
+    if (user) localStorage.setItem('user', JSON.stringify(user));
+    else localStorage.removeItem('user');
+    set({ currentUser: user });
+  },
 
   initializeAuth: async () => {
     // 1. Fetch public system settings
@@ -244,7 +258,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 2. Fetch authenticated profile if token exists
     const token = localStorage.getItem('token');
     if (!token) {
-      set({ isAuthLoading: false });
+      localStorage.removeItem('user');
+      set({ currentUser: null, isAuthLoading: false });
       return;
     }
 
@@ -255,37 +270,45 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (res.ok) {
         const data = await res.json();
+        const profile = data.profile;
+        localStorage.setItem('user', JSON.stringify(profile));
         set({
-          currentUser: data.profile,
-          userStats: data.stats
+          currentUser: profile,
+          userStats: data.stats,
+          isAuthLoading: false // Ghi nhận xác thực thành công ngay lập tức
         });
 
-        // Load personal data
-        await get().fetchUserOrders();
-        await get().fetchUserWithdrawals();
-        await get().fetchNotifications();
-
-        // Load admin data if admin role
-        if (data.profile.role === 'admin') {
-          await get().fetchAdminOrders();
-          await get().fetchAdminWithdrawals();
-          await get().fetchAdminUsers();
-          await get().fetchAdminStats();
-          await get().fetchReconciliationLogs();
-        }
+        // Tải dữ liệu bổ sung chạy nền song song, không làm kẹt tiến trình xác thực
+        Promise.allSettled([
+          get().fetchUserOrders(),
+          get().fetchUserWithdrawals(),
+          get().fetchNotifications(),
+          ...(profile.role === 'admin' ? [
+            get().fetchAdminOrders(),
+            get().fetchAdminWithdrawals(),
+            get().fetchAdminUsers(),
+            get().fetchAdminStats(),
+            get().fetchReconciliationLogs()
+          ] : [])
+        ]).catch(err => console.warn('Background sync error:', err));
       } else {
-        // Expired/Invalid token
+        // Token không hợp lệ hoặc đã hết hạn
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
-        set({ currentUser: null, userStats: null });
+        localStorage.removeItem('user');
+        set({ currentUser: null, userStats: null, isAuthLoading: false });
       }
     } catch (error) {
       console.error('Initialize auth error:', error);
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      set({ currentUser: null, userStats: null });
-    } finally {
-      set({ isAuthLoading: false });
+      const cached = getCachedUser();
+      if (!cached) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
+        set({ currentUser: null, userStats: null, isAuthLoading: false });
+      } else {
+        set({ isAuthLoading: false });
+      }
     }
   },
 
@@ -303,7 +326,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (data.refreshToken) {
           localStorage.setItem('refreshToken', data.refreshToken);
         }
-        set({ currentUser: data.user });
+        if (data.user) {
+          localStorage.setItem('user', JSON.stringify(data.user));
+        }
+        set({ currentUser: data.user, isAuthLoading: false });
         await get().initializeAuth();
         return data.user as UserProfile;
       }
@@ -328,7 +354,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (data.refreshToken) {
           localStorage.setItem('refreshToken', data.refreshToken);
         }
-        set({ currentUser: data.user });
+        if (data.user) {
+          localStorage.setItem('user', JSON.stringify(data.user));
+        }
+        set({ currentUser: data.user, isAuthLoading: false });
         await get().initializeAuth();
         return true;
       }
@@ -342,6 +371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
     set({
       currentUser: null,
       userStats: null,
@@ -350,7 +380,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       totalAdminOrders: 0,
       withdrawals: [],
       notifications: [],
-      users: []
+      users: [],
+      isAuthLoading: false
     });
   },
 
@@ -599,6 +630,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     supportFacebook: "https://facebook.com/hoantienmuasam",
     shopeeAffiliateId: "173401900099",
     shopeeCookieUrl: "https://s.shopee.vn/an_redir",
+    addlivetagApiKey: "",
     lazadaAffiliateId: "",
     lazadaCookieUrl: "https://s.lazada.vn/s.an_redir",
     tiktokAffiliateId: "",

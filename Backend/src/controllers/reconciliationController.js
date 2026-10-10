@@ -62,53 +62,112 @@ function normalizeHeader(header) {
     .replace(/[^a-z0-9]/g, ''); // keep only alphanumeric
 }
 
-// Helper to resolve SubID (like CLK1789464623170n1y1ho) to target UserId and ClickId using prefix/substring/timestamp matching
-function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, clickSubIdToUserIdMap, allClickLogsFull, pendingOrders }) {
-  if (!cleanSubId) return { targetUserId: null, targetClickId: null };
+// Helper to resolve SubID (like ADM002-cashback-web--CLK1789464623170, USR101, CLK1789464623170n1y1ho)
+// to target UserId, ClickId, and PendingOrderId using token extraction, direct DB lookup, prefix/substring/timestamp matching
+function resolveSubIdToUserId(cleanSubId, { userIds, userMap, affiliateSubIdToUserIdMap, clickSubIdToUserIdMap, orderLookupMap, allClickLogsFull, pendingOrders }) {
+  if (!cleanSubId) return { targetUserId: null, targetClickId: null, pendingOrderId: null };
 
   const trimmed = cleanSubId.trim();
   const lowerTrimmed = trimmed.toLowerCase();
 
-  // 1. Direct exact or case-insensitive map lookup
-  for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
-    if (key.toLowerCase() === lowerTrimmed) {
-      return { targetUserId: userId, targetClickId: key };
-    }
-  }
-  for (const uid of userIds) {
-    if (uid.toLowerCase() === lowerTrimmed) {
-      return { targetUserId: uid, targetClickId: null };
-    }
-  }
-  for (const [sub, uid] of affiliateSubIdToUserIdMap.entries()) {
-    if (sub.toLowerCase() === lowerTrimmed) {
-      return { targetUserId: uid, targetClickId: null };
+  // Extract all sub tokens (delimited by -, _, |, /, :, space, commas)
+  const rawTokens = trimmed.split(/[-_|\s/:,]+/).map(t => t.trim()).filter(Boolean);
+  const candidateTokens = Array.from(new Set([trimmed, ...rawTokens]));
+
+  // Also extract any CLK tracking token if embedded
+  const clkMatches = trimmed.match(/clk[a-zA-Z0-9]+/gi);
+  if (clkMatches) {
+    for (const cm of clkMatches) {
+      if (!candidateTokens.includes(cm)) candidateTokens.push(cm);
     }
   }
 
-  // 2. Extract base CLK pattern & timestamp digits (e.g., CLK1789464623170 from CLK1789464623170n1y1ho)
+  // 1. Direct match with Orders table in system (order.id or order.click_id)
+  if (orderLookupMap) {
+    for (const token of candidateTokens) {
+      const lTok = token.toLowerCase();
+      if (orderLookupMap.has(lTok)) {
+        const ord = orderLookupMap.get(lTok);
+        if (ord && ord.user_id) {
+          return {
+            targetUserId: ord.user_id,
+            targetClickId: ord.click_id || ord.id,
+            pendingOrderId: ord.id
+          };
+        }
+      }
+    }
+  }
+
+  // 2. Direct match with click_logs or clickSubIdToUserIdMap
+  if (clickSubIdToUserIdMap) {
+    for (const token of candidateTokens) {
+      const lTok = token.toLowerCase();
+      if (clickSubIdToUserIdMap.has(lTok)) {
+        return {
+          targetUserId: clickSubIdToUserIdMap.get(lTok),
+          targetClickId: token,
+          pendingOrderId: null
+        };
+      }
+    }
+  }
+
+  // 3. Direct match with Users (user.id or user.affiliate_sub_id)
+  for (const token of candidateTokens) {
+    const lTok = token.toLowerCase();
+    if (userMap && userMap.has(lTok)) {
+      return {
+        targetUserId: userMap.get(lTok),
+        targetClickId: null,
+        pendingOrderId: null
+      };
+    }
+    if (userIds) {
+      for (const uid of userIds) {
+        if (uid.toLowerCase() === lTok) {
+          return {
+            targetUserId: uid,
+            targetClickId: null,
+            pendingOrderId: null
+          };
+        }
+      }
+    }
+    if (affiliateSubIdToUserIdMap && affiliateSubIdToUserIdMap.has(lTok)) {
+      return {
+        targetUserId: affiliateSubIdToUserIdMap.get(lTok),
+        targetClickId: null,
+        pendingOrderId: null
+      };
+    }
+  }
+
+  // 4. Extract base CLK pattern & timestamp digits (e.g., CLK1789464623170 from CLK1789464623170n1y1ho)
   const clkMatch = trimmed.match(/clk\d+/i);
   if (clkMatch) {
-    const baseClk = clkMatch[0].toLowerCase(); // e.g. clk1789464623170
-    const digitsOnly = baseClk.replace(/[^0-9]/g, ''); // e.g. 1789464623170
+    const baseClk = clkMatch[0].toLowerCase();
+    const digitsOnly = baseClk.replace(/[^0-9]/g, '');
 
-    for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
-      const lowerKey = key.toLowerCase();
-      const keyDigits = lowerKey.replace(/[^0-9]/g, '');
+    if (clickSubIdToUserIdMap) {
+      for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
+        const lowerKey = key.toLowerCase();
+        const keyDigits = lowerKey.replace(/[^0-9]/g, '');
 
-      // Check if keys or digits share common timestamp prefix (e.g. first 10-13 digits)
-      if (
-        lowerKey === baseClk ||
-        lowerKey.startsWith(baseClk) ||
-        baseClk.startsWith(lowerKey) ||
-        lowerTrimmed.startsWith(lowerKey) ||
-        lowerKey.startsWith(lowerTrimmed) ||
-        (digitsOnly.length >= 10 && keyDigits.length >= 10 && (digitsOnly.startsWith(keyDigits.substring(0, 10)) || keyDigits.startsWith(digitsOnly.substring(0, 10))))
-      ) {
-        return {
-          targetUserId: userId,
-          targetClickId: key
-        };
+        if (
+          lowerKey === baseClk ||
+          lowerKey.startsWith(baseClk) ||
+          baseClk.startsWith(lowerKey) ||
+          lowerTrimmed.includes(lowerKey) ||
+          lowerKey.includes(lowerTrimmed) ||
+          (digitsOnly.length >= 10 && keyDigits.length >= 10 && (digitsOnly.startsWith(keyDigits.substring(0, 10)) || keyDigits.startsWith(digitsOnly.substring(0, 10))))
+        ) {
+          return {
+            targetUserId: userId,
+            targetClickId: key,
+            pendingOrderId: (orderLookupMap && orderLookupMap.has(lowerKey)) ? orderLookupMap.get(lowerKey).id : null
+          };
+        }
       }
     }
 
@@ -120,10 +179,11 @@ function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, 
           for (const log of allClickLogsFull) {
             if (!log.user_id) continue;
             const logTs = new Date(log.click_time || log.created_at || 0).getTime();
-            if (!isNaN(logTs) && Math.abs(logTs - tsNum) <= 180000) { // within 3 minutes of click
+            if (!isNaN(logTs) && Math.abs(logTs - tsNum) <= 180000) {
               return {
                 targetUserId: log.user_id,
-                targetClickId: log.id || log.sub_id
+                targetClickId: log.id || log.sub_id,
+                pendingOrderId: null
               };
             }
           }
@@ -135,7 +195,8 @@ function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, 
             if (!isNaN(pTs) && Math.abs(pTs - tsNum) <= 180000) {
               return {
                 targetUserId: pending.user_id,
-                targetClickId: pending.click_id || pending.id
+                targetClickId: pending.click_id || pending.id,
+                pendingOrderId: pending.id
               };
             }
           }
@@ -144,18 +205,33 @@ function resolveSubIdToUserId(cleanSubId, { userIds, affiliateSubIdToUserIdMap, 
     }
   }
 
-  // 3. Fallback prefix/substring scan
-  for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
-    const lowerKey = key.toLowerCase();
-    if (lowerTrimmed.startsWith(lowerKey) || lowerKey.startsWith(lowerTrimmed)) {
-      return {
-        targetUserId: userId,
-        targetClickId: key
-      };
+  // 5. Fallback prefix/substring scan against userIds & clickSubIdToUserIdMap
+  if (userIds) {
+    for (const uid of userIds) {
+      if (uid && uid.length >= 4 && lowerTrimmed.includes(uid.toLowerCase())) {
+        return {
+          targetUserId: uid,
+          targetClickId: null,
+          pendingOrderId: null
+        };
+      }
     }
   }
 
-  return { targetUserId: null, targetClickId: null };
+  if (clickSubIdToUserIdMap) {
+    for (const [key, userId] of clickSubIdToUserIdMap.entries()) {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey.length >= 6 && (lowerTrimmed.includes(lowerKey) || lowerKey.includes(lowerTrimmed))) {
+        return {
+          targetUserId: userId,
+          targetClickId: key,
+          pendingOrderId: (orderLookupMap && orderLookupMap.has(lowerKey)) ? orderLookupMap.get(lowerKey).id : null
+        };
+      }
+    }
+  }
+
+  return { targetUserId: null, targetClickId: null, pendingOrderId: null };
 }
 
 // Helper to parse numbers from Shopee CSV format (e.g., "1.200.000₫", "25.000", "25,000", "1.200.000,50")
@@ -232,20 +308,41 @@ function extractRowFields(row) {
   }
 
   // === SUB ID (User Identifier) ===
-  // Official columns: "Sub_id1", "Sub_id2", "Sub_id3", "Sub_id4", "Sub_id5"
-  for (const normKey of ['subid1', 'sub_id1', 'subid', 'sub_id', 'sub1', 'subid2', 'subid3', 'subid4', 'subid5']) {
-    if (normMap[normKey] !== undefined && normMap[normKey].val) {
-      subId = normMap[normKey].val;
-      break;
-    }
-  }
-  if (!subId) {
-    for (const [nk, entry] of Object.entries(normMap)) {
-      if ((nk.includes('subid') || nk.includes('sub_id')) && entry.val) {
-        subId = entry.val;
-        break;
+  // Collect from all official and custom sub columns: Sub_id1, Sub_id2, Sub_id3, Sub_id4, Sub_id5
+  const subCandidateKeys = [
+    'subid1', 'sub_id1', 'sub1',
+    'subid2', 'sub_id2', 'sub2',
+    'subid3', 'sub_id3', 'sub3',
+    'subid4', 'sub_id4', 'sub4',
+    'subid5', 'sub_id5', 'sub5',
+    'subid', 'sub_id', 'sub'
+  ];
+
+  const foundSubParts = [];
+  for (const k of subCandidateKeys) {
+    if (normMap[k] && normMap[k].val) {
+      const v = normMap[k].val.trim();
+      if (v && v !== '-' && v.toLowerCase() !== 'null' && v.toLowerCase() !== 'undefined' && !foundSubParts.includes(v)) {
+        foundSubParts.push(v);
       }
     }
+  }
+
+  // Also catch any other column with "subid" or "sub_id"
+  if (foundSubParts.length === 0) {
+    for (const [nk, entry] of Object.entries(normMap)) {
+      if ((nk.includes('subid') || nk.includes('sub_id')) && entry.val) {
+        const v = entry.val.trim();
+        if (v && v !== '-' && v.toLowerCase() !== 'null' && v.toLowerCase() !== 'undefined' && !foundSubParts.includes(v)) {
+          foundSubParts.push(v);
+        }
+      }
+    }
+  }
+
+  if (foundSubParts.length > 0) {
+    // If multiple sub parts exist (e.g. Sub_id1 and Sub_id5), join them with "-" so parser can examine every part
+    subId = foundSubParts.join('-');
   }
 
   // === PRODUCT NAME ===
@@ -877,24 +974,38 @@ async function uploadAndAnalyze(req, res) {
     // Read all users to validate sub_id (userId or affiliate_sub_id)
     const allUsers = await db.all('SELECT id, affiliate_sub_id FROM users');
     const userIds = new Set(allUsers.map(u => u.id));
+    const userMap = new Map();
     const affiliateSubIdToUserIdMap = new Map();
     for (const u of allUsers) {
-      if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id, u.id);
+      if (u.id) userMap.set(u.id.toLowerCase(), u.id);
+      if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id.toLowerCase(), u.id);
     }
 
     // Read all click_logs with click_time & product_url for exact & smart time-window matching
     const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time FROM click_logs WHERE user_id IS NOT NULL');
     const clickSubIdToUserIdMap = new Map();
+    const orderLookupMap = new Map();
+
     for (const log of allClickLogsFull) {
-      if (log.id && log.user_id) clickSubIdToUserIdMap.set(log.id, log.user_id);
-      if (log.sub_id && log.user_id) clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
+      if (log.id && log.user_id) clickSubIdToUserIdMap.set(log.id.toLowerCase(), log.user_id);
+      if (log.sub_id && log.user_id) clickSubIdToUserIdMap.set(log.sub_id.toLowerCase(), log.user_id);
     }
 
-    // Read all pending/CLK orders in system created on link click or manually assigned
-    const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE status = 'pending' OR id LIKE 'CLK%'");
-    for (const p of pendingOrders) {
-      if (p.id && p.user_id) clickSubIdToUserIdMap.set(p.id, p.user_id);
-      if (p.click_id && p.user_id) clickSubIdToUserIdMap.set(p.click_id, p.user_id);
+    // Read ALL orders that have user_id or are pending/CLK in the system
+    const dbOrdersWithUser = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE user_id IS NOT NULL OR status = 'pending' OR id LIKE 'CLK%'");
+    const pendingOrders = [];
+    for (const p of dbOrdersWithUser) {
+      if (p.id) {
+        if (p.user_id) clickSubIdToUserIdMap.set(p.id.toLowerCase(), p.user_id);
+        orderLookupMap.set(p.id.toLowerCase(), p);
+      }
+      if (p.click_id) {
+        if (p.user_id) clickSubIdToUserIdMap.set(p.click_id.toLowerCase(), p.user_id);
+        orderLookupMap.set(p.click_id.toLowerCase(), p);
+      }
+      if (p.status === 'pending' || (p.id && p.id.startsWith('CLK'))) {
+        pendingOrders.push(p);
+      }
     }
 
     // Read all existing orders
@@ -941,6 +1052,24 @@ async function uploadAndAnalyze(req, res) {
 
       // Determine Status
       const mappedStatus = mapShopeeStatus(shopeeStatus);
+      const userCashback = Math.round((commission || 0) * cashbackRate);
+
+      // BẮT BUỘC: Chỉ tính & ghi nhận các đơn có SubID từ file import CSV. Đơn nào KHÔNG CÓ SubID thì bỏ qua hoàn toàn!
+      const isSubIdEmpty = !cleanSubId || cleanSubId === '-' || cleanSubId.toLowerCase() === 'null' || cleanSubId.toLowerCase() === 'undefined';
+      if (isSubIdEmpty) {
+        report.missingCount++;
+        report.details.push({
+          id: orderId,
+          name: productName,
+          amount: orderAmount,
+          cashback: userCashback,
+          subId: '',
+          shopeeStatus: mappedStatus,
+          status: 'ignored',
+          reason: 'Bỏ qua hoàn toàn: Đơn hàng không có SubID từ Shopee'
+        });
+        continue;
+      }
 
       const lowerOrderId = orderId.toLowerCase();
       const exists = existingOrdersMap.has(lowerOrderId);
@@ -949,18 +1078,31 @@ async function uploadAndAnalyze(req, res) {
       const currentDbUserId = dbOrder ? dbOrder.userId : '';
 
       let targetUserId = null;
+      let targetClickId = null;
       let smartMatchInfo = null;
 
       if (cleanSubId) {
         const resolved = resolveSubIdToUserId(cleanSubId, {
           userIds,
+          userMap,
           affiliateSubIdToUserIdMap,
           clickSubIdToUserIdMap,
+          orderLookupMap,
           allClickLogsFull,
           pendingOrders
         });
         if (resolved.targetUserId) {
           targetUserId = resolved.targetUserId;
+          targetClickId = resolved.targetClickId || null;
+          if (resolved.pendingOrderId) {
+            smartMatchInfo = {
+              score: 100,
+              userId: resolved.targetUserId,
+              clickId: resolved.targetClickId,
+              pendingOrderId: resolved.pendingOrderId,
+              reason: `Khớp Đơn trong hệ thống (${resolved.pendingOrderId}) từ SubID`
+            };
+          }
         }
       }
 
@@ -968,23 +1110,23 @@ async function uploadAndAnalyze(req, res) {
         targetUserId = currentDbUserId || null;
       }
 
-      // Always perform smart matching to find matching CLK pending orders to update in-place or identify user
-      smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { 
-        clickTimeStr: clickTime, 
-        shopId, 
-        itemId, 
-        targetUserId, 
-        orderId, 
-        cleanSubId 
-      });
+      // If not resolved from direct SubID order match, run smart matching
+      if (!smartMatchInfo) {
+        smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { 
+          clickTimeStr: clickTime, 
+          shopId, 
+          itemId, 
+          targetUserId, 
+          orderId, 
+          cleanSubId 
+        });
 
-      if (smartMatchInfo) {
-        if (!targetUserId && smartMatchInfo.userId) {
-          targetUserId = smartMatchInfo.userId;
+        if (smartMatchInfo) {
+          if (!targetUserId && smartMatchInfo.userId) {
+            targetUserId = smartMatchInfo.userId;
+          }
         }
       }
-
-      const userCashback = Math.round((commission || 0) * cashbackRate);
 
       // Process Match / Duplicate for existing or new order
       if (exists) {
@@ -1104,34 +1246,48 @@ async function applyReconciliation(req, res) {
     // Fetch users, click_logs, pending orders for sync
     const allUsers = await db.all('SELECT id, affiliate_sub_id FROM users');
     const userIds = new Set(allUsers.map(u => u.id));
+    const userMap = new Map();
     const affiliateSubIdToUserIdMap = new Map();
     for (const u of allUsers) {
-      if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id, u.id);
+      if (u.id) userMap.set(u.id.toLowerCase(), u.id);
+      if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id.toLowerCase(), u.id);
     }
 
     const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time FROM click_logs WHERE user_id IS NOT NULL');
     const clickSubIdToUserIdMap = new Map();
+    const orderLookupMap = new Map();
     const clickIdMap = new Map();
+
     for (const log of allClickLogsFull) {
       if (log.id && log.user_id) {
-        clickSubIdToUserIdMap.set(log.id, log.user_id);
-        clickIdMap.set(log.id, log.id);
+        clickSubIdToUserIdMap.set(log.id.toLowerCase(), log.user_id);
+        clickIdMap.set(log.id.toLowerCase(), log.id);
       }
       if (log.sub_id && log.user_id) {
-        clickSubIdToUserIdMap.set(log.sub_id, log.user_id);
-        clickIdMap.set(log.sub_id, log.id);
+        clickSubIdToUserIdMap.set(log.sub_id.toLowerCase(), log.user_id);
+        clickIdMap.set(log.sub_id.toLowerCase(), log.id);
       }
     }
 
-    const pendingOrders = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE status = 'pending' OR id LIKE 'CLK%'");
-    for (const p of pendingOrders) {
-      if (p.id && p.user_id) {
-        clickSubIdToUserIdMap.set(p.id, p.user_id);
-        clickIdMap.set(p.id, p.id);
+    const dbOrdersWithUser = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE user_id IS NOT NULL OR status = 'pending' OR id LIKE 'CLK%'");
+    const pendingOrders = [];
+    for (const p of dbOrdersWithUser) {
+      if (p.id) {
+        if (p.user_id) {
+          clickSubIdToUserIdMap.set(p.id.toLowerCase(), p.user_id);
+          clickIdMap.set(p.id.toLowerCase(), p.id);
+        }
+        orderLookupMap.set(p.id.toLowerCase(), p);
       }
-      if (p.click_id && p.user_id) {
-        clickSubIdToUserIdMap.set(p.click_id, p.user_id);
-        clickIdMap.set(p.click_id, p.id);
+      if (p.click_id) {
+        if (p.user_id) {
+          clickSubIdToUserIdMap.set(p.click_id.toLowerCase(), p.user_id);
+          clickIdMap.set(p.click_id.toLowerCase(), p.id);
+        }
+        orderLookupMap.set(p.click_id.toLowerCase(), p);
+      }
+      if (p.status === 'pending' || (p.id && p.id.startsWith('CLK'))) {
+        pendingOrders.push(p);
       }
     }
 
@@ -1168,6 +1324,14 @@ async function applyReconciliation(req, res) {
 
       const cleanSubId = subId ? subId.trim() : '';
       const mappedStatus = mapShopeeStatus(shopeeStatus);
+
+      // BẮT BUỘC: Chỉ tính & ghi nhận các đơn có SubID từ file import CSV. Đơn nào KHÔNG CÓ SubID thì bỏ qua hoàn toàn!
+      const isSubIdEmpty = !cleanSubId || cleanSubId === '-' || cleanSubId.toLowerCase() === 'null' || cleanSubId.toLowerCase() === 'undefined';
+      if (isSubIdEmpty) {
+        ignoredCount++;
+        continue;
+      }
+
       const lowerOrderId = orderId.toLowerCase();
       const exists = existingOrdersMap.has(lowerOrderId);
       const dbOrder = exists ? existingOrdersMap.get(lowerOrderId) : null;
@@ -1176,19 +1340,31 @@ async function applyReconciliation(req, res) {
 
       let targetUserId = null;
       let targetClickId = null;
+      let resolvedPendingOrderId = null;
       let smartMatchInfo = null;
 
       if (cleanSubId) {
         const resolved = resolveSubIdToUserId(cleanSubId, {
           userIds,
+          userMap,
           affiliateSubIdToUserIdMap,
           clickSubIdToUserIdMap,
+          orderLookupMap,
           allClickLogsFull,
           pendingOrders
         });
         if (resolved.targetUserId) {
           targetUserId = resolved.targetUserId;
           targetClickId = resolved.targetClickId || null;
+          if (resolved.pendingOrderId) {
+            resolvedPendingOrderId = resolved.pendingOrderId;
+            smartMatchInfo = {
+              userId: resolved.targetUserId,
+              clickId: resolved.targetClickId,
+              pendingOrderId: resolved.pendingOrderId,
+              reason: `Khớp Đơn trong hệ thống (${resolved.pendingOrderId}) từ SubID`
+            };
+          }
         }
       }
 
@@ -1196,21 +1372,23 @@ async function applyReconciliation(req, res) {
         targetUserId = currentDbUserId || null; // keep existing user
       }
 
-      smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { 
-        clickTimeStr: clickTime, 
-        shopId, 
-        itemId, 
-        targetUserId, 
-        orderId, 
-        cleanSubId 
-      });
+      if (!smartMatchInfo) {
+        smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { 
+          clickTimeStr: clickTime, 
+          shopId, 
+          itemId, 
+          targetUserId, 
+          orderId, 
+          cleanSubId 
+        });
 
-      if (smartMatchInfo) {
-        if (!targetUserId && smartMatchInfo.userId) {
-          targetUserId = smartMatchInfo.userId;
-        }
-        if (!targetClickId && smartMatchInfo.clickId) {
-          targetClickId = smartMatchInfo.clickId;
+        if (smartMatchInfo) {
+          if (!targetUserId && smartMatchInfo.userId) {
+            targetUserId = smartMatchInfo.userId;
+          }
+          if (!targetClickId && smartMatchInfo.clickId) {
+            targetClickId = smartMatchInfo.clickId;
+          }
         }
       }
 
@@ -1350,7 +1528,7 @@ async function applyReconciliation(req, res) {
         updatedCount++;
       } else {
         // Totally new order or updating pending CLK order
-        const pendingIdToUpdate = (smartMatchInfo && smartMatchInfo.pendingOrderId) ? smartMatchInfo.pendingOrderId : null;
+        const pendingIdToUpdate = resolvedPendingOrderId || ((smartMatchInfo && smartMatchInfo.pendingOrderId) ? smartMatchInfo.pendingOrderId : null);
 
         // Skip importing unmatched CSV order ONLY if it has NO Sub_id1, no user, and no pending click order
         if (!cleanSubId && !targetUserId && !pendingIdToUpdate) {
@@ -1400,7 +1578,7 @@ async function applyReconciliation(req, res) {
               targetUserId,
               targetClickId,
               productName,
-              'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=200',
+              '',
               orderAmount,
               userCashback,
               userCashback,
@@ -1412,21 +1590,20 @@ async function applyReconciliation(req, res) {
         }
 
         // Calculate and add money to user if new order is already approved
-        // Calculate and add money to user if new order is already approved
         if (targetUserId && mappedStatus === 'approved') {
-          const userCashback = commission * cashbackRate;
+          const finalCashback = userCashback;
           await db.run(
             `UPDATE users 
              SET balance = COALESCE(balance, 0) + ?,
                  total_cashback = COALESCE(total_cashback, 0) + ?
              WHERE id = ?`,
-            [userCashback, userCashback, targetUserId]
+            [finalCashback, finalCashback, targetUserId]
           );
 
           // Check for referral bonus (20%)
           const targetUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
           if (targetUserObj && targetUserObj.referred_by) {
-            const refBonus = userCashback * 0.20;
+            const refBonus = Math.round(finalCashback * 0.20);
             await db.run(
               `UPDATE users 
                SET balance = COALESCE(balance, 0) + ?,
@@ -1438,7 +1615,7 @@ async function applyReconciliation(req, res) {
             await db.run(
               `INSERT INTO notifications (id, user_id, title, content, type)
                VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
-              [refNotifId, targetUserObj.referred_by, `Bạn nhận được +${Math.round(refBonus).toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
+              [refNotifId, targetUserObj.referred_by, `Bạn nhận được +${refBonus.toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
             );
           }
         }
@@ -1447,7 +1624,7 @@ async function applyReconciliation(req, res) {
         if (targetUserId) {
           if (mappedStatus === 'approved') {
             const notifId = `NT${Date.now()}${Math.floor(10 + Math.random() * 90)}`;
-            const amountDisplay = (commission * cashbackRate).toLocaleString('vi-VN');
+            const amountDisplay = userCashback.toLocaleString('vi-VN');
             await db.run(
               `INSERT INTO notifications (id, user_id, title, content, type)
                VALUES (?, ?, ?, ?, 'order')`,

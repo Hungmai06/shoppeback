@@ -10,9 +10,31 @@ import ReferralPage from './features/landing/ReferralPage';
 import AuthPages from './features/auth/AuthPages';
 import AdminPanel from './features/admin/AdminPanel';
 import { useAppStore } from './store/appStore';
-
+import { RefreshCw } from 'lucide-react';
 import AuthModal from './components/auth/AuthModal';
 import InstallPWA from './components/common/InstallPWA';
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const currentUser = useAppStore(state => state.currentUser);
+  const isAuthLoading = useAppStore(state => state.isAuthLoading);
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm font-bold text-text-secondary">Đang kiểm tra quyền Quản trị hệ thống...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser || currentUser.role !== 'admin') {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+}
 
 function App() {
   const initializeAuth = useAppStore(state => state.initializeAuth);
@@ -38,7 +60,7 @@ function App() {
           <Route path="/auth" element={<AuthPages />} />
           
           {/* Admin Dashboard */}
-          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
           
           {/* Fallback route */}
           <Route path="*" element={<Navigate to="/" replace />} />

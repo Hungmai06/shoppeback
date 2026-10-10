@@ -12,6 +12,7 @@ async function getSettings(req, res) {
       supportFacebook: settings.support_facebook,
       shopeeAffiliateId: settings.shopee_affiliate_id,
       shopeeCookieUrl: settings.shopee_cookie_url || 'https://s.shopee.vn/an_redir',
+      addlivetagApiKey: settings.addlivetag_api_key || process.env.ADDLIVETAG_API_KEY || '',
       lazadaAffiliateId: settings.lazada_affiliate_id || '',
       lazadaCookieUrl: settings.lazada_cookie_url || 'https://s.lazada.vn/s.an_redir',
       tiktokAffiliateId: settings.tiktok_affiliate_id || '',
@@ -38,6 +39,7 @@ async function updateSettings(req, res) {
     supportFacebook,
     shopeeAffiliateId,
     shopeeCookieUrl,
+    addlivetagApiKey,
     lazadaAffiliateId,
     lazadaCookieUrl,
     tiktokAffiliateId,
@@ -62,6 +64,7 @@ async function updateSettings(req, res) {
            support_facebook = COALESCE(?, support_facebook),
            shopee_affiliate_id = COALESCE(?, shopee_affiliate_id),
            shopee_cookie_url = COALESCE(?, shopee_cookie_url),
+           addlivetag_api_key = COALESCE(?, addlivetag_api_key),
            lazada_affiliate_id = COALESCE(?, lazada_affiliate_id),
            lazada_cookie_url = COALESCE(?, lazada_cookie_url),
            tiktok_affiliate_id = COALESCE(?, tiktok_affiliate_id),
@@ -82,6 +85,7 @@ async function updateSettings(req, res) {
         supportFacebook,
         shopeeAffiliateId,
         shopeeCookieUrl,
+        addlivetagApiKey !== undefined ? addlivetagApiKey : null,
         lazadaAffiliateId,
         lazadaCookieUrl,
         tiktokAffiliateId,
@@ -367,8 +371,48 @@ async function adminGetStats(req, res) {
   }
 }
 
+async function testAddLiveTagKey(req, res) {
+  const { apiKey } = req.body;
+  const keyToTest = (apiKey || process.env.ADDLIVETAG_API_KEY || '').trim();
+  if (!keyToTest) {
+    return res.status(400).json({ success: false, message: 'Vui lòng cung cấp API Key để kiểm tra' });
+  }
+
+  // Gọi thử với sample Shopee itemId để kiểm tra xem key có hợp lệ không
+  const testUrl = `https://data.addlivetag.com/product-data/product-data.php?item_id=25514686481&key=${encodeURIComponent(keyToTest)}`;
+  try {
+    const response = await fetch(testUrl, {
+      headers: {
+        'X-API-Key': keyToTest,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      }
+    });
+    const data = await response.json();
+    if (data.status === 'success') {
+      return res.json({
+        success: true,
+        message: 'Kết nối AddLiveTag API thành công! API Key hợp lệ và hoạt động tốt.',
+        productName: data.productInfo?.productName
+      });
+    } else {
+      const errMsg = data.message || data.apiKeyNotice?.message || 'API Key không hợp lệ hoặc đã hết hạn từ addlivetag.com';
+      return res.status(400).json({
+        success: false,
+        message: errMsg,
+        raw: data
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: `Lỗi kết nối tới addlivetag.com: ${err.message}`
+    });
+  }
+}
+
 module.exports = {
   getSettings,
   updateSettings,
-  adminGetStats
+  adminGetStats,
+  testAddLiveTagKey
 };

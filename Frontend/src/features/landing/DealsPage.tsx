@@ -9,7 +9,6 @@ import { Button, Card, CardContent, Badge } from '../../components/ui/core';
 import { useAppStore } from '../../store/appStore';
 import type { Order } from '../../store/appStore';
 import { toast } from 'sonner';
-import TwoStepRedirectModal from '../../components/common/TwoStepRedirectModal';
 import { SAMPLE_SHOPEE_PRODUCTS } from '../../store/mockData';
 
 export default function DealsPage() {
@@ -20,54 +19,79 @@ export default function DealsPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
-  const [step1ActivatedUrl, setStep1ActivatedUrl] = useState<string | null>(null);
-  const [redirectModalData, setRedirectModalData] = useState<{
-    isOpen: boolean;
-    link1: string;
-    link2: string;
-    productName?: string;
-  }>({
-    isOpen: false,
-    link1: '',
-    link2: '',
-    productName: ''
-  });
 
-  const handleCheckLink = (e: React.FormEvent) => {
+  const handleCheckLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!shopeeLink.trim()) {
+    const linkInput = shopeeLink.trim();
+    if (!linkInput) {
       toast.error('Vui lòng nhập link sản phẩm Shopee');
+      return;
+    }
+
+    const isItemId = /^\d+$/.test(linkInput);
+    const isShopeeUrl = linkInput.includes('shopee.vn') ||
+                        linkInput.includes('shp.ee') ||
+                        linkInput.includes('s.shopee.vn');
+
+    if (!isItemId && !isShopeeUrl) {
+      toast.error('Link không hợp lệ! Vui lòng nhập link sản phẩm Shopee hoặc ID sản phẩm.');
+      setCheckedProduct(null);
       return;
     }
 
     setIsSearching(true);
     setCheckedProduct(null);
 
-    setTimeout(() => {
-      const matched = SAMPLE_SHOPEE_PRODUCTS.find(p =>
-        shopeeLink.includes(p.url) ||
-        shopeeLink.toLowerCase().includes(p.name.toLowerCase().slice(0, 10))
-      );
+    // 1. Kiểm tra trong danh sách deal có sẵn
+    const matched = SAMPLE_SHOPEE_PRODUCTS.find(p =>
+      linkInput.includes(p.url) ||
+      linkInput.toLowerCase().includes(p.name.toLowerCase().slice(0, 10))
+    );
 
-      if (matched) {
-        setCheckedProduct(matched);
-      } else {
-        const mockName = shopeeLink.split('/').pop()?.replace(/-/g, ' ') || 'Sản phẩm Shopee';
-        const cleanName = mockName.substring(0, 50) + (mockName.length > 50 ? '...' : '');
-        setCheckedProduct({
-          url: shopeeLink,
-          name: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
-          price: 950000,
-          cashbackRate: 0.07,
-          image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400'
-        });
-      }
+    if (matched) {
+      setCheckedProduct(matched);
       setIsSearching(false);
-      toast.success('Quét sản phẩm hoàn tiền thành công!');
-    }, 1000);
+      toast.success('Đã tìm thấy deal sản phẩm!');
+      return;
+    }
+
+    // 2. Tra cứu qua API hệ thống
+    try {
+      const queryParam = isItemId ? `item_id=${encodeURIComponent(linkInput)}` : `url=${encodeURIComponent(linkInput)}`;
+      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+
+      const res = await fetch(`${API_BASE}/shopee/product-info?${queryParam}`);
+      const data = await res.json();
+
+      if (data && data.status === 'success' && data.productInfo) {
+        const info = data.productInfo;
+        const validProductUrl = (info.productLink && !info.productLink.includes('-/-'))
+          ? info.productLink
+          : (linkInput.startsWith('http') ? linkInput : `https://shopee.vn/product/${info.shopId || '0'}/${info.itemId}`);
+
+        setCheckedProduct({
+          url: validProductUrl,
+          name: info.productName || 'Sản phẩm Shopee',
+          price: info.price || 0,
+          cashbackRate: info.price > 0 ? (info.commission / info.price) : 0.07,
+          image: info.imageUrl
+            ? (info.imageUrl.startsWith('http') ? info.imageUrl : `https://cf.shopee.vn/file/${info.imageUrl}`)
+            : ''
+        });
+        toast.success('Đã tìm thấy thông tin sản phẩm Shopee!');
+      } else {
+        setCheckedProduct(null);
+        toast.error('Sản phẩm không tồn tại hoặc link Shopee không đúng! Vui lòng kiểm tra lại link.');
+      }
+    } catch (err) {
+      setCheckedProduct(null);
+      toast.error('Không tìm thấy sản phẩm hoặc link không tồn tại. Vui lòng kiểm tra lại!');
+    } finally {
+      setIsSearching(false);
+    }
   };
 
-  const handleCreateAffiliateLink = async () => {
+  const handleCreateAffiliateLink = () => {
     if (!currentUser) {
       toast.warning('Vui lòng đăng nhập để tạo link hoàn tiền và tích lũy số dư');
       navigate('/auth');
@@ -76,85 +100,32 @@ export default function DealsPage() {
     if (!checkedProduct) return;
 
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|FBAN|FBAV|Instagram|Zalo/i.test(navigator.userAgent) || window.innerWidth < 768;
+    const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+    const userId = currentUser.id || '';
+    const redirectUrl = `${API_BASE}/shopee/redirect?url=${encodeURIComponent(checkedProduct.url)}${userId ? `&user_id=${encodeURIComponent(userId)}` : ''}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 
-    // Trên Desktop: mở trước 1 tab để tránh bị chặn popup khi gọi fetch bất đồng bộ
-    let newTab: Window | null = null;
-    if (!isMobile) {
-      newTab = window.open('about:blank', '_blank');
-    }
+    const newOrder: Order = {
+      id: `CLK${Date.now()}${Math.random().toString(36).substring(2, 6)}`,
+      productName: checkedProduct.name,
+      productImage: checkedProduct.image,
+      orderAmount: checkedProduct.price,
+      estimatedCashback: Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
+      status: 'pending',
+      createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: currentUser.id
+    };
+    addOrder(newOrder);
 
-    try {
-      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-      const token = localStorage.getItem('access_token');
+    toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
 
-      const res = await fetch(`${API_BASE}/shopee/convert`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ url: checkedProduct.url })
-      });
-      const data = await res.json();
-
-      if (data && data.success && data.affiliateLink) {
-        const link1 = data.affiliateLink; // Link1: Cookie hệ thống (Sản phẩm tham khảo)
-        const link2 = data.originUrl || checkedProduct.url; // Link2: Link sản phẩm tra cứu
-        const isCustomSystemLink = data.isCustomSystemLink || (!link1.includes('an_redir') && link1 !== link2);
-
-        const newOrder: Order = {
-          id: data.clickId || `HD${Math.floor(1000 + Math.random() * 9000)}`,
-          productName: checkedProduct.name,
-          productImage: checkedProduct.image,
-          orderAmount: checkedProduct.price,
-          estimatedCashback: Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
-          status: 'pending',
-          createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-          userId: currentUser.id
-        };
-        addOrder(newOrder);
-
-        if (newTab && !newTab.closed) newTab.close();
-
-        const openUrl = (targetUrl: string) => {
-          const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-          if (isMobileDevice) {
-            window.location.href = targetUrl;
-          } else {
-            const win = window.open(targetUrl, '_blank');
-            if (!win || win.closed || typeof win.closed === 'undefined') {
-              window.location.href = targetUrl;
-            }
-          }
-        };
-
-        if (isCustomSystemLink) {
-          if (step1ActivatedUrl === checkedProduct.url) {
-            // LẦN 2: Người dùng đã bấm Bước 1 trước đó -> Mở trực tiếp sản phẩm gốc (Link 2)
-            toast.success('Đang chuyển hướng sang sản phẩm của bạn trên Shopee...');
-            setStep1ActivatedUrl(null);
-            openUrl(link2);
-          } else {
-            // LẦN 1: Mở Popup Hướng Dẫn 2 Bước trước khi mở Link Cookie Hệ Thống
-            setRedirectModalData({
-              isOpen: true,
-              link1,
-              link2,
-              productName: checkedProduct.name
-            });
-          }
-        } else {
-          // Link an_redir chuẩn Shopee: Chuyển hướng 1-click tự động
-          toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
-          openUrl(link1);
-        }
-      } else {
-        if (newTab && !newTab.closed) newTab.close();
-        toast.error(data?.message || 'Có lỗi xảy ra khi tạo link hoàn tiền');
+    if (isMobile) {
+      window.location.href = redirectUrl;
+    } else {
+      const win = window.open(redirectUrl, '_blank');
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        window.location.href = redirectUrl;
       }
-    } catch (err: any) {
-      if (newTab && !newTab.closed) newTab.close();
-      toast.error('Có lỗi xảy ra khi tạo link hoàn tiền');
     }
   };
 
@@ -252,12 +223,19 @@ export default function DealsPage() {
             <Card className="border border-primary/25 overflow-hidden bg-gradient-to-br from-white to-orange-50/20 card-shadow">
               <CardContent className="p-6 md:p-8">
                 <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <img
-                    src={checkedProduct.image}
-                    alt={checkedProduct.name}
-                    referrerPolicy="no-referrer"
-                    className="w-full md:w-48 h-48 object-cover rounded-card border border-border shadow-sm shrink-0"
-                  />
+                  {checkedProduct.image ? (
+                    <img
+                      src={checkedProduct.image}
+                      alt={checkedProduct.name}
+                      referrerPolicy="no-referrer"
+                      className="w-full md:w-48 h-48 object-cover rounded-card border border-border shadow-sm shrink-0"
+                    />
+                  ) : (
+                    <div className="w-full md:w-48 h-48 rounded-card border border-border bg-orange-50/50 flex flex-col items-center justify-center text-orange-400 gap-2 shrink-0">
+                      <ShoppingBag className="w-10 h-10 text-orange-400" />
+                      <span className="text-xs font-semibold text-text-secondary">Shopee</span>
+                    </div>
+                  )}
 
                   <div className="flex-1 flex flex-col text-left">
                     <div className="flex justify-between items-start gap-2 mb-2">
@@ -297,44 +275,21 @@ export default function DealsPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-start gap-2 text-xs text-text-secondary leading-relaxed mb-6">
+                    <div className="flex items-start gap-2 text-xs text-text-secondary leading-relaxed mb-4">
                       <AlertCircle className="h-4.5 w-4.5 text-warning shrink-0 mt-0.5" />
                       <p>
-                        Nhấn nút <b>Tạo Link Hoàn Tiền</b> dưới đây để lấy đường dẫn mua hàng. Hệ thống tự động ghi nhận hoa hồng sau khi đặt hàng thành công.
+                        Nhấn nút <b>Mua hàng</b> để tự động chuyển hướng sang Shopee hoặc <b>Sao chép link mua</b> để lấy link an_redir chuẩn 2026.
                       </p>
                     </div>
 
                     <div>
-                      {step1ActivatedUrl === checkedProduct.url && (
-                        <div className="mb-3 px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 font-bold animate-pulse">
-                          <span className="flex items-center gap-1.5">
-                            <AlertCircle className="h-4 w-4 text-emerald-600 shrink-0" />
-                            Đã kích hoạt hoa hồng! Bấm lần 2 để mở sản phẩm của bạn.
-                          </span>
-                          <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-extrabold shrink-0">BƯỚC 2</span>
-                        </div>
-                      )}
-
                       <Button
                         onClick={handleCreateAffiliateLink}
-                        className={`w-full font-extrabold flex items-center justify-center gap-2 group py-3.5 transition-all ${
-                          step1ActivatedUrl === checkedProduct.url
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 ring-2 ring-emerald-400'
-                            : 'bg-primary text-white hover:bg-primary/95'
-                        }`}
+                        className="w-full font-extrabold flex items-center justify-center gap-2 group py-4 transition-all bg-primary text-white hover:bg-primary/95 text-base shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 rounded-xl"
                       >
-                        {step1ActivatedUrl === checkedProduct.url ? (
-                          <>
-                            <ShoppingBag className="h-4.5 w-4.5" />
-                            Ấn lần 2 để mở trang sản phẩm mua hàng ngay
-                            <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                          </>
-                        ) : (
-                          <>
-                            Ấn vào ngay mua hàng để hoàn tiền
-                            <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                          </>
-                        )}
+                        <ShoppingBag className="h-5 w-5" />
+                        Ấn vào ngay mua hàng để hoàn tiền
+                        <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                       </Button>
                     </div>
                   </div>
@@ -442,18 +397,6 @@ export default function DealsPage() {
           </div>
         )}
       </div>
-
-      {/* TWO STEP REDIRECT MODAL FOR CUSTOM SYSTEM LINKS */}
-      <TwoStepRedirectModal
-        isOpen={redirectModalData.isOpen}
-        onClose={() => setRedirectModalData(prev => ({ ...prev, isOpen: false }))}
-        link1={redirectModalData.link1}
-        link2={redirectModalData.link2}
-        productName={redirectModalData.productName}
-        onStep1Completed={() => {
-          if (checkedProduct) setStep1ActivatedUrl(checkedProduct.url);
-        }}
-      />
     </div>
   );
 }

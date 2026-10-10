@@ -6,7 +6,7 @@ import {
   LogOut, RefreshCw, Plus, Search,
   Filter, Check, X, Lock, Unlock, Trash2, Edit2, Download,
   Upload, BarChart3, FileSpreadsheet, HelpCircle,
-  Settings2, Activity, Eye
+  Settings2, Activity, Eye, EyeOff, Key, ExternalLink
 } from 'lucide-react';
 import {
   Button, Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -274,6 +274,9 @@ export default function AdminPanel() {
   const [sysCashbackPercentage, setSysCashbackPercentage] = useState<number>(settings.cashbackPercentage ?? 50);
   const [sysShopeeAffiliateId, setSysShopeeAffiliateId] = useState(settings.shopeeAffiliateId || "173401900099");
   const [sysShopeeCookieUrl, setSysShopeeCookieUrl] = useState(settings.shopeeCookieUrl || "https://s.shopee.vn/an_redir");
+  const [sysAddlivetagApiKey, setSysAddlivetagApiKey] = useState(settings.addlivetagApiKey || "");
+  const [showAddLiveKey, setShowAddLiveKey] = useState(false);
+  const [isTestingKey, setIsTestingKey] = useState(false);
   const [sysLazadaAffiliateId, setSysLazadaAffiliateId] = useState(settings.lazadaAffiliateId || "");
   const [sysLazadaCookieUrl, setSysLazadaCookieUrl] = useState(settings.lazadaCookieUrl || "https://s.lazada.vn/s.an_redir");
   const [sysTiktokAffiliateId, setSysTiktokAffiliateId] = useState(settings.tiktokAffiliateId || "");
@@ -295,6 +298,7 @@ export default function AdminPanel() {
       setSysCashbackPercentage(settings.cashbackPercentage ?? 50);
       setSysShopeeAffiliateId(settings.shopeeAffiliateId || "173401900099");
       setSysShopeeCookieUrl(settings.shopeeCookieUrl || "https://s.shopee.vn/an_redir");
+      setSysAddlivetagApiKey(settings.addlivetagApiKey || "");
       setSysLazadaAffiliateId(settings.lazadaAffiliateId || "");
       setSysLazadaCookieUrl(settings.lazadaCookieUrl || "https://s.lazada.vn/s.an_redir");
       setSysTiktokAffiliateId(settings.tiktokAffiliateId || "");
@@ -311,11 +315,9 @@ export default function AdminPanel() {
   React.useEffect(() => {
     if (isAuthLoading) return;
 
-    if (!currentUser) {
-      navigate('/auth/login');
-    } else if (currentUser.role !== 'admin') {
+    if (!currentUser || currentUser.role !== 'admin') {
       toast.error('Bạn không có quyền truy cập khu vực Quản trị');
-      navigate('/');
+      navigate('/', { replace: true });
     }
   }, [currentUser, isAuthLoading, navigate]);
 
@@ -330,7 +332,16 @@ export default function AdminPanel() {
     );
   }
 
-  if (!currentUser || currentUser.role !== 'admin') return null;
+  if (!currentUser || currentUser.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm font-bold text-text-secondary">Đang chuyển hướng về trang chủ...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Statistics calculation
   const totalUsersCount = adminStats?.summary?.totalUsers ?? users.length;
@@ -448,6 +459,7 @@ export default function AdminPanel() {
       cashbackPercentage: Number(sysCashbackPercentage) || 50,
       shopeeAffiliateId: sysShopeeAffiliateId,
       shopeeCookieUrl: sysShopeeCookieUrl,
+      addlivetagApiKey: sysAddlivetagApiKey.trim(),
       lazadaAffiliateId: sysLazadaAffiliateId,
       lazadaCookieUrl: sysLazadaCookieUrl,
       tiktokAffiliateId: sysTiktokAffiliateId,
@@ -459,6 +471,37 @@ export default function AdminPanel() {
       maintenanceMode: sysMaintMode
     });
     toast.success('Đã lưu cấu hình hệ thống thành công!');
+  };
+
+  const handleTestAddLiveKey = async () => {
+    const keyToTest = sysAddlivetagApiKey.trim();
+    if (!keyToTest) {
+      toast.error('Vui lòng nhập API Key AddLiveTag trước khi kiểm tra');
+      return;
+    }
+    setIsTestingKey(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_BASE || '/api';
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${apiBase}/settings/admin/test-addlivetag-key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ apiKey: keyToTest })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || 'Kết nối API Key thành công! Key hợp lệ.');
+      } else {
+        toast.error(data.message || 'API Key không hợp lệ hoặc đã hết hạn.');
+      }
+    } catch (err: any) {
+      toast.error(`Lỗi kiểm tra API Key: ${err.message}`);
+    } finally {
+      setIsTestingKey(false);
+    }
   };
 
   // Real Reconciliation handlers using backend API
@@ -1668,6 +1711,7 @@ export default function AdminPanel() {
                                     {row.status === 'duplicate' && <Badge variant="warning">Trùng lặp</Badge>}
                                     {row.status === 'invalid' && <Badge variant="danger">Lỗi dữ liệu</Badge>}
                                     {row.status === 'missing' && <Badge variant="outline" className="text-danger border-danger/30 bg-red-50/50">Chưa ghi nhận</Badge>}
+                                    {row.status === 'ignored' && <Badge variant="outline" className="text-text-secondary border-border bg-gray-50">Bỏ qua (Không SubID)</Badge>}
                                   </TableCell>
                                   <TableCell className="text-[10px] text-text-secondary font-medium">{row.reason}</TableCell>
                                 </TableRow>
@@ -1820,6 +1864,66 @@ export default function AdminPanel() {
                               placeholder="https://s.shopee.vn/an_redir"
                               className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
                             />
+                          </div>
+
+                          <div className="sm:col-span-2 flex flex-col gap-2 p-4 bg-orange-50/60 rounded-xl border border-orange-200/80 mt-1">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                              <label className="text-xs font-bold text-text/90 flex items-center gap-1.5">
+                                <Key className="w-3.5 h-3.5 text-orange-600" />
+                                <span>AddLiveTag API Key (Tra cứu dữ liệu sản phẩm & hoa hồng Shopee)</span>
+                                <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">Bắt buộc mới</span>
+                              </label>
+                              <a
+                                href="https://data.addlivetag.com/"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs text-primary hover:underline font-semibold flex items-center gap-1 w-fit"
+                              >
+                                Lấy Key tại addlivetag.com <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                <input
+                                  type={showAddLiveKey ? "text" : "password"}
+                                  value={sysAddlivetagApiKey}
+                                  onChange={(e) => setSysAddlivetagApiKey(e.target.value)}
+                                  placeholder="Nhập API Key từ addlivetag.com (Ví dụ: alt_live_xxxx...)"
+                                  className="w-full px-4 py-2.5 pr-10 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddLiveKey(!showAddLiveKey)}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-text p-1 cursor-pointer"
+                                  title={showAddLiveKey ? "Ẩn Key" : "Hiện Key"}
+                                >
+                                  {showAddLiveKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleTestAddLiveKey}
+                                disabled={isTestingKey || !sysAddlivetagApiKey.trim()}
+                                className="px-3.5 py-2.5 bg-white border border-border hover:bg-slate-50 text-text text-xs font-bold rounded-input transition-all disabled:opacity-50 whitespace-nowrap flex items-center gap-1.5 shadow-sm hover:border-primary cursor-pointer"
+                              >
+                                {isTestingKey ? (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Đang test...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Kiểm tra Key</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">
+                              Đăng nhập <strong>addlivetag.com</strong> → chọn menu <strong>API Key</strong> → bấm <strong>Tạo Key</strong>. Hệ thống dùng API này để tự động cào tên, ảnh đại diện, giá tiền và tỷ lệ hoa hồng Shopee khi người dùng tra cứu link.
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -2317,6 +2421,7 @@ export default function AdminPanel() {
                           {row.status === 'duplicate' && <Badge variant="warning">Trùng</Badge>}
                           {row.status === 'invalid' && <Badge variant="danger">Lỗi</Badge>}
                           {row.status === 'missing' && <Badge variant="outline" className="text-danger border-danger/30 bg-red-50/50">Thiếu</Badge>}
+                          {row.status === 'ignored' && <Badge variant="outline" className="text-text-secondary border-border bg-gray-50">Bỏ qua</Badge>}
                         </TableCell>
                         <TableCell className="text-[10px] text-text-secondary font-medium min-w-[150px]">{row.reason}</TableCell>
                       </TableRow>
@@ -2519,7 +2624,7 @@ export default function AdminPanel() {
             <ul className="list-disc list-inside space-y-1 text-xs">
               <li><b>Giá đơn hàng & Hoa hồng chuẩn:</b> Sau khi đối soát, số tiền đơn hàng và tiền hoàn thành viên sẽ được cập nhật <b>100% theo giá trị thực tế trong file CSV</b> (thay thế cho mọi giá trị tra cứu ước tính trước đó).</li>
               <li><b>Khớp theo Sub ID:</b> Cột <code>Sub_id1</code> chứa mã User ID (ví dụ <code>USR101</code>) hoặc mã định danh thành viên.</li>
-              <li><b>Khớp thông minh (Smart Match):</b> Nếu không có <code>Sub_id1</code>, hệ thống sẽ tự động quét theo <b>Shop ID, Item ID, Tên sản phẩm</b> và <b>Khung giờ click/đặt hàng ngắn (&lt; 2 tiếng)</b>.</li>
+              <li><b>Chỉ tính đơn có Sub ID:</b> Đơn hàng bắt buộc phải có mã <code>Sub_id1</code> hợp lệ mới được tính và ghi nhận vào hệ thống. Các đơn không có Sub ID sẽ được tự động bỏ qua hoàn toàn.</li>
             </ul>
           </div>
 

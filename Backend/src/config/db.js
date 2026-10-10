@@ -184,6 +184,7 @@ async function initializeDatabase() {
         support_facebook VARCHAR(255) DEFAULT 'https://facebook.com/hoantienmuasam',
         shopee_affiliate_id VARCHAR(255) DEFAULT '173401900099',
         shopee_cookie_url VARCHAR(500) DEFAULT 'https://s.shopee.vn/an_redir',
+        addlivetag_api_key VARCHAR(255) DEFAULT '',
         lazada_affiliate_id VARCHAR(255) DEFAULT '',
         lazada_cookie_url VARCHAR(500) DEFAULT 'https://s.lazada.vn/s.an_redir',
         tiktok_affiliate_id VARCHAR(255) DEFAULT '',
@@ -201,6 +202,7 @@ async function initializeDatabase() {
 
     const mysqlAlterCols = [
       "ALTER TABLE system_settings ADD COLUMN shopee_cookie_url VARCHAR(500) DEFAULT 'https://s.shopee.vn/an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN addlivetag_api_key VARCHAR(255) DEFAULT ''",
       "ALTER TABLE system_settings ADD COLUMN lazada_affiliate_id VARCHAR(255) DEFAULT ''",
       "ALTER TABLE system_settings ADD COLUMN lazada_cookie_url VARCHAR(500) DEFAULT 'https://s.lazada.vn/s.an_redir'",
       "ALTER TABLE system_settings ADD COLUMN tiktok_affiliate_id VARCHAR(255) DEFAULT ''",
@@ -402,6 +404,7 @@ async function initializeDatabase() {
         support_facebook TEXT DEFAULT 'https://facebook.com/hoantienmuasam',
         shopee_affiliate_id TEXT DEFAULT '173401900099',
         shopee_cookie_url TEXT DEFAULT 'https://s.shopee.vn/an_redir',
+        addlivetag_api_key TEXT DEFAULT '',
         lazada_affiliate_id TEXT DEFAULT '',
         lazada_cookie_url TEXT DEFAULT 'https://s.lazada.vn/s.an_redir',
         tiktok_affiliate_id TEXT DEFAULT '',
@@ -419,6 +422,7 @@ async function initializeDatabase() {
 
     const sqliteAlterCols = [
       "ALTER TABLE system_settings ADD COLUMN shopee_cookie_url TEXT DEFAULT 'https://s.shopee.vn/an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN addlivetag_api_key TEXT DEFAULT ''",
       "ALTER TABLE system_settings ADD COLUMN lazada_affiliate_id TEXT DEFAULT ''",
       "ALTER TABLE system_settings ADD COLUMN lazada_cookie_url TEXT DEFAULT 'https://s.lazada.vn/s.an_redir'",
       "ALTER TABLE system_settings ADD COLUMN tiktok_affiliate_id TEXT DEFAULT ''",

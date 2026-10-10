@@ -12,27 +12,14 @@ import { useAppStore } from '../../store/appStore';
 import type { Order } from '../../store/appStore';
 import { toast } from 'sonner';
 
-import TwoStepRedirectModal from '../../components/common/TwoStepRedirectModal';
 import { SAMPLE_SHOPEE_PRODUCTS } from '../../store/mockData';
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const { currentUser, addOrder, toggleFavorite, favorites, openAuthModal } = useAppStore();
+  const { currentUser, addOrder, toggleFavorite, favorites, openAuthModal, settings } = useAppStore();
   const [shopeeLink, setShopeeLink] = useState('');
   const [checkedProduct, setCheckedProduct] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [step1ActivatedUrl, setStep1ActivatedUrl] = useState<string | null>(null);
-  const [redirectModalData, setRedirectModalData] = useState<{
-    isOpen: boolean;
-    link1: string;
-    link2: string;
-    productName?: string;
-  }>({
-    isOpen: false,
-    link1: '',
-    link2: '',
-    productName: ''
-  });
 
   const [lightboxImage, setLightboxImage] = useState<{ src: string; step: number } | null>(null);
 
@@ -49,50 +36,6 @@ export default function LandingPage() {
 
 
 
-
-  const parseShopeeUrlFallback = (input: string) => {
-    const str = input.trim();
-    let itemId = '';
-    let shopId = '0';
-
-    const matchItemShop = str.match(/i\.(\d+)\.(\d+)/);
-    if (matchItemShop) {
-      shopId = matchItemShop[1];
-      itemId = matchItemShop[2];
-    } else {
-      const matchProdPath = str.match(/product\/(\d+)\/(\d+)/);
-      if (matchProdPath) {
-        shopId = matchProdPath[1];
-        itemId = matchProdPath[2];
-      } else if (/^\d+$/.test(str)) {
-        itemId = str;
-      }
-    }
-
-    const cleanUrl = str.startsWith('http')
-      ? str
-      : (itemId ? `https://shopee.vn/product/${shopId}/${itemId}` : 'https://shopee.vn');
-
-    return {
-      itemId: itemId || 'SP' + Math.floor(100000 + Math.random() * 900000),
-      name: itemId ? `Sản phẩm Shopee #${itemId}` : 'Sản phẩm Shopee',
-      shopName: 'Shopee Shop',
-      price: 250000,
-      sales: 150,
-      image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400',
-      url: cleanUrl,
-      rating: '5.0',
-      commission: 25000,
-      sellerComFinal: 12500,
-      shopeeComFinal: 12500,
-      isXtra: true,
-      lastUpdate: new Date().toLocaleString('vi-VN'),
-      dataSource: 'fallback',
-      priceStats: null,
-      cashbackRate: 0.1
-    };
-  };
-
   const handleCheckLink = async (e: React.FormEvent) => {
     e.preventDefault();
     const linkInput = shopeeLink.trim();
@@ -101,25 +44,52 @@ export default function LandingPage() {
       return;
     }
 
+    const isItemId = /^\d+$/.test(linkInput);
+    const isShopeeUrl = linkInput.includes('shopee.vn') ||
+                        linkInput.includes('shp.ee') ||
+                        linkInput.includes('s.shopee.vn');
+
+    if (!isItemId && !isShopeeUrl) {
+      toast.error('Link không hợp lệ! Vui lòng nhập link sản phẩm Shopee hoặc ID sản phẩm.');
+      setCheckedProduct(null);
+      return;
+    }
+
     setIsSearching(true);
     setCheckedProduct(null);
 
     try {
-      const isItemId = /^\d+$/.test(linkInput);
-      const queryParam = isItemId ? `item_id=${linkInput}` : `url=${encodeURIComponent(linkInput)}`;
-      const apiUrl = `https://data.addlivetag.com/product-data/product-data.php?${queryParam}`;
+      const queryParam = isItemId ? `item_id=${encodeURIComponent(linkInput)}` : `url=${encodeURIComponent(linkInput)}`;
+      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
-      const response = await fetch(apiUrl);
+      let data: any = null;
 
-      if (response.status === 429 || !response.ok) {
-        // Trình xử lý dự phòng mượt mà khi API bên thứ 3 bị 429 Too Many Requests
-        const fallback = parseShopeeUrlFallback(linkInput);
-        setCheckedProduct(fallback);
-        return;
+      // 1. Ưu tiên gọi qua Backend API server (Bảo mật API Key & tránh CORS)
+      try {
+        const response = await fetch(`${API_BASE}/shopee/product-info?${queryParam}`);
+        if (response.ok) {
+          data = await response.json();
+        }
+      } catch (beErr) {
+        console.warn('Backend proxy fetch failed:', beErr);
       }
 
-      const data = await response.json();
-      if (data.status === 'success' && data.productInfo) {
+      // 2. Nếu Backend chưa cấu hình key và có key ở client settings, fallback gọi trực tiếp với key
+      if ((!data || data.code === 'MISSING_API_KEY') && settings?.addlivetagApiKey) {
+        try {
+          const directUrl = `https://data.addlivetag.com/product-data/product-data.php?${queryParam}&key=${encodeURIComponent(settings.addlivetagApiKey.trim())}`;
+          const directRes = await fetch(directUrl, {
+            headers: { 'X-API-Key': settings.addlivetagApiKey.trim() }
+          });
+          if (directRes.ok) {
+            data = await directRes.json();
+          }
+        } catch (dErr) {
+          console.warn('Direct fetch failed:', dErr);
+        }
+      }
+
+      if (data && data.status === 'success' && data.productInfo) {
         const info = data.productInfo;
         const validProductUrl = (info.productLink && !info.productLink.includes('-/-'))
           ? info.productLink
@@ -135,7 +105,7 @@ export default function LandingPage() {
           sales: info.sales || 0,
           image: info.imageUrl
             ? (info.imageUrl.startsWith('http') ? info.imageUrl : `https://cf.shopee.vn/file/${info.imageUrl}`)
-            : 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400',
+            : '',
           url: validProductUrl,
           rating: info.rating || '5.0',
           commission: info.commission || 0,
@@ -147,14 +117,21 @@ export default function LandingPage() {
           priceStats: info.priceStats || null,
           cashbackRate: info.price > 0 ? (info.commission / info.price) : 0.07
         });
+        toast.success('Đã tìm thấy thông tin sản phẩm Shopee!');
       } else {
-        const fallback = parseShopeeUrlFallback(linkInput);
-        setCheckedProduct(fallback);
+        setCheckedProduct(null);
+        if (data?.code === 'MISSING_API_KEY' || data?.apiKeyNotice?.status === 'missing') {
+          toast.error('Hệ thống chưa cài đặt API Key AddLiveTag. Vui lòng vào Cài đặt Quản trị viên để nhập API Key.');
+        } else if (data?.message) {
+          toast.error(`Sản phẩm không tồn tại hoặc link Shopee không đúng! (${data.message})`);
+        } else {
+          toast.error('Sản phẩm không tồn tại hoặc link Shopee không đúng! Vui lòng kiểm tra lại link.');
+        }
       }
     } catch (error: any) {
       console.warn('Error fetching Shopee product:', error);
-      const fallback = parseShopeeUrlFallback(linkInput);
-      setCheckedProduct(fallback);
+      setCheckedProduct(null);
+      toast.error('Không tìm thấy sản phẩm hoặc link không tồn tại. Vui lòng kiểm tra lại link Shopee!');
     } finally {
       setIsSearching(false);
     }
@@ -168,54 +145,34 @@ export default function LandingPage() {
         sessionStorage.removeItem('pending_shopee_url');
         const pendingName = sessionStorage.getItem('pending_shopee_name') || 'Sản phẩm Shopee';
         const pendingPrice = Number(sessionStorage.getItem('pending_shopee_price')) || 0;
+        const pendingImage = sessionStorage.getItem('pending_shopee_image') || '';
         sessionStorage.removeItem('pending_shopee_name');
         sessionStorage.removeItem('pending_shopee_price');
+        sessionStorage.removeItem('pending_shopee_image');
 
-        // Automatically convert link for newly logged-in user
         const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-        const token = localStorage.getItem('access_token');
+        const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+        const redirectUrl = `${API_BASE}/shopee/redirect?url=${encodeURIComponent(pendingUrl)}&user_id=${encodeURIComponent(currentUser.id)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 
-        fetch(`${API_BASE}/shopee/convert`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({ url: pendingUrl })
-        })
-          .then(res => res.json())
-          .then(data => {
-            if (data && data.success && data.affiliateLink) {
-              const newOrder: Order = {
-                id: data.clickId || `HD${Math.floor(1000 + Math.random() * 9000)}`,
-                productName: pendingName,
-                productImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400',
-                orderAmount: pendingPrice,
-                estimatedCashback: Math.round(pendingPrice * 0.035),
-                status: 'pending',
-                createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-                userId: currentUser.id
-              };
-              addOrder(newOrder);
+        const newOrder: Order = {
+          id: `CLK${Date.now()}${Math.random().toString(36).substring(2, 6)}`,
+          productName: pendingName,
+          productImage: pendingImage,
+          orderAmount: pendingPrice,
+          estimatedCashback: Math.round(pendingPrice * 0.035),
+          status: 'pending',
+          createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          userId: currentUser.id
+        };
+        addOrder(newOrder);
 
-              const targetUrl = data.affiliateLink;
-              const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|FBAN|FBAV|Instagram|Zalo/i.test(navigator.userAgent) || window.innerWidth < 768;
-              if (isMobile) {
-                window.location.href = targetUrl;
-              } else {
-                const win = window.open(targetUrl, '_blank');
-                if (!win || win.closed || typeof win.closed === 'undefined') {
-                  window.location.href = targetUrl;
-                }
-              }
-            }
-          })
-          .catch(() => {});
+        toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
+        window.location.href = redirectUrl;
       }
     }
   }, [currentUser, addOrder]);
 
-  const handleCreateAffiliateLink = async () => {
+  const handleCreateAffiliateLink = () => {
     if (!checkedProduct) return;
 
     if (!currentUser) {
@@ -223,91 +180,40 @@ export default function LandingPage() {
       sessionStorage.setItem('pending_shopee_url', checkedProduct.url);
       sessionStorage.setItem('pending_shopee_name', checkedProduct.name);
       sessionStorage.setItem('pending_shopee_price', String(checkedProduct.price));
+      sessionStorage.setItem('pending_shopee_image', checkedProduct.image || '');
 
       openAuthModal('login');
       return;
     }
 
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|FBAN|FBAV|Instagram|Zalo/i.test(navigator.userAgent) || window.innerWidth < 768;
+    const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+    const userId = currentUser.id || '';
+    const redirectUrl = `${API_BASE}/shopee/redirect?url=${encodeURIComponent(checkedProduct.url)}${userId ? `&user_id=${encodeURIComponent(userId)}` : ''}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 
-    // Trên Desktop: mở trước 1 tab để tránh bị chặn popup khi gọi fetch bất đồng bộ
-    let newTab: Window | null = null;
-    if (!isMobile) {
-      newTab = window.open('about:blank', '_blank');
-    }
+    const newOrder: Order = {
+      id: `CLK${Date.now()}${Math.random().toString(36).substring(2, 6)}`,
+      productName: checkedProduct.name,
+      productImage: checkedProduct.image,
+      orderAmount: checkedProduct.price,
+      estimatedCashback: Math.round((checkedProduct.commission || 0) * 0.5) || Math.round(checkedProduct.price * (checkedProduct.cashbackRate || 0.07) * 0.5),
+      status: 'pending',
+      createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: currentUser.id
+    };
+    addOrder(newOrder);
 
-    try {
-      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-      const token = localStorage.getItem('access_token');
+    toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
 
-      const res = await fetch(`${API_BASE}/shopee/convert`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ url: checkedProduct.url })
-      });
-      const data = await res.json();
-
-      if (data && data.success && data.affiliateLink) {
-        const link1 = data.affiliateLink; // Link1: Cookie hệ thống (Sản phẩm tham khảo)
-        const link2 = data.originUrl || checkedProduct.url; // Link2: Link sản phẩm tra cứu
-        const isCustomSystemLink = data.isCustomSystemLink || (!link1.includes('an_redir') && link1 !== link2);
-
-        const newOrder: Order = {
-          id: data.clickId || `HD${Math.floor(1000 + Math.random() * 9000)}`,
-          productName: checkedProduct.name,
-          productImage: checkedProduct.image,
-          orderAmount: checkedProduct.price,
-          estimatedCashback: Math.round((checkedProduct.commission || 0) * 0.5) || Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
-          status: 'pending',
-          createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-          userId: currentUser.id
-        };
-        addOrder(newOrder);
-
-        if (newTab && !newTab.closed) newTab.close();
-
-        const openUrl = (targetUrl: string) => {
-          const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-          if (isMobileDevice) {
-            window.location.href = targetUrl;
-          } else {
-            const win = window.open(targetUrl, '_blank');
-            if (!win || win.closed || typeof win.closed === 'undefined') {
-              window.location.href = targetUrl;
-            }
-          }
-        };
-
-        if (isCustomSystemLink) {
-          if (step1ActivatedUrl === checkedProduct.url) {
-            // LẦN 2: Người dùng đã bấm Bước 1 trước đó -> Mở trực tiếp sản phẩm gốc (Link 2)
-            toast.success('Đang chuyển hướng sang sản phẩm của bạn trên Shopee...');
-            setStep1ActivatedUrl(null);
-            openUrl(link2);
-          } else {
-            // LẦN 1: Mở Popup Hướng Dẫn 2 Bước trước khi mở Link Cookie Hệ Thống
-            setRedirectModalData({
-              isOpen: true,
-              link1,
-              link2,
-              productName: checkedProduct.name
-            });
-          }
-        } else {
-          // Link an_redir chuẩn Shopee: Chuyển hướng 1-click tự động
-          toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
-          openUrl(link1);
-        }
-      } else {
-        if (newTab && !newTab.closed) newTab.close();
-        toast.error(data?.message || 'Có lỗi xảy ra khi tạo link hoàn tiền');
+    // Chuyển hướng 1-click trực tiếp qua Gateway, không mở tab about:blank trước
+    if (isMobile) {
+      window.location.href = redirectUrl;
+    } else {
+      const win = window.open(redirectUrl, '_blank');
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        window.location.href = redirectUrl;
       }
-    } catch (err: any) {
-      if (newTab && !newTab.closed) newTab.close();
-      toast.error('Có lỗi xảy ra khi tạo link hoàn tiền');
     }
   };
 
@@ -399,12 +305,19 @@ export default function LandingPage() {
                 <CardContent className="p-6 md:p-8">
                   <div className="flex flex-col md:flex-row gap-6 items-start">
                     <div className="relative w-full md:w-44 shrink-0">
-                      <img
-                        src={checkedProduct.image}
-                        alt={checkedProduct.name}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-44 object-cover rounded-card border border-border shadow-sm"
-                      />
+                      {checkedProduct.image ? (
+                        <img
+                          src={checkedProduct.image}
+                          alt={checkedProduct.name}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-44 object-cover rounded-card border border-border shadow-sm"
+                        />
+                      ) : (
+                        <div className="w-full h-44 rounded-card border border-border bg-orange-50/50 flex flex-col items-center justify-center text-orange-400 gap-2">
+                          <ShoppingBag className="w-10 h-10 text-orange-400" />
+                          <span className="text-xs font-semibold text-text-secondary">Shopee</span>
+                        </div>
+                      )}
                       {checkedProduct.sales > 0 && (
                         <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-xs text-white px-2 py-0.5 rounded-md text-[10px] font-semibold">
                           Đã bán: {checkedProduct.sales}
@@ -474,7 +387,7 @@ export default function LandingPage() {
 
 
 
-                      <div className="flex items-start gap-2 text-xs text-text-secondary leading-relaxed mb-6">
+                      <div className="flex items-start gap-2 text-xs text-text-secondary leading-relaxed mb-4">
                         <AlertCircle className="h-4.5 w-4.5 text-warning shrink-0 mt-0.5" />
                         <p>
                           Tiền hoàn hiển thị chỉ mang tính tham khảo. Tiền hoàn thực tế sẽ được cập nhật sau khi Shopee đối soát.
@@ -482,36 +395,13 @@ export default function LandingPage() {
                       </div>
 
                       <div>
-                        {step1ActivatedUrl === checkedProduct.url && (
-                          <div className="mb-3 px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 font-bold animate-pulse">
-                            <span className="flex items-center gap-1.5">
-                              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                              Đã kích hoạt hoa hồng! Bấm lần 2 để mở sản phẩm của bạn.
-                            </span>
-                            <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-extrabold shrink-0">BƯỚC 2</span>
-                          </div>
-                        )}
-
                         <Button
                           onClick={handleCreateAffiliateLink}
-                          className={`w-full font-extrabold flex items-center justify-center gap-2 group py-3.5 transition-all ${
-                            step1ActivatedUrl === checkedProduct.url
-                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 ring-2 ring-emerald-400'
-                              : 'bg-primary text-white hover:bg-primary/95'
-                          }`}
+                          className="w-full font-extrabold flex items-center justify-center gap-2 group py-4 transition-all bg-primary text-white hover:bg-primary/95 text-base shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 rounded-xl"
                         >
-                          {step1ActivatedUrl === checkedProduct.url ? (
-                            <>
-                              <ShoppingBag className="h-4.5 w-4.5" />
-                              Ấn lần 2 để mở trang sản phẩm mua hàng ngay
-                              <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                            </>
-                          ) : (
-                            <>
-                              Ấn vào ngay mua hàng để hoàn tiền
-                              <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                            </>
-                          )}
+                          <ShoppingBag className="h-5 w-5" />
+                          Ấn vào ngay mua hàng để hoàn tiền
+                          <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                         </Button>
                       </div>
 
@@ -990,17 +880,6 @@ export default function LandingPage() {
           </Accordion>
         </div>
       </section>
-
-      <TwoStepRedirectModal
-        isOpen={redirectModalData.isOpen}
-        onClose={() => setRedirectModalData(prev => ({ ...prev, isOpen: false }))}
-        link1={redirectModalData.link1}
-        link2={redirectModalData.link2}
-        productName={redirectModalData.productName}
-        onStep1Completed={() => {
-          if (checkedProduct) setStep1ActivatedUrl(checkedProduct.url);
-        }}
-      />
     </div>
   );
 }
