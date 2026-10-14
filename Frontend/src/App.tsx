@@ -41,6 +41,21 @@ function App() {
 
   useEffect(() => {
     initializeAuth();
+
+    const handleVisibilityOrFocus = () => {
+      const token = localStorage.getItem('token');
+      if (token && !useAppStore.getState().currentUser) {
+        initializeAuth();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
   }, [initializeAuth]);
 
   return (

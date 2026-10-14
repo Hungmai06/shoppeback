@@ -32,6 +32,15 @@ export default function GoogleLoginButton({ text, referralCode, disabled, onSucc
         localStorage.removeItem('referralCode');
         closeAuthModal();
         if (onSuccessCallback) onSuccessCallback();
+
+        // Tự động tải lại trang để cập nhật toàn bộ trạng thái tài khoản
+        setTimeout(() => {
+          if (window.location.pathname.startsWith('/auth')) {
+            window.location.href = '/';
+          } else {
+            window.location.reload();
+          }
+        }, 350);
       } else {
         toast.error('Đăng nhập Google thất bại trên máy chủ.');
       }
@@ -58,8 +67,10 @@ export default function GoogleLoginButton({ text, referralCode, disabled, onSucc
 
   const isSignUp = text?.toLowerCase().includes('ký');
 
+  const isMobile = typeof window !== 'undefined' && (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768);
+
   return (
-    <div className={`w-full flex justify-center items-center min-h-[44px] transition-opacity ${loading || disabled ? 'opacity-60 pointer-events-none' : ''}`}>
+    <div className={`w-full flex flex-col items-center min-h-[44px] transition-opacity ${loading || disabled ? 'opacity-60 pointer-events-none' : ''}`}>
       <div className="w-full flex justify-center [&>div]:w-full [&_iframe]:!w-full [&_iframe]:!max-w-full">
         <GoogleLogin
           onSuccess={handleSuccess}
@@ -69,9 +80,14 @@ export default function GoogleLoginButton({ text, referralCode, disabled, onSucc
           text={isSignUp ? 'signup_with' : 'signin_with'}
           shape="rectangular"
           width="100%"
-          useOneTap={false}
+          useOneTap={true}
         />
       </div>
+      {isMobile && (
+        <p className="text-[11px] text-text-secondary/80 text-center mt-1.5 leading-tight">
+          💡 Chọn tài khoản xong, nếu trình duyệt không tự đóng tab thì bạn bấm đóng tab Google để quay lại nhé.
+        </p>
+      )}
     </div>
   );
 }
