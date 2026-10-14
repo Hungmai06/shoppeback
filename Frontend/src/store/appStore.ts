@@ -127,7 +127,13 @@ interface AppState {
   setCurrentUser: (user: UserProfile | null) => void;
   initializeAuth: () => Promise<void>;
   login: (email: string, password: string) => Promise<UserProfile | null>;
-  loginWithGoogle: (accessToken: string, email?: string, name?: string, avatar?: string, referralCode?: string) => Promise<UserProfile | null>;
+  loginWithGoogle: (
+    tokenOrOptions?: string | { credential?: string; accessToken?: string; email?: string; name?: string; avatar?: string; referralCode?: string },
+    email?: string,
+    name?: string,
+    avatar?: string,
+    referralCode?: string
+  ) => Promise<UserProfile | null>;
   register: (name: string, email: string, password: string, referralCode?: string) => Promise<boolean>;
   logout: () => void;
   updateProfile: (profile: Partial<UserProfile>) => Promise<boolean>;
@@ -341,18 +347,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loginWithGoogle: async (accessToken, email, name, avatar, referralCode) => {
+  loginWithGoogle: async (tokenOrOptions, email, name, avatar, referralCode) => {
     try {
-      const res = await fetch(`${API_BASE}/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accessToken,
+      let bodyPayload: any = {};
+      if (typeof tokenOrOptions === 'object' && tokenOrOptions !== null) {
+        bodyPayload = tokenOrOptions;
+      } else {
+        const isCredential = tokenOrOptions?.startsWith('eyJ');
+        bodyPayload = {
+          credential: isCredential ? tokenOrOptions : undefined,
+          accessToken: isCredential ? undefined : tokenOrOptions,
           email,
           name,
           avatar,
           referralCode
-        })
+        };
+      }
+
+      const res = await fetch(`${API_BASE}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload)
       });
 
       if (res.ok) {
