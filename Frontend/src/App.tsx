@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import PublicLayout from './components/layout/PublicLayout';
 import LandingPage from './features/landing/LandingPage';
 import TrackingPage from './features/landing/TrackingPage';
@@ -40,8 +40,56 @@ function App() {
   const initializeAuth = useAppStore(state => state.initializeAuth);
 
   useEffect(() => {
-    initializeAuth();
+    // 1. Xử lý phản hồi từ Google OAuth Redirect (Cùng 1 tab - Giống luyentu.com)
+    const hash = window.location.hash;
+    if (hash && (hash.includes('id_token=') || hash.includes('access_token='))) {
+      try {
+        const cleanHash = hash.startsWith('#') ? hash.substring(1) : hash;
+        const params = new URLSearchParams(cleanHash);
+        const idToken = params.get('id_token');
+        const accessToken = params.get('access_token');
 
+        if (idToken || accessToken) {
+          // Xóa hash trên URL ngay lập tức để URL sạch sẽ
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+          const referralCode = localStorage.getItem('referralCode') || undefined;
+
+          useAppStore.getState().loginWithGoogle({
+            credential: idToken || undefined,
+            accessToken: accessToken || undefined,
+            referralCode
+          }).then((user) => {
+            if (user) {
+              toast.success(`Chào mừng ${user.name} đã đăng nhập Google thành công!`);
+              localStorage.removeItem('referralCode');
+              const returnUrl = localStorage.getItem('auth_return_url');
+              if (returnUrl) {
+                localStorage.removeItem('auth_return_url');
+                if (returnUrl !== window.location.pathname && !returnUrl.startsWith('/auth')) {
+                  window.location.href = returnUrl;
+                }
+              }
+            } else {
+              toast.error('Đăng nhập Google không thành công.');
+            }
+          }).catch((err) => {
+            console.error('Google Auth callback error:', err);
+            toast.error('Lỗi xác thực Google: ' + (err.message || 'Lỗi không xác định'));
+          });
+        }
+      } catch (err) {
+        console.error('Parse Google Hash error:', err);
+      }
+    } else if (hash && hash.includes('error=')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      toast.info('Bạn đã hủy đăng nhập Google.');
+      initializeAuth();
+    } else {
+      initializeAuth();
+    }
+
+    // 2. Lắng nghe khi quay lại tab để cập nhật trạng thái nếu cần
     const handleVisibilityOrFocus = () => {
       const token = localStorage.getItem('token');
       if (token && !useAppStore.getState().currentUser) {
