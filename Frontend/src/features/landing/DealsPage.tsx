@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, ArrowRight, Heart, Share2,
-  AlertCircle, ShoppingBag
+  AlertCircle, ShoppingBag, CheckCircle2
 } from 'lucide-react';
 import { Button, Card, CardContent, Badge } from '../../components/ui/core';
 import { useAppStore } from '../../store/appStore';
 import type { Order } from '../../store/appStore';
 import { toast } from 'sonner';
 import { SAMPLE_SHOPEE_PRODUCTS } from '../../store/mockData';
+import TwoStepRedirectModal from '../../components/common/TwoStepRedirectModal';
 
 export default function DealsPage() {
   const navigate = useNavigate();
@@ -19,6 +20,20 @@ export default function DealsPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
+
+  // Quản lý Modal 2 bước mua hàng
+  const [redirectModalData, setRedirectModalData] = useState<{
+    isOpen: boolean;
+    link1: string;
+    link2: string;
+    productName: string;
+  }>({
+    isOpen: false,
+    link1: '',
+    link2: '',
+    productName: ''
+  });
+  const [step1ActivatedUrl, setStep1ActivatedUrl] = useState<string | null>(null);
 
   const handleCheckLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +106,7 @@ export default function DealsPage() {
     }
   };
 
-  const handleCreateAffiliateLink = () => {
+  const handleCreateAffiliateLink = async () => {
     if (!currentUser) {
       toast.warning('Vui lòng đăng nhập để tạo link hoàn tiền và tích lũy số dư');
       navigate('/auth');
@@ -99,33 +114,72 @@ export default function DealsPage() {
     }
     if (!checkedProduct) return;
 
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|FBAN|FBAV|Instagram|Zalo/i.test(navigator.userAgent) || window.innerWidth < 768;
-    const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
-    const userId = currentUser.id || '';
-    const redirectUrl = `${API_BASE}/shopee/redirect?url=${encodeURIComponent(checkedProduct.url)}${userId ? `&user_id=${encodeURIComponent(userId)}` : ''}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
-
-    const newOrder: Order = {
-      id: `CLK${Date.now()}${Math.random().toString(36).substring(2, 6)}`,
-      productName: checkedProduct.name,
-      productImage: checkedProduct.image,
-      orderAmount: checkedProduct.price,
-      estimatedCashback: Math.round(checkedProduct.price * checkedProduct.cashbackRate * 0.5),
-      status: 'pending',
-      createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-      userId: currentUser.id
-    };
-    addOrder(newOrder);
-
-    toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
-
-    if (isMobile) {
-      window.location.href = redirectUrl;
-    } else {
-      const win = window.open(redirectUrl, '_blank');
-      if (!win || win.closed || typeof win.closed === 'undefined') {
-        window.location.href = redirectUrl;
+    const openUrl = (targetUrl: string) => {
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|FBAN|FBAV|Instagram|Zalo/i.test(navigator.userAgent) || window.innerWidth < 768;
+      if (isMobileDevice) {
+        window.location.href = targetUrl;
+      } else {
+        const win = window.open(targetUrl, '_blank');
+        if (!win || win.closed || typeof win.closed === 'undefined') {
+          window.location.href = targetUrl;
+        }
       }
+    };
+
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+      const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+      const userId = currentUser.id || '';
+
+      const res = await fetch(`${API_BASE}/shopee/convert`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          url: checkedProduct.url,
+          userId: userId,
+          user_id: userId
+        })
+      });
+      const data = await res.json();
+
+      if (data && data.success && (data.link1 || data.affiliateLink)) {
+        const link1 = data.link1 || data.affiliateLink; // Link 1: Cookie tiếp thị hệ thống (Giấy ăn Top Gia)
+        const link2 = data.link2 || data.affiliateLink || data.originUrl || checkedProduct.url; // Link 2: Link sản phẩm thật của khách
+
+        const newOrder: Order = {
+          id: data.clickId || `CLK${Date.now()}${Math.random().toString(36).substring(2, 6)}`,
+          productName: checkedProduct.name,
+          productImage: checkedProduct.image,
+          orderAmount: checkedProduct.price,
+          estimatedCashback: Math.round(checkedProduct.price * (checkedProduct.cashbackRate || 0.07) * 0.5),
+          status: 'pending',
+          createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          userId: currentUser.id
+        };
+        addOrder(newOrder);
+
+        if (step1ActivatedUrl === checkedProduct.url) {
+          // LẦN 2: Người dùng đã bấm Bước 1 (Giấy ăn Top Gia) trước đó -> Mở trực tiếp link sản phẩm thật
+          toast.success('Đang chuyển hướng sang sản phẩm của bạn trên Shopee...');
+          setStep1ActivatedUrl(null);
+          openUrl(link2);
+        } else {
+          // LẦN 1: Mở Popup Modal Quy Trình 2 Bước (Ấn Bước 1 Giấy ăn Top Gia thì Bước 2 mới mở khóa)
+          setRedirectModalData({
+            isOpen: true,
+            link1,
+            link2,
+            productName: checkedProduct.name
+          });
+        }
+      } else {
+        toast.error(data?.message || 'Có lỗi xảy ra khi tạo link hoàn tiền');
+      }
+    } catch (err: any) {
+      toast.error('Có lỗi xảy ra khi kết nối máy chủ');
     }
   };
 
@@ -283,13 +337,37 @@ export default function DealsPage() {
                     </div>
 
                     <div>
+                      {step1ActivatedUrl === checkedProduct.url && (
+                        <div className="mb-3 px-3.5 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 font-bold animate-pulse">
+                          <span className="flex items-center gap-1.5">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                            Đã kích hoạt hoa hồng! Bấm Bước 2 để mở sản phẩm của bạn.
+                          </span>
+                          <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-extrabold shrink-0">BƯỚC 2</span>
+                        </div>
+                      )}
+
                       <Button
                         onClick={handleCreateAffiliateLink}
-                        className="w-full font-extrabold flex items-center justify-center gap-2 group py-4 transition-all bg-primary text-white hover:bg-primary/95 text-base shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 rounded-xl"
+                        className={`w-full font-extrabold flex items-center justify-center gap-2 group py-4 transition-all text-base shadow-lg rounded-xl ${
+                          step1ActivatedUrl === checkedProduct.url
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 ring-2 ring-emerald-400'
+                            : 'bg-primary text-white hover:bg-primary/95 shadow-primary/20 hover:shadow-xl hover:shadow-primary/30'
+                        }`}
                       >
-                        <ShoppingBag className="h-5 w-5" />
-                        Ấn vào ngay mua hàng để hoàn tiền
-                        <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                        {step1ActivatedUrl === checkedProduct.url ? (
+                          <>
+                            <ShoppingBag className="h-5 w-5" />
+                            Ấn lần 2 để mở trang sản phẩm mua hàng ngay
+                            <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                          </>
+                        ) : (
+                          <>
+                            <ShoppingBag className="h-5 w-5" />
+                            Ấn vào ngay mua hàng để hoàn tiền (2 bước)
+                            <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                          </>
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -397,6 +475,18 @@ export default function DealsPage() {
           </div>
         )}
       </div>
+
+      {/* MODAL MUA HÀNG 2 BƯỚC KHÓA BƯỚC 2 CHO TỚI KHI BẤM BƯỚC 1 */}
+      <TwoStepRedirectModal
+        isOpen={redirectModalData.isOpen}
+        onClose={() => setRedirectModalData(prev => ({ ...prev, isOpen: false }))}
+        link1={redirectModalData.link1}
+        link2={redirectModalData.link2}
+        productName={redirectModalData.productName}
+        onStep1Completed={() => {
+          if (checkedProduct) setStep1ActivatedUrl(checkedProduct.url);
+        }}
+      />
     </div>
   );
 }

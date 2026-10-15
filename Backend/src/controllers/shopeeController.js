@@ -55,9 +55,16 @@ async function convertShopeeLink(req, res) {
       }
     } catch (sErr) {}
 
-    // 3. Tạo link an_redir chuẩn Shopee 2026
+    // 3. Tạo link1 (Link mồi Cookie hệ thống: Giấy ăn Top Gia) & link2 (Link sản phẩm thật của khách)
+    // CẢ 2 LINK ĐỀU MANG CHÍNH XÁC CÙNG 1 sub_id VÀ clickId ĐỂ ĐẢM BẢO 100% GHI NHẬN ĐƠN HÀNG
+    const cookieProductUrl = (customBaseUrl && customBaseUrl.trim() && !customBaseUrl.includes('an_redir'))
+      ? customBaseUrl.trim()
+      : 'https://shopee.vn/product/729014007/17532975547'; // Giấy ăn rút Top Gia 4 lớp
+
     const country = req.body.country || 'VN';
-    const affiliateLink = createShopeeAffiliateLink(originUrl, subId, customBaseUrl, customAffId, country);
+    const link1 = createShopeeAffiliateLink(cookieProductUrl, subId, customBaseUrl, customAffId, country);
+    const link2 = createShopeeAffiliateLink(originUrl, subId, customBaseUrl, customAffId, country);
+    const affiliateLink = link2;
 
     // 4. Lưu thông tin click & mapping (sub_id -> user_id) vào DB
     try {
@@ -69,13 +76,16 @@ async function convertShopeeLink(req, res) {
       console.warn('Click log insertion warning:', dbErr.message);
     }
 
-    // 5. Trả về cho Frontend (Kèm cờ isCustomSystemLink nếu Admin dùng link hệ thống riêng không chứa an_redir)
+    // 5. Trả về cho Frontend cả link1 và link2 cùng subId
     const isCustomSystemLink = Boolean(customBaseUrl && customBaseUrl.trim() && !customBaseUrl.includes('an_redir'));
 
     return res.json({
       success: true,
       affiliateLink,
+      link1,
+      link2,
       originUrl,
+      cookieProductUrl,
       isCustomSystemLink,
       clickId,
       subId
