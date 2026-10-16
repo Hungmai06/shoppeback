@@ -158,13 +158,13 @@ async function adminGetStats(req, res) {
     const productCountMap = {};
 
     ordersList.forEach(o => {
-      const userCb = (o.real_cashback !== null && o.real_cashback !== undefined)
+      const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined)
         ? o.real_cashback
-        : (o.estimated_cashback || 0);
+        : (o.estimated_cashback || 0));
 
-      const shopeeComm = (o.shopee_commission !== null && o.shopee_commission !== undefined)
+      const shopeeComm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
         ? o.shopee_commission
-        : (userCb * 2);
+        : (userCb * 2));
 
       if (o.status === 'approved' || o.status === 'paid') {
         platformTotalRevenue += shopeeComm;
@@ -248,13 +248,13 @@ async function adminGetStats(req, res) {
     }
 
     ordersList.forEach(o => {
-      const userCb = (o.real_cashback !== null && o.real_cashback !== undefined)
+      const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined)
         ? o.real_cashback
-        : (o.estimated_cashback || 0);
+        : (o.estimated_cashback || 0));
 
-      const shopeeComm = (o.shopee_commission !== null && o.shopee_commission !== undefined)
+      const shopeeComm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
         ? o.shopee_commission
-        : (userCb * 2);
+        : (userCb * 2));
 
       const monthKey = extractYearMonth(o.created_at) || currentMonthKey;
       if (monthlyStatsMap[monthKey]) {
@@ -326,8 +326,8 @@ async function adminGetStats(req, res) {
     selectedMonthOrders.forEach(o => {
       const dateKey = extractYearMonthDay(o.created_at);
       if (dailyMap[dateKey]) {
-        const userCb = (o.real_cashback !== null && o.real_cashback !== undefined) ? o.real_cashback : (o.estimated_cashback || 0);
-        const shopeeComm = (o.shopee_commission !== null && o.shopee_commission !== undefined) ? o.shopee_commission : (userCb * 2);
+        const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined) ? o.real_cashback : (o.estimated_cashback || 0));
+        const shopeeComm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined) ? o.shopee_commission : (userCb * 2));
 
         if (o.status === 'approved' || o.status === 'paid') {
           dailyMap[dateKey].revenue += shopeeComm;

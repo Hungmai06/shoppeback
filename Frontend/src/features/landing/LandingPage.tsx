@@ -117,21 +117,21 @@ export default function LandingPage() {
           itemId: info.itemId,
           name: info.productName || 'Sản phẩm Shopee',
           shopName: info.shopName || 'Shopee Shop',
-          price: info.price || 0,
+          price: Math.floor(Number(info.price) || 0),
           sales: info.sales || 0,
           image: info.imageUrl
             ? (info.imageUrl.startsWith('http') ? info.imageUrl : `https://cf.shopee.vn/file/${info.imageUrl}`)
             : '',
           url: validProductUrl,
           rating: info.rating || '5.0',
-          commission: info.commission || 0,
-          sellerComFinal: info.sellerComFinal || 0,
-          shopeeComFinal: info.shopeeComFinal || 0,
+          commission: Math.floor(Number(info.commission) || 0),
+          sellerComFinal: Math.floor(Number(info.sellerComFinal) || 0),
+          shopeeComFinal: Math.floor(Number(info.shopeeComFinal) || 0),
           isXtra: !!info.isXtra,
           lastUpdate: info.lastUpdate || new Date().toLocaleString('vi-VN'),
           dataSource: info.dataSource || 'api',
           priceStats: info.priceStats || null,
-          cashbackRate: info.price > 0 ? (info.commission / info.price) : 0.07
+          cashbackRate: info.price > 0 ? (Math.floor(Number(info.commission) || 0) / info.price) : 0.07
         });
         toast.success('Đã tìm thấy thông tin sản phẩm Shopee!');
       } else {
@@ -241,8 +241,8 @@ export default function LandingPage() {
           id: data.clickId || `CLK${Date.now()}${Math.random().toString(36).substring(2, 6)}`,
           productName: checkedProduct.name,
           productImage: checkedProduct.image,
-          orderAmount: checkedProduct.price,
-          estimatedCashback: Math.round((checkedProduct.commission || 0) * 0.5) || Math.round(checkedProduct.price * (checkedProduct.cashbackRate || 0.07) * 0.5),
+          orderAmount: Math.floor(checkedProduct.price),
+          estimatedCashback: Math.floor((Math.floor(checkedProduct.commission || 0)) * 0.5) || Math.floor(checkedProduct.price * (checkedProduct.cashbackRate || 0.07) * 0.5),
           status: 'pending',
           createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
           userId: currentUser.id
@@ -434,7 +434,7 @@ export default function LandingPage() {
                             Tiền hoàn dự kiến
                           </p>
                           <p className="text-lg font-extrabold text-primary">
-                            {Math.round((checkedProduct.commission || 0) * 0.5).toLocaleString('vi-VN')}đ
+                            {Math.floor((checkedProduct.commission || 0) * 0.5).toLocaleString('vi-VN')}đ
                           </p>
                         </div>
                       </div>

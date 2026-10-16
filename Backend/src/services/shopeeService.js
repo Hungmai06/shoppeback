@@ -370,6 +370,20 @@ async function fetchProductDataFromAddLiveTag(linkOrId, apiKey) {
     }
 
     const data = await response.json();
+    if (data && data.productInfo) {
+      if (data.productInfo.commission !== undefined && data.productInfo.commission !== null) {
+        data.productInfo.commission = Math.floor(Number(data.productInfo.commission) || 0);
+      }
+      if (data.productInfo.sellerComFinal !== undefined && data.productInfo.sellerComFinal !== null) {
+        data.productInfo.sellerComFinal = Math.floor(Number(data.productInfo.sellerComFinal) || 0);
+      }
+      if (data.productInfo.shopeeComFinal !== undefined && data.productInfo.shopeeComFinal !== null) {
+        data.productInfo.shopeeComFinal = Math.floor(Number(data.productInfo.shopeeComFinal) || 0);
+      }
+      if (data.productInfo.price !== undefined && data.productInfo.price !== null) {
+        data.productInfo.price = Math.floor(Number(data.productInfo.price) || 0);
+      }
+    }
     return data;
   } catch (err) {
     console.error('Fetch AddLiveTag Error:', err.message);

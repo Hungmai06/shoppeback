@@ -20,8 +20,8 @@ async function logClick(req, res) {
     // Save pending order to orders table so user and admin can see and manage it
     const name = productName || productUrl;
     const img = productImage || '';
-    const amount = Number(orderAmount) || 100000;
-    const cashback = Number(estimatedCashback) || Math.round(amount * 0.035);
+    const amount = Math.floor(Number(orderAmount) || 100000);
+    const cashback = Number(estimatedCashback) ? Math.floor(Number(estimatedCashback)) : Math.floor(amount * 0.035);
 
     try {
       await db.run(
@@ -170,12 +170,12 @@ async function adminUpdateOrderStatus(req, res) {
     }
 
     // Set realCashback if not specified and status changes to approved
-    let finalRealCash = realCashback !== undefined && realCashback !== '' ? Number(realCashback) : undefined;
+    let finalRealCash = realCashback !== undefined && realCashback !== '' ? Math.floor(Number(realCashback)) : undefined;
     if (finalRealCash === undefined && (status === 'approved' || status === 'paid')) {
-      finalRealCash = order.estimated_cashback;
+      finalRealCash = Math.floor(order.estimated_cashback || 0);
     }
 
-    const updatedRealCashback = finalRealCash !== undefined ? finalRealCash : order.real_cashback;
+    const updatedRealCashback = finalRealCash !== undefined ? Math.floor(finalRealCash) : (order.real_cashback !== null && order.real_cashback !== undefined ? Math.floor(order.real_cashback) : null);
     const updatedNotes = notes !== undefined ? notes : order.notes;
 
     await db.run('BEGIN TRANSACTION');
@@ -195,7 +195,7 @@ async function adminUpdateOrderStatus(req, res) {
     const wasApproved = order.status === 'approved';
     const isNowApproved = status === 'approved';
     const oldUserId = order.user_id;
-    const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? order.real_cashback : (order.estimated_cashback || 0);
+    const oldCashback = order.real_cashback !== null && order.real_cashback !== undefined ? Math.floor(order.real_cashback) : Math.floor(order.estimated_cashback || 0);
 
     // 1. If order was approved for oldUserId, but is now NOT approved OR targetUserId changed (or became null):
     if (wasApproved && oldUserId && (!isNowApproved || targetUserId !== oldUserId)) {
@@ -210,7 +210,7 @@ async function adminUpdateOrderStatus(req, res) {
       // Deduct referral bonus if old user had a referrer
       const oldUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [oldUserId]);
       if (oldUserObj && oldUserObj.referred_by) {
-        const refBonus = oldCashback * 0.20;
+        const refBonus = Math.floor(oldCashback * 0.20);
         await db.run(
           `UPDATE users 
            SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
@@ -225,7 +225,7 @@ async function adminUpdateOrderStatus(req, res) {
     if (isNowApproved && targetUserId) {
       if (!wasApproved || !oldUserId || oldUserId !== targetUserId) {
         // Credit new targetUserId
-        const userCashback = updatedRealCashback;
+        const userCashback = Math.floor(updatedRealCashback);
         await db.run(
           `UPDATE users 
            SET balance = COALESCE(balance, 0) + ?,
@@ -237,7 +237,7 @@ async function adminUpdateOrderStatus(req, res) {
         // Check for referral bonus (20%)
         const currentUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
         if (currentUserObj && currentUserObj.referred_by) {
-          const refBonus = userCashback * 0.20;
+          const refBonus = Math.floor(userCashback * 0.20);
           await db.run(
             `UPDATE users 
              SET balance = COALESCE(balance, 0) + ?,
@@ -250,12 +250,12 @@ async function adminUpdateOrderStatus(req, res) {
           await db.run(
             `INSERT INTO notifications (id, user_id, title, content, type)
              VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
-            [refNotifId, currentUserObj.referred_by, `Bạn nhận được +${Math.round(refBonus).toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
+            [refNotifId, currentUserObj.referred_by, `Bạn nhận được +${refBonus.toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
           );
         }
       } else if (wasApproved && oldUserId === targetUserId) {
         // Same user, check if cashback amount changed
-        const diff = updatedRealCashback - oldCashback;
+        const diff = Math.floor(updatedRealCashback) - Math.floor(oldCashback);
         if (diff !== 0) {
           await db.run(
             `UPDATE users 

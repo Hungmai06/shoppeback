@@ -414,7 +414,8 @@ function extractRowFields(row) {
     if (normMap[normKey] && normMap[normKey].val) {
       const parsed = parseShopeeNumber(normMap[normKey].val);
       if (parsed > 0) {
-        commission = parsed;
+        // Bỏ phần thập phân của hoa hồng (ví dụ: 1892.23 thì bỏ 23 đi thành 1892)
+        commission = Math.floor(parsed);
         break;
       }
     }
@@ -423,7 +424,10 @@ function extractRowFields(row) {
     for (const [nk, entry] of Object.entries(normMap)) {
       if ((nk.includes('hoahong') || nk.includes('commission') || nk.includes('comm')) && entry.val) {
         const parsed = parseShopeeNumber(entry.val);
-        if (parsed > 0) { commission = parsed; break; }
+        if (parsed > 0) {
+          commission = Math.floor(parsed);
+          break;
+        }
       }
     }
   }
@@ -917,8 +921,8 @@ function groupRowsByOrderId(rows) {
       orderId: item.orderId,
       subId: item.subId,
       productName: combinedName || 'Sản phẩm mua từ Shopee',
-      orderAmount: item.orderAmount,
-      commission: item.commission,
+      orderAmount: Math.floor(item.orderAmount),
+      commission: Math.floor(item.commission),
       shopeeStatus: item.shopeeStatus,
       purchaseTime: item.purchaseTime,
       clickTime: item.clickTime,
@@ -1052,7 +1056,7 @@ async function uploadAndAnalyze(req, res) {
 
       // Determine Status
       const mappedStatus = mapShopeeStatus(shopeeStatus);
-      const userCashback = Math.round((commission || 0) * cashbackRate);
+      const userCashback = Math.floor((commission || 0) * cashbackRate);
 
       // BẮT BUỘC: Chỉ tính & ghi nhận các đơn có SubID từ file import CSV. Đơn nào KHÔNG CÓ SubID thì bỏ qua hoàn toàn!
       const isSubIdEmpty = !cleanSubId || cleanSubId === '-' || cleanSubId.toLowerCase() === 'null' || cleanSubId.toLowerCase() === 'undefined';
@@ -1392,7 +1396,7 @@ async function applyReconciliation(req, res) {
         }
       }
 
-      const userCashback = Math.round((commission || 0) * cashbackRate);
+      const userCashback = Math.floor((commission || 0) * cashbackRate);
 
       if (exists) {
         if (currentDbStatus === 'paid') {
@@ -1431,7 +1435,7 @@ async function applyReconciliation(req, res) {
                product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [newStatus, newUserId, newCashback, newCashback, commission, orderAmount, productName, productName, dbOrder.id]
+          [newStatus, newUserId, userCashback, userCashback, Math.floor(commission), Math.floor(orderAmount), productName, productName, dbOrder.id]
         );
 
         // Delete duplicate CLK pending order if smartMatch matched a different pending order ID
@@ -1454,7 +1458,7 @@ async function applyReconciliation(req, res) {
 
           const oldUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [oldUserId]);
           if (oldUserObj && oldUserObj.referred_by) {
-            const refBonus = oldCashback * 0.20;
+            const refBonus = Math.floor(oldCashback * 0.20);
             await db.run(
               `UPDATE users 
                SET balance = CASE WHEN COALESCE(balance, 0) >= ? THEN balance - ? ELSE 0 END,
@@ -1479,7 +1483,7 @@ async function applyReconciliation(req, res) {
 
             const targetUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [newUserId]);
             if (targetUserObj && targetUserObj.referred_by) {
-              const refBonus = newCashback * 0.20;
+              const refBonus = Math.floor(newCashback * 0.20);
               await db.run(
                 `UPDATE users 
                  SET balance = COALESCE(balance, 0) + ?,
@@ -1555,9 +1559,9 @@ async function applyReconciliation(req, res) {
               orderId,
               productName,
               productName,
-              orderAmount,
-              orderAmount,
-              commission,
+              Math.floor(orderAmount),
+              Math.floor(orderAmount),
+              Math.floor(commission),
               userCashback,
               userCashback,
               mappedStatus,
@@ -1579,10 +1583,10 @@ async function applyReconciliation(req, res) {
               targetClickId,
               productName,
               '',
-              orderAmount,
+              Math.floor(orderAmount),
               userCashback,
               userCashback,
-              commission,
+              Math.floor(commission),
               mappedStatus,
               orderTime
             ]
@@ -1603,7 +1607,7 @@ async function applyReconciliation(req, res) {
           // Check for referral bonus (20%)
           const targetUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
           if (targetUserObj && targetUserObj.referred_by) {
-            const refBonus = Math.round(finalCashback * 0.20);
+            const refBonus = Math.floor(finalCashback * 0.20);
             await db.run(
               `UPDATE users 
                SET balance = COALESCE(balance, 0) + ?,

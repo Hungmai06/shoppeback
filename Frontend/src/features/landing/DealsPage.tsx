@@ -84,11 +84,12 @@ export default function DealsPage() {
           ? info.productLink
           : (linkInput.startsWith('http') ? linkInput : `https://shopee.vn/product/${info.shopId || '0'}/${info.itemId}`);
 
+        const comm = Math.floor(Number(info.commission) || 0);
         setCheckedProduct({
           url: validProductUrl,
           name: info.productName || 'Sản phẩm Shopee',
-          price: info.price || 0,
-          cashbackRate: info.price > 0 ? (info.commission / info.price) : 0.07,
+          price: Math.floor(Number(info.price) || 0),
+          cashbackRate: info.price > 0 ? (comm / info.price) : 0.07,
           image: info.imageUrl
             ? (info.imageUrl.startsWith('http') ? info.imageUrl : `https://cf.shopee.vn/file/${info.imageUrl}`)
             : ''
@@ -153,8 +154,8 @@ export default function DealsPage() {
           id: data.clickId || `CLK${Date.now()}${Math.random().toString(36).substring(2, 6)}`,
           productName: checkedProduct.name,
           productImage: checkedProduct.image,
-          orderAmount: checkedProduct.price,
-          estimatedCashback: Math.round(checkedProduct.price * (checkedProduct.cashbackRate || 0.07) * 0.5),
+          orderAmount: Math.floor(checkedProduct.price),
+          estimatedCashback: Math.floor(checkedProduct.price * (checkedProduct.cashbackRate || 0.07) * 0.5),
           status: 'pending',
           createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
           userId: currentUser.id

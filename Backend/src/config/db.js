@@ -288,6 +288,17 @@ async function initializeDatabase() {
       console.log('Seeded real admin: khoahodrive0604@gmail.com');
     }
 
+    // Truncate decimal places in existing orders and users
+    try {
+      await wrapper.run('UPDATE orders SET shopee_commission = FLOOR(shopee_commission) WHERE shopee_commission IS NOT NULL');
+      await wrapper.run('UPDATE orders SET real_cashback = FLOOR(real_cashback) WHERE real_cashback IS NOT NULL');
+      await wrapper.run('UPDATE orders SET estimated_cashback = FLOOR(estimated_cashback) WHERE estimated_cashback IS NOT NULL');
+      await wrapper.run('UPDATE orders SET order_amount = FLOOR(order_amount) WHERE order_amount IS NOT NULL');
+      await wrapper.run('UPDATE users SET balance = FLOOR(balance) WHERE balance IS NOT NULL');
+      await wrapper.run('UPDATE users SET total_cashback = FLOOR(total_cashback) WHERE total_cashback IS NOT NULL');
+      await wrapper.run('UPDATE users SET referral_earnings = FLOOR(referral_earnings) WHERE referral_earnings IS NOT NULL');
+    } catch (e) {}
+
     console.log(`MySQL connected at: ${host}:${port}, database: ${dbName}`);
     return wrapper;
   } else {
@@ -507,6 +518,17 @@ async function initializeDatabase() {
       `, [realAdminHash]);
       console.log('Seeded real admin: khoahodrive0604@gmail.com');
     }
+
+    // Truncate decimal places in existing orders and users
+    try {
+      await db.run('UPDATE orders SET shopee_commission = CAST(shopee_commission AS INT) WHERE shopee_commission IS NOT NULL');
+      await db.run('UPDATE orders SET real_cashback = CAST(real_cashback AS INT) WHERE real_cashback IS NOT NULL');
+      await db.run('UPDATE orders SET estimated_cashback = CAST(estimated_cashback AS INT) WHERE estimated_cashback IS NOT NULL');
+      await db.run('UPDATE orders SET order_amount = CAST(order_amount AS INT) WHERE order_amount IS NOT NULL');
+      await db.run('UPDATE users SET balance = CAST(balance AS INT) WHERE balance IS NOT NULL');
+      await db.run('UPDATE users SET total_cashback = CAST(total_cashback AS INT) WHERE total_cashback IS NOT NULL');
+      await db.run('UPDATE users SET referral_earnings = CAST(referral_earnings AS INT) WHERE referral_earnings IS NOT NULL');
+    } catch (e) {}
 
     return db;
   }

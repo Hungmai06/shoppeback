@@ -7,7 +7,7 @@ async function requestWithdrawal(req, res) {
     return res.status(400).json({ message: 'Vui lòng cung cấp đầy đủ thông tin rút tiền' });
   }
 
-  const withdrawAmount = parseFloat(amount);
+  const withdrawAmount = Math.floor(parseFloat(amount) || 0);
   if (isNaN(withdrawAmount) || withdrawAmount < 50000) {
     return res.status(400).json({ message: 'Số tiền rút tối thiểu là 50.000đ' });
   }

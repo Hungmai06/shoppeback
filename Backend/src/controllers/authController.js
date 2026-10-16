@@ -356,7 +356,7 @@ async function adminUpdateUser(req, res) {
       return res.status(404).json({ message: 'Không tìm thấy người dùng' });
     }
 
-    const parsedBalance = (balance !== undefined && balance !== null && balance !== '') ? parseFloat(balance) : user.balance;
+    const parsedBalance = (balance !== undefined && balance !== null && balance !== '') ? Math.floor(parseFloat(balance) || 0) : user.balance;
 
     await db.run(
       `UPDATE users

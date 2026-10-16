@@ -591,7 +591,7 @@ export default function AdminPanel() {
         accountNumber: editUserAccount,
         accountHolder: editUserHolder,
         phone: editUserPhone,
-        balance: parseFloat(editUserBalance) || 0
+        balance: Math.floor(parseFloat(editUserBalance) || 0)
       });
       if (success) {
         toast.success('Cập nhật thông tin thành viên thành công!');
@@ -700,8 +700,8 @@ export default function AdminPanel() {
     };
 
     orders.forEach(o => {
-      const cb = o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0);
-      const comm = (o as any).shopeeCommission || (cb * 2);
+      const cb = Math.floor(o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0));
+      const comm = Math.floor((o as any).shopeeCommission !== undefined && (o as any).shopeeCommission !== null ? (o as any).shopeeCommission : (cb * 2));
       const mKey = extractMonthKey(o.createdTime) || currentMonthKey;
       
       if (monthlyMap[mKey]) {
@@ -1408,8 +1408,8 @@ export default function AdminPanel() {
                         </TableRow>
                       ) : (
                         paginatedOrders.map((o) => {
-                          const userCashback = o.realCashback !== undefined ? o.realCashback : o.estimatedCashback;
-                          const shopeeComm = o.shopeeCommission !== undefined && o.shopeeCommission !== null ? o.shopeeCommission : userCashback * 2;
+                          const userCashback = Math.floor(o.realCashback !== undefined ? o.realCashback : o.estimatedCashback);
+                          const shopeeComm = Math.floor(o.shopeeCommission !== undefined && o.shopeeCommission !== null ? o.shopeeCommission : userCashback * 2);
                           return (
                             <TableRow key={o.id}>
                               <TableCell className="font-bold text-primary">{o.id}</TableCell>
@@ -1426,9 +1426,9 @@ export default function AdminPanel() {
                               <TableCell className="max-w-[180px] truncate font-semibold">
                                 <span className="truncate" title={o.productName}>{o.productName}</span>
                               </TableCell>
-                              <TableCell className="text-right font-semibold">{Math.round(o.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
-                              <TableCell className="text-right font-semibold text-text-secondary">{Math.round(shopeeComm).toLocaleString('vi-VN')}đ</TableCell>
-                              <TableCell className="text-right font-bold text-primary">{Math.round(userCashback).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-semibold">{Math.floor(o.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-semibold text-text-secondary">{Math.floor(shopeeComm).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-bold text-primary">{Math.floor(userCashback).toLocaleString('vi-VN')}đ</TableCell>
                               <TableCell className="text-xs font-semibold text-text-secondary">
                                 {o.createdTime ? o.createdTime.substring(0, 16) : '-'}
                               </TableCell>

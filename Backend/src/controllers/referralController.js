@@ -31,7 +31,7 @@ exports.getReferralStats = async (req, res) => {
       `, f1Ids);
 
       orders.forEach(order => {
-        const baseCashback = order.real_cashback || order.estimated_cashback || 0;
+        const baseCashback = Math.floor(order.real_cashback || order.estimated_cashback || 0);
         pendingCommission += (baseCashback * 0.2);
       });
     }
@@ -40,8 +40,8 @@ exports.getReferralStats = async (req, res) => {
       clicks: 0, // Tính năng chưa theo dõi
       f1Count,
       f2Count: 0, // Đã bỏ F2
-      pendingCommission: Math.round(pendingCommission),
-      approvedCommission: Math.round(user.referral_earnings || 0)
+      pendingCommission: Math.floor(pendingCommission),
+      approvedCommission: Math.floor(user.referral_earnings || 0)
     });
   } catch (error) {
     console.error('Lỗi khi lấy thống kê giới thiệu:', error);
@@ -77,8 +77,8 @@ exports.getReferralHistory = async (req, res) => {
     `, f1Ids);
 
     const history = orders.map(order => {
-      const baseCashback = order.real_cashback || order.estimated_cashback || 0;
-      const bonus = baseCashback * 0.2;
+      const baseCashback = Math.floor(order.real_cashback || order.estimated_cashback || 0);
+      const bonus = Math.floor(baseCashback * 0.2);
       
       return {
         id: order.id,

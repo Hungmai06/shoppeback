@@ -118,11 +118,11 @@ export default function UserDashboard() {
   // Computations for dashboard metrics
   const totalOrders = userOrders.length;
 
-  const pendingCashback = Math.round(userOrders
+  const pendingCashback = Math.floor(userOrders
     .filter(o => o.status === 'pending')
-    .reduce((sum, o) => sum + o.estimatedCashback, 0));
+    .reduce((sum, o) => sum + (o.estimatedCashback || 0), 0));
 
-  const approvedCashback = Math.round(userOrders
+  const approvedCashback = Math.floor(userOrders
     .filter(o => o.status === 'approved' || o.status === 'paid')
     .reduce((sum, o) => sum + (o.realCashback !== undefined ? o.realCashback : o.estimatedCashback), 0));
 
@@ -435,9 +435,9 @@ export default function UserDashboard() {
                           <TableRow key={order.id} onClick={() => setSelectedOrder(order)}>
                             <TableCell className="font-bold text-primary">{order.id}</TableCell>
                             <TableCell className="max-w-[200px] truncate font-semibold">{order.productName}</TableCell>
-                            <TableCell className="text-right font-semibold">{Math.round(order.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
+                            <TableCell className="text-right font-semibold">{Math.floor(order.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
                             <TableCell className="text-right font-bold text-primary">
-                              {Math.round(order.estimatedCashback).toLocaleString('vi-VN')}đ
+                              {Math.floor(order.estimatedCashback).toLocaleString('vi-VN')}đ
                             </TableCell>
                             <TableCell>{getStatusBadge(order.status)}</TableCell>
                             <TableCell className="text-xs text-text-secondary font-medium">{order.createdTime}</TableCell>
@@ -488,10 +488,10 @@ export default function UserDashboard() {
                             <TableCell className="max-w-[240px] truncate font-semibold">
                               <span className="truncate">{order.productName}</span>
                             </TableCell>
-                            <TableCell className="text-right font-semibold">{Math.round(order.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-right font-bold text-primary">{Math.round(order.estimatedCashback).toLocaleString('vi-VN')}đ</TableCell>
+                            <TableCell className="text-right font-semibold">{Math.floor(order.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
+                            <TableCell className="text-right font-bold text-primary">{Math.floor(order.estimatedCashback).toLocaleString('vi-VN')}đ</TableCell>
                             <TableCell className="text-right font-bold text-success">
-                              {order.realCashback ? `${Math.round(order.realCashback).toLocaleString('vi-VN')}đ` : '-'}
+                              {order.realCashback ? `${Math.floor(order.realCashback).toLocaleString('vi-VN')}đ` : '-'}
                             </TableCell>
                             <TableCell>{getStatusBadge(order.status)}</TableCell>
                             <TableCell className="text-xs text-text-secondary font-medium">{order.createdTime}</TableCell>
@@ -735,7 +735,7 @@ export default function UserDashboard() {
                         <CardContent className="p-4 flex-1 flex flex-col justify-between">
                           <div>
                             <h4 className="font-bold text-sm text-text line-clamp-2 leading-snug mb-2">{item.productName}</h4>
-                            <p className="text-xs text-text-secondary font-semibold">Ước tính hoàn: <span className="text-primary font-bold">{Math.round(item.estimatedCashback).toLocaleString('vi-VN')}đ</span></p>
+                            <p className="text-xs text-text-secondary font-semibold">Ước tính hoàn: <span className="text-primary font-bold">{Math.floor(item.estimatedCashback).toLocaleString('vi-VN')}đ</span></p>
                           </div>
                           <Button
                             size="sm"
@@ -1258,12 +1258,12 @@ export default function UserDashboard() {
               <div className="grid grid-cols-2 gap-4 bg-white border border-border p-4 rounded-input text-left">
                 <div>
                   <p className="text-[10px] font-semibold text-text-secondary">Mức hoa hồng dự kiến (7%)</p>
-                  <p className="text-sm font-bold text-text mt-0.5">{Math.round(selectedOrder.estimatedCashback).toLocaleString('vi-VN')}đ</p>
+                  <p className="text-sm font-bold text-text mt-0.5">{Math.floor(selectedOrder.estimatedCashback).toLocaleString('vi-VN')}đ</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold text-success">Số tiền thực nhận</p>
                   <p className="text-sm font-black text-success mt-0.5">
-                    {selectedOrder.realCashback ? `${Math.round(selectedOrder.realCashback).toLocaleString('vi-VN')}đ` : 'Đang xử lý...'}
+                    {selectedOrder.realCashback ? `${Math.floor(selectedOrder.realCashback).toLocaleString('vi-VN')}đ` : 'Đang xử lý...'}
                   </p>
                 </div>
               </div>
