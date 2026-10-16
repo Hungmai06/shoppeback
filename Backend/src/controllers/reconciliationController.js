@@ -3,6 +3,7 @@ const path = require('path');
 const csv = require('csv-parser');
 const XLSX = require('xlsx');
 const { getDatabase } = require('../config/db');
+const { recalculateUserBalances } = require('../services/balanceService');
 
 async function readRowsFromFile(filePath, originalName = '') {
   const ext = path.extname(originalName || filePath).toLowerCase();
@@ -1688,6 +1689,9 @@ async function applyReconciliation(req, res) {
         0
       ]
     );
+
+    // Tự động đồng bộ và tính lại toàn bộ số dư người dùng theo tất cả đơn hoàn thành và lịch sử rút tiền
+    await recalculateUserBalances(db);
 
     // Commit Transaction
     await db.run('COMMIT');

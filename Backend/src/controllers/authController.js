@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { getDatabase } = require('../config/db');
 const { ensureUuid } = require('../services/shopeeService');
+const { recalculateUserBalances } = require('../services/balanceService');
 
 
 function generateAccessToken(id) {
@@ -369,45 +370,17 @@ async function adminGetUsers(req, res) {
 async function adminSyncBalances(req, res) {
   try {
     const db = await getDatabase();
-    const users = await db.all('SELECT id, referral_earnings FROM users');
-
     await db.run('BEGIN TRANSACTION');
-
-    for (const u of users) {
-      const orderRow = await db.get(
-        `SELECT SUM(CASE WHEN real_cashback IS NOT NULL AND real_cashback > 0 THEN real_cashback ELSE estimated_cashback END) as totalCashback
-         FROM orders
-         WHERE user_id = ? AND status IN ('approved', 'paid')`,
-        [u.id]
-      );
-      const completedCashback = Math.floor(orderRow ? (orderRow.totalCashback || 0) : 0);
-      const refEarnings = Math.floor(u.referral_earnings || 0);
-
-      const withRow = await db.get(
-        `SELECT SUM(amount) as totalWithdrawn
-         FROM withdrawals
-         WHERE user_id = ? AND status IN ('approved', 'pending')`,
-        [u.id]
-      );
-      const totalDeductions = Math.floor(withRow ? (withRow.totalWithdrawn || 0) : 0);
-
-      // Số dư = (Tổng đơn hoàn thành + Hoa hồng giới thiệu) - (Tổng tiền rút)
-      const calculatedBalance = Math.max(0, (completedCashback + refEarnings) - totalDeductions);
-
-      await db.run(
-        `UPDATE users
-         SET balance = ?,
-             total_cashback = ?,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [calculatedBalance, completedCashback, u.id]
-      );
-    }
-
+    const result = await recalculateUserBalances(db);
     await db.run('COMMIT');
 
-    res.json({ success: true, message: 'Đã đồng bộ lại số dư tất cả thành viên theo đơn hoàn thành và tiền đã rút thành công!' });
+    res.json({ 
+      success: true, 
+      message: `Đã đồng bộ lại số dư cho ${result.updatedCount || 0} thành viên theo đúng các đơn hoàn thành và tiền đã rút!` 
+    });
   } catch (error) {
+    const db = await getDatabase();
+    try { await db.run('ROLLBACK'); } catch (_) {}
     console.error('Admin Sync Balances Error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ khi đồng bộ số dư thành viên' });
   }

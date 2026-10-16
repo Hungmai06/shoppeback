@@ -1,4 +1,5 @@
 const { getDatabase } = require('../config/db');
+const { recalculateUserBalances } = require('../services/balanceService');
 
 async function logClick(req, res) {
   const { productUrl, productName, productImage, orderAmount, estimatedCashback } = req.body;
@@ -297,6 +298,9 @@ async function adminUpdateOrderStatus(req, res) {
       }
     }
 
+    // Tự động đồng bộ chuẩn số dư của người dùng bị ảnh hưởng
+    await recalculateUserBalances(db, [targetUserId, oldUserId].filter(Boolean));
+
     await db.run('COMMIT');
 
     res.json({ message: `Đã cập nhật đơn hàng thành công` });
@@ -319,6 +323,9 @@ async function adminDeleteOrder(req, res) {
     }
 
     await db.run('DELETE FROM orders WHERE id = ?', [id]);
+    if (order.user_id) {
+      await recalculateUserBalances(db, [order.user_id]);
+    }
     res.json({ message: 'Đã xóa đơn hàng thành công' });
   } catch (error) {
     console.error('Admin Delete Order Error:', error);

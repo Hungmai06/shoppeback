@@ -1,4 +1,5 @@
 const { getDatabase } = require('../config/db');
+const { recalculateUserBalances } = require('../services/balanceService');
 
 async function requestWithdrawal(req, res) {
   const { amount, bankName, accountNumber, accountHolder } = req.body;
@@ -57,6 +58,9 @@ async function requestWithdrawal(req, res) {
         `Yêu cầu rút ${withdrawAmount.toLocaleString('vi-VN')}đ của bạn đã được gửi. Chúng tôi sẽ xử lý trong vòng 24h.`
       ]
     );
+
+    // Tự động đồng bộ chuẩn số dư
+    await recalculateUserBalances(db, [userId]);
 
     await db.run('COMMIT');
 
@@ -158,6 +162,9 @@ async function adminUpdateWithdrawalStatus(req, res) {
        VALUES (?, ?, ?, ?, 'wallet')`,
       [notifId, withdrawal.user_id, title, content]
     );
+
+    // Tự động đồng bộ chuẩn số dư
+    await recalculateUserBalances(db, [withdrawal.user_id]);
 
     await db.run('COMMIT');
 

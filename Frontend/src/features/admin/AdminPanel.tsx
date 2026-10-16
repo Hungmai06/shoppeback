@@ -2323,7 +2323,7 @@ export default function AdminPanel() {
                 required
               />
               <p className="text-[11px] text-text-secondary font-medium">
-                * Khách sẽ được nhận hoàn tiền: <span className="text-primary font-bold">{Math.round(((parseFloat(editOrderRealCashback) || 0) * (settings?.cashbackPercentage ?? 50) / 100)).toLocaleString('vi-VN')}đ</span> ({settings?.cashbackPercentage ?? 50}% hoa hồng).
+                * Khách sẽ được nhận hoàn tiền: <span className="text-primary font-bold">{Math.floor(((parseFloat(editOrderRealCashback) || 0) * (settings?.cashbackPercentage ?? 50) / 100)).toLocaleString('vi-VN')}đ</span> ({settings?.cashbackPercentage ?? 50}% hoa hồng).
               </p>
             </div>
 
