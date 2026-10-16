@@ -328,20 +328,88 @@ async function adminGetUsers(req, res) {
   try {
     const db = await getDatabase();
     const users = await db.all(
-      `SELECT id, name, email, phone, bank_name as bankName, 
-              account_number as accountNumber, account_holder as accountHolder, 
-              telegram_chat_id as telegramChatId, email_notify as emailNotify, 
-              telegram_notify as telegramNotify, role, status, balance, 
-              total_cashback as totalCashback, pending_cashback as pendingCashback, 
-              referral_earnings as referralEarnings,
-              referred_by as referredBy,
-              created_at as createdAt 
-       FROM users`
+      `SELECT u.id, u.name, u.email, u.phone, u.bank_name as bankName, 
+              u.account_number as accountNumber, u.account_holder as accountHolder, 
+              u.telegram_chat_id as telegramChatId, u.email_notify as emailNotify, 
+              u.telegram_notify as telegramNotify, u.role, u.status, u.balance, 
+              u.total_cashback as totalCashback, u.pending_cashback as pendingCashback, 
+              u.referral_earnings as referralEarnings,
+              u.referred_by as referredBy,
+              u.created_at as createdAt,
+              COALESCE((
+                SELECT SUM(w.amount) 
+                FROM withdrawals w 
+                WHERE w.user_id = u.id AND w.status = 'approved'
+              ), 0) as totalWithdrawn,
+              COALESCE((
+                SELECT SUM(CASE WHEN o.real_cashback IS NOT NULL AND o.real_cashback > 0 THEN o.real_cashback ELSE o.estimated_cashback END)
+                FROM orders o 
+                WHERE o.user_id = u.id AND o.status IN ('approved', 'paid')
+              ), 0) as completedOrderCashback
+       FROM users u
+       ORDER BY u.created_at DESC`
     );
-    res.json(users);
+
+    const formattedUsers = users.map(u => ({
+      ...u,
+      balance: Math.floor(Number(u.balance) || 0),
+      totalCashback: Math.floor(Number(u.totalCashback) || 0),
+      totalWithdrawn: Math.floor(Number(u.totalWithdrawn) || 0),
+      completedOrderCashback: Math.floor(Number(u.completedOrderCashback) || 0),
+      referralEarnings: Math.floor(Number(u.referralEarnings) || 0)
+    }));
+
+    res.json(formattedUsers);
   } catch (error) {
     console.error('Admin Get Users Error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ khi lấy danh sách người dùng' });
+  }
+}
+
+async function adminSyncBalances(req, res) {
+  try {
+    const db = await getDatabase();
+    const users = await db.all('SELECT id, referral_earnings FROM users');
+
+    await db.run('BEGIN TRANSACTION');
+
+    for (const u of users) {
+      const orderRow = await db.get(
+        `SELECT SUM(CASE WHEN real_cashback IS NOT NULL AND real_cashback > 0 THEN real_cashback ELSE estimated_cashback END) as totalCashback
+         FROM orders
+         WHERE user_id = ? AND status IN ('approved', 'paid')`,
+        [u.id]
+      );
+      const completedCashback = Math.floor(orderRow ? (orderRow.totalCashback || 0) : 0);
+      const refEarnings = Math.floor(u.referral_earnings || 0);
+
+      const withRow = await db.get(
+        `SELECT SUM(amount) as totalWithdrawn
+         FROM withdrawals
+         WHERE user_id = ? AND status IN ('approved', 'pending')`,
+        [u.id]
+      );
+      const totalDeductions = Math.floor(withRow ? (withRow.totalWithdrawn || 0) : 0);
+
+      // Số dư = (Tổng đơn hoàn thành + Hoa hồng giới thiệu) - (Tổng tiền rút)
+      const calculatedBalance = Math.max(0, (completedCashback + refEarnings) - totalDeductions);
+
+      await db.run(
+        `UPDATE users
+         SET balance = ?,
+             total_cashback = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [calculatedBalance, completedCashback, u.id]
+      );
+    }
+
+    await db.run('COMMIT');
+
+    res.json({ success: true, message: 'Đã đồng bộ lại số dư tất cả thành viên theo đơn hoàn thành và tiền đã rút thành công!' });
+  } catch (error) {
+    console.error('Admin Sync Balances Error:', error);
+    res.status(500).json({ message: 'Lỗi máy chủ khi đồng bộ số dư thành viên' });
   }
 }
 
@@ -661,6 +729,7 @@ module.exports = {
   getNotifications,
   readNotifications,
   adminGetUsers,
+  adminSyncBalances,
   adminUpdateUser,
   adminCreateUser,
   adminDeleteUser,

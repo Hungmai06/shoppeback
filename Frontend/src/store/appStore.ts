@@ -48,6 +48,8 @@ export interface UserProfile {
   pendingCashback?: number;
   referralEarnings?: number;
   referredBy?: string;
+  totalWithdrawn?: number;
+  completedOrderCashback?: number;
 }
 
 export interface Notification {
@@ -193,6 +195,7 @@ interface AppState {
   updateAdminUser: (id: string, userData: Partial<UserProfile>) => Promise<boolean>;
   createAdminUser: (userData: { name: string; email: string; password: string; role: 'user' | 'admin'; phone?: string }) => Promise<boolean>;
   deleteAdminUser: (id: string) => Promise<boolean>;
+  syncAdminUserBalances: () => Promise<boolean>;
   resetUserPassword: (id: string, newPassword?: string) => Promise<boolean>;
   toggleUserStatus: (id: string) => Promise<'active' | 'locked' | null>;
 }
@@ -815,6 +818,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       return false;
     } catch (error) {
       console.error('Delete admin user error:', error);
+      return false;
+    }
+  },
+
+  syncAdminUserBalances: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/admin/users/sync-balances`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      if (res.ok) {
+        await get().fetchAdminUsers();
+        await get().fetchAdminStats();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Sync admin user balances error:', error);
       return false;
     }
   },

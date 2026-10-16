@@ -55,8 +55,10 @@ export default function AdminPanel() {
     updateOrderStatus, deleteOrderAdmin, updateWithdrawalStatus, updateSettings,
     reconciliationHistory, uploadReconciliationCSV, applyReconciliationCSV,
     updateAdminUser, adminStats, fetchAdminOrders, fetchAdminStats, fetchAdminWithdrawals, fetchAdminUsers, fetchReconciliationLogs, exportOrdersCSV,
-    createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus
+    createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus, syncAdminUserBalances
   } = useAppStore();
+
+  const [isSyncingBalances, setIsSyncingBalances] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'orders' | 'withdrawals' | 'reconciliation' | 'settings'>('dashboard');
 
@@ -646,6 +648,17 @@ export default function AdminPanel() {
     setResetPasswordValue('123456');
   };
 
+  const handleSyncBalances = async () => {
+    setIsSyncingBalances(true);
+    const success = await syncAdminUserBalances();
+    if (success) {
+      toast.success('Đã đồng bộ lại số dư theo các đơn hoàn thành và tiền đã rút thành công!');
+    } else {
+      toast.error('Đồng bộ số dư thất bại');
+    }
+    setIsSyncingBalances(false);
+  };
+
   const handleToggleStatus = async (u: UserProfile) => {
     const newStatus = await toggleUserStatus(u.id);
     if (newStatus) {
@@ -1169,6 +1182,18 @@ export default function AdminPanel() {
                     <option value="admin">Quản trị viên</option>
                   </select>
                 </div>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSyncBalances}
+                  disabled={isSyncingBalances}
+                  className="flex items-center gap-1.5 text-xs font-bold border-primary/30 text-primary hover:bg-primary/5 py-2.5 px-3 h-auto shrink-0"
+                  title="Đồng bộ số dư: (Tổng đơn hoàn thành + Hoa hồng giới thiệu) - Tiền đã rút"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncingBalances ? 'animate-spin' : ''}`} />
+                  Đồng bộ số dư chuẩn
+                </Button>
               </div>
 
               <Card className="border-border/50">
@@ -1181,7 +1206,8 @@ export default function AdminPanel() {
                         <TableHead>Email</TableHead>
                         <TableHead>Điện Thoại</TableHead>
                         <TableHead>Vai Trò</TableHead>
-                        <TableHead>Số Dư</TableHead>
+                        <TableHead>Số Dư Ví</TableHead>
+                        <TableHead>Đã Rút</TableHead>
                         <TableHead>Mã Giới Thiệu</TableHead>
                         <TableHead>Ngân Hàng</TableHead>
                         <TableHead>Trạng Thái</TableHead>
@@ -1204,6 +1230,9 @@ export default function AdminPanel() {
                           </TableCell>
                           <TableCell className="text-xs font-bold text-primary">
                             {(u.balance || 0).toLocaleString('vi-VN')}đ
+                          </TableCell>
+                          <TableCell className="text-xs font-bold text-emerald-600">
+                            {(u.totalWithdrawn || 0).toLocaleString('vi-VN')}đ
                           </TableCell>
                           <TableCell className="text-xs font-mono font-semibold text-text-secondary">{u.referredBy || '-'}</TableCell>
                           <TableCell className="text-xs font-semibold">{u.bankName ? `${u.bankName} - ${u.accountNumber}` : '-'}</TableCell>
@@ -2123,6 +2152,16 @@ export default function AdminPanel() {
 
             {selectedUser && (
               <>
+                <div className="grid grid-cols-2 gap-3 p-3 bg-bg/60 border border-border rounded-input text-xs">
+                  <div>
+                    <span className="text-text-secondary block font-medium">Tổng tiền đã rút:</span>
+                    <span className="font-bold text-emerald-600 text-sm">{(selectedUser.totalWithdrawn || 0).toLocaleString('vi-VN')}đ</span>
+                  </div>
+                  <div>
+                    <span className="text-text-secondary block font-medium">Hoàn tiền đơn hoàn thành:</span>
+                    <span className="font-bold text-primary text-sm">{(selectedUser.completedOrderCashback || selectedUser.totalCashback || 0).toLocaleString('vi-VN')}đ</span>
+                  </div>
+                </div>
                 <Input
                   label="Số dư khả dụng hiện tại (₫)"
                   type="number"

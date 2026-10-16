@@ -234,39 +234,54 @@ function resolveSubIdToUserId(cleanSubId, { userIds, userMap, affiliateSubIdToUs
   return { targetUserId: null, targetClickId: null, pendingOrderId: null };
 }
 
-// Helper to parse numbers from Shopee CSV format (e.g., "1.200.000₫", "25.000", "25,000", "1.200.000,50")
+// Helper to parse numbers from Shopee CSV format (e.g., "4673.385", "1892.23", "1.200.000₫", "25.000", "25,000", "1.200.000,50")
 function parseShopeeNumber(val) {
-  if (val === null || val === undefined) return 0;
-  if (typeof val === 'number') return val;
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
 
   let str = String(val).trim();
   if (!str) return 0;
 
-  // Remove currency symbol ₫, spaces, and quotes
-  str = str.replace(/[₫\s"']/g, '');
+  // Remove currency symbols (₫, đ), spaces, and quotes
+  str = str.replace(/[₫đ\s"']/gi, '');
 
-  // 1. Format: "1.200.000" or "25.000" (Vietnamese thousands separator dot)
-  if (/^\d{1,3}(\.\d{3})+$/.test(str)) {
+  // 1. Both dot and comma present (e.g. "1.200.000,50" or "1,200,000.50")
+  if (str.includes('.') && str.includes(',')) {
+    if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+      // Vietnamese format: dot is thousands, comma is decimal
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      // US format: comma is thousands, dot is decimal
+      str = str.replace(/,/g, '');
+    }
+  } 
+  // 2. Multiple dots present (e.g. "1.200.000" or "4.673.385"): thousands separators
+  else if ((str.match(/\./g) || []).length > 1) {
     str = str.replace(/\./g, '');
   } 
-  // 2. Format: "1.200.000,50" (Vietnamese format with comma decimal)
-  else if (/^\d{1,3}(\.\d{3})+,\d+$/.test(str)) {
-    str = str.replace(/\./g, '').replace(',', '.');
+  // 3. Multiple commas present (e.g. "1,200,000"): thousands separators
+  else if ((str.match(/,/g) || []).length > 1) {
+    str = str.replace(/,/g, '');
   } 
-  // 3. Format: "25,000" (US format thousands separator)
-  else if (/^\d+,\d{3}$/.test(str)) {
-    str = str.replace(',', '');
+  // 4. Single comma present (e.g. "4673,385" or "25,000")
+  else if (str.includes(',')) {
+    const parts = str.split(',');
+    if (parts[0].length > 3 || parts[1].length !== 3) {
+      str = str.replace(',', '.');
+    } else {
+      str = str.replace(',', '');
+    }
   } 
-  // 4. Format: "25000,50" (Comma decimal without dot)
-  else if (/^\d+,\d+$/.test(str) && !str.includes('.')) {
-    str = str.replace(',', '.');
-  } 
-  // 5. Fallback check for dot separators in strings like "100.00" vs "100.000"
-  else if (str.includes('.') && !str.includes(',')) {
+  // 5. Single dot present (e.g. "4673.385", "1892.23", "626.5", "100.000")
+  // In Shopee CSV/Excel, commission is exported with decimal point (e.g. 4673.385).
+  // Left side has > 3 digits -> 100% decimal point!
+  // Only if 1-3 digits followed by exactly '000' (e.g. "100.000" or "25.000") is it treated as thousands separator.
+  else if (str.includes('.')) {
     const parts = str.split('.');
-    if (parts.length > 1 && parts.slice(1).every(p => p.length === 3)) {
+    if (parts[0].length <= 3 && parts[1] === '000') {
       str = parts.join('');
     }
+    // Otherwise keep dot as decimal point: 4673.385 -> 4673.385
   }
 
   const num = parseFloat(str.replace(/[^0-9.-]+/g, ''));

@@ -10,6 +10,7 @@ const {
   getNotifications,
   readNotifications,
   adminGetUsers,
+  adminSyncBalances,
   adminUpdateUser,
   adminCreateUser,
   adminDeleteUser,
@@ -29,6 +30,7 @@ router.put('/notifications/read', protect, readNotifications);
 
 // Admin user management routes
 router.get('/admin/users', protect, adminOnly, adminGetUsers);
+router.post('/admin/users/sync-balances', protect, adminOnly, adminSyncBalances);
 router.post('/admin/users', protect, adminOnly, adminCreateUser);
 router.put('/admin/users/:id', protect, adminOnly, adminUpdateUser);
 router.delete('/admin/users/:id', protect, adminOnly, adminDeleteUser);
