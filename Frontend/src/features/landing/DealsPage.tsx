@@ -141,7 +141,9 @@ export default function DealsPage() {
         body: JSON.stringify({
           url: checkedProduct.url,
           userId: userId,
-          user_id: userId
+          user_id: userId,
+          sub_id1: userId,
+          sub_id: userId
         })
       });
       const data = await res.json();
@@ -339,7 +341,7 @@ export default function DealsPage() {
 
                     <div>
                       {step1ActivatedUrl === checkedProduct.url && (
-                        <div className="mb-3 px-3.5 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 font-bold animate-pulse">
+                        <div className="mb-3 px-3.5 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 font-bold">
                           <span className="flex items-center gap-1.5">
                             <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
                             Đã kích hoạt hoa hồng! Bấm Bước 2 để mở sản phẩm của bạn.

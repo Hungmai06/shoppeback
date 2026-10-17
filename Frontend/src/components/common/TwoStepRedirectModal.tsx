@@ -141,7 +141,7 @@ export default function TwoStepRedirectModal({
                 disabled={!step1Completed}
                 className={`w-full py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all ${
                   step1Completed
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 animate-pulse'
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 active:scale-[0.99]'
                     : 'bg-gray-300 text-gray-500 border border-gray-300 cursor-not-allowed opacity-60'
                 }`}
               >

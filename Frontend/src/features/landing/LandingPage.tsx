@@ -113,7 +113,7 @@ export default function LandingPage() {
               ? linkInput.trim()
               : `https://shopee.vn/product/${info.shopId || '0'}/${info.itemId}`);
 
-        setCheckedProduct({
+        const productObj: any = {
           itemId: info.itemId,
           name: info.productName || 'Sản phẩm Shopee',
           shopName: info.shopName || 'Shopee Shop',
@@ -132,10 +132,22 @@ export default function LandingPage() {
           dataSource: info.dataSource || 'api',
           priceStats: info.priceStats || null,
           cashbackRate: info.price > 0 ? (Math.floor(Number(info.commission) || 0) / info.price) : 0.07
-        });
+        };
+
+        setCheckedProduct(productObj);
+        try {
+          sessionStorage.setItem('checked_shopee_product', JSON.stringify(productObj));
+          sessionStorage.setItem('checked_shopee_input', linkInput);
+        } catch (e) {}
+
         toast.success('Đã tìm thấy thông tin sản phẩm Shopee!');
       } else {
         setCheckedProduct(null);
+        try {
+          sessionStorage.removeItem('checked_shopee_product');
+          sessionStorage.removeItem('checked_shopee_input');
+        } catch (e) {}
+
         if (data?.code === 'MISSING_API_KEY' || data?.apiKeyNotice?.status === 'missing') {
           toast.error('Hệ thống chưa cài đặt API Key AddLiveTag. Vui lòng vào Cài đặt Quản trị viên để nhập API Key.');
         } else if (data?.message) {
@@ -147,56 +159,68 @@ export default function LandingPage() {
     } catch (error: any) {
       console.warn('Error fetching Shopee product:', error);
       setCheckedProduct(null);
+      try {
+        sessionStorage.removeItem('checked_shopee_product');
+        sessionStorage.removeItem('checked_shopee_input');
+      } catch (e) {}
       toast.error('Không tìm thấy sản phẩm hoặc link không tồn tại. Vui lòng kiểm tra lại link Shopee!');
     } finally {
       setIsSearching(false);
     }
   };
 
-  // Auto-resume pending link conversion after user logs in
+  // Khôi phục sản phẩm tra cứu trên màn hình khi load trang
+  useEffect(() => {
+    try {
+      const savedProd = sessionStorage.getItem('checked_shopee_product');
+      const savedInput = sessionStorage.getItem('checked_shopee_input');
+      if (savedProd && !checkedProduct) {
+        setCheckedProduct(JSON.parse(savedProd));
+      }
+      if (savedInput && !shopeeLink) {
+        setShopeeLink(savedInput);
+      }
+    } catch (e) {}
+  }, []);
+
+  // Sau khi đăng nhập thành công: Giữ nguyên sản phẩm đã tra cứu trên màn hình để thực hiện bước tiếp theo
   useEffect(() => {
     if (currentUser) {
-      const pendingUrl = sessionStorage.getItem('pending_shopee_url');
-      if (pendingUrl) {
-        sessionStorage.removeItem('pending_shopee_url');
-        const pendingName = sessionStorage.getItem('pending_shopee_name') || 'Sản phẩm Shopee';
-        const pendingPrice = Number(sessionStorage.getItem('pending_shopee_price')) || 0;
-        const pendingImage = sessionStorage.getItem('pending_shopee_image') || '';
-        sessionStorage.removeItem('pending_shopee_name');
-        sessionStorage.removeItem('pending_shopee_price');
-        sessionStorage.removeItem('pending_shopee_image');
+      try {
+        const savedProd = sessionStorage.getItem('checked_shopee_product');
+        const savedInput = sessionStorage.getItem('checked_shopee_input');
+        if (savedProd && !checkedProduct) {
+          setCheckedProduct(JSON.parse(savedProd));
+        }
+        if (savedInput && !shopeeLink) {
+          setShopeeLink(savedInput);
+        }
 
-        const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-        const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
-        const redirectUrl = `${API_BASE}/shopee/redirect?url=${encodeURIComponent(pendingUrl)}&user_id=${encodeURIComponent(currentUser.id)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
-
-        const newOrder: Order = {
-          id: `CLK${Date.now()}${Math.random().toString(36).substring(2, 6)}`,
-          productName: pendingName,
-          productImage: pendingImage,
-          orderAmount: pendingPrice,
-          estimatedCashback: Math.round(pendingPrice * 0.035),
-          status: 'pending',
-          createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-          userId: currentUser.id
-        };
-        addOrder(newOrder);
-
-        toast.success('Đang chuyển hướng sang Shopee để mua hàng...');
-        window.location.href = redirectUrl;
-      }
+        const autoNext = sessionStorage.getItem('pending_auto_next_step');
+        if (autoNext === 'true') {
+          sessionStorage.removeItem('pending_auto_next_step');
+          // Tự động mở Modal bước tiếp theo sau khi đăng nhập xong
+          setTimeout(() => {
+            const btn = document.getElementById('btn-buy-now-cashback');
+            if (btn) {
+              btn.click();
+            }
+          }, 350);
+        }
+      } catch (e) {}
     }
-  }, [currentUser, addOrder]);
+  }, [currentUser]);
 
   const handleCreateAffiliateLink = async () => {
     if (!checkedProduct) return;
 
     if (!currentUser) {
-      // Save pending product details in sessionStorage so user doesn't lose their checked product
-      sessionStorage.setItem('pending_shopee_url', checkedProduct.url);
-      sessionStorage.setItem('pending_shopee_name', checkedProduct.name);
-      sessionStorage.setItem('pending_shopee_price', String(checkedProduct.price));
-      sessionStorage.setItem('pending_shopee_image', checkedProduct.image || '');
+      // Lưu lại thông tin sản phẩm đã tra cứu và đánh dấu để mở tiếp sau khi đăng nhập
+      try {
+        sessionStorage.setItem('checked_shopee_product', JSON.stringify(checkedProduct));
+        sessionStorage.setItem('checked_shopee_input', shopeeLink);
+        sessionStorage.setItem('pending_auto_next_step', 'true');
+      } catch (e) {}
 
       openAuthModal('login');
       return;
@@ -228,7 +252,9 @@ export default function LandingPage() {
         body: JSON.stringify({
           url: checkedProduct.url,
           userId: userId,
-          user_id: userId
+          user_id: userId,
+          sub_id1: userId,
+          sub_id: userId
         })
       });
       const data = await res.json();
@@ -450,7 +476,7 @@ export default function LandingPage() {
 
                       <div>
                         {step1ActivatedUrl === checkedProduct.url && (
-                          <div className="mb-3 px-3.5 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 font-bold animate-pulse">
+                          <div className="mb-3 px-3.5 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 font-bold">
                             <span className="flex items-center gap-1.5">
                               <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
                               Đã kích hoạt hoa hồng! Bấm Bước 2 để mở sản phẩm của bạn.
@@ -460,6 +486,7 @@ export default function LandingPage() {
                         )}
 
                         <Button
+                          id="btn-buy-now-cashback"
                           onClick={handleCreateAffiliateLink}
                           className={`w-full font-extrabold flex items-center justify-center gap-2 group py-4 transition-all text-base shadow-lg rounded-xl ${
                             step1ActivatedUrl === checkedProduct.url

@@ -575,6 +575,16 @@ function formatToMySQLDateTime(val) {
   return new Date().toISOString().replace('T', ' ').substring(0, 19);
 }
 
+// Helper to extract calendar date 'YYYY-MM-DD' from various string/date formats
+function getCalendarDateStr(val) {
+  if (!val) return null;
+  const formatted = formatToMySQLDateTime(val);
+  if (formatted && formatted.length >= 10) {
+    return formatted.substring(0, 10); // 'YYYY-MM-DD'
+  }
+  return null;
+}
+
 // Helper to detect CSV delimiter
 function detectSeparator(filePath) {
   try {
@@ -640,11 +650,12 @@ function mapShopeeStatus(shopeeStatus) {
 
 /**
  * Thuật toán quét đối soát thông minh & linh hoạt:
- * Khớp Đơn chờ CLK (hoặc đơn gán thủ công), Click log, và User theo ID sản phẩm, ID Shop, Tên sản phẩm/Model Code, và Thời gian.
- * BẮT BUỘC NGHIÊM NGẶT: Nếu file CSV KHÔNG CÓ Sub_id1, chỉ gán thành viên khi khớp Sản phẩm/Shop ID VÀ trong khung thời gian < 2 tiếng!
+ * Khớp Đơn chờ CLK (hoặc đơn gán thủ công), Click log, và User theo:
+ * 1. Khớp theo ID đơn / SubID trực tiếp
+ * 2. Khớp dự phòng thông minh: Thời gian đặt cùng ngày (Same calendar day / trong 24h) VÀ tra thông tin sản phẩm (Tên/Item ID/Shop ID/Giá).
  */
 function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClickLogsFull, pendingOrders, extraOptions = {}) {
-  const { clickTimeStr, shopId, itemId, targetUserId, orderId, cleanSubId } = extraOptions;
+  const { clickTimeStr, shopId, itemId, targetUserId, orderId, cleanSubId, consumedOrderIds } = extraOptions;
 
   // Direct match by ID / click_id in pendingOrders
   if (pendingOrders && pendingOrders.length > 0) {
@@ -654,6 +665,7 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
     const baseSubClk = subClkMatch ? subClkMatch[0].toLowerCase() : '';
 
     for (const pending of pendingOrders) {
+      if (consumedOrderIds && consumedOrderIds.has((pending.id || '').toLowerCase())) continue;
       const pId = (pending.id || '').toLowerCase();
       const pClick = (pending.click_id || '').toLowerCase();
 
@@ -709,6 +721,7 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   }
 
   const baseRefMs = purchaseMs || csvClickMs;
+  const csvDateStr = getCalendarDateStr(purchaseTimeStr) || getCalendarDateStr(clickTimeStr);
   const candidates = [];
 
   // Robust Product Matcher
@@ -765,6 +778,7 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
     }
 
     if (matchCount >= 2) return true;
+    if (matchCount >= 1 && (keyWords1.length <= 2 || keyWords2.length <= 2)) return true;
 
     const clean1 = str1.replace(/[^a-z0-9]/g, '');
     const clean2 = str2.replace(/[^a-z0-9]/g, '');
@@ -778,6 +792,10 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   // 1. Quét các đơn hàng pending trong CSDL
   if (pendingOrders && pendingOrders.length > 0) {
     for (const pending of pendingOrders) {
+      if (consumedOrderIds && consumedOrderIds.has((pending.id || '').toLowerCase())) {
+        continue;
+      }
+
       // If targetUserId is set (from Sub_id1 or manual assignment), only check matching pending orders for targetUserId or unassigned pending orders
       if (targetUserId && pending.user_id && pending.user_id !== targetUserId) {
         continue;
@@ -792,31 +810,48 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
       }
 
       let timeWithinWindow = false;
-      if (baseRefMs && pending.created_at) {
+      let isSameDay = false;
+      const pendingDateStr = getCalendarDateStr(pending.created_at);
+
+      if (csvDateStr && pendingDateStr && csvDateStr === pendingDateStr) {
+        isSameDay = true;
+        timeWithinWindow = true;
+        score += 35; // Khớp cùng ngày theo ngày đặt
+      } else if (baseRefMs && pending.created_at) {
         const pendingMs = new Date(pending.created_at).getTime();
         if (!isNaN(pendingMs)) {
           const diffMs = Math.abs(baseRefMs - pendingMs);
-          if (diffMs <= 7200000) { // < 2 hours
+          if (diffMs <= 86400000) { // trong vòng 24 giờ
             score += 25;
             timeWithinWindow = true;
-          } else if (diffMs <= 21600000) { // < 6 hours
-            score += 10;
+          } else if (diffMs <= 172800000) { // trong vòng 48 giờ
+            score += 15;
+            timeWithinWindow = true;
           }
         }
-      } else {
-        score += 10;
       }
 
-      // STRICT: If CSV has NO targetUserId, require timeWithinWindow to auto-assign!
+      // Kiểm tra độ khớp giá đơn hàng
+      if (orderAmount > 0 && pending.order_amount > 0) {
+        const pDiff = Math.abs(orderAmount - pending.order_amount) / Math.max(orderAmount, pending.order_amount);
+        if (pDiff <= 0.15) {
+          score += 15;
+        }
+      }
+
       if (!targetUserId && !pending.user_id) continue;
       if (!targetUserId && !timeWithinWindow) continue;
 
+      const pTimeMs = pending.created_at ? new Date(pending.created_at).getTime() : 0;
       candidates.push({
         score,
         userId: pending.user_id || targetUserId,
         clickId: pending.click_id || pending.id,
         pendingOrderId: pending.id,
-        reason: `Khớp Đơn chờ (${pending.id}) & Tên sản phẩm/Shop ID`
+        createdAtMs: pTimeMs,
+        reason: isSameDay 
+          ? `Khớp Đơn chờ (${pending.id}) theo CÙNG NGÀY (${pendingDateStr}) & Tên sản phẩm` 
+          : `Khớp Đơn chờ (${pending.id}) & Tên sản phẩm/Shop ID`
       });
     }
   }
@@ -836,35 +871,59 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
       }
 
       let timeWithinWindow = false;
-      if (baseRefMs) {
+      let isSameDay = false;
+      const logDateStr = getCalendarDateStr(log.click_time || log.created_at);
+
+      if (csvDateStr && logDateStr && csvDateStr === logDateStr) {
+        isSameDay = true;
+        timeWithinWindow = true;
+        score += 35;
+      } else if (baseRefMs) {
         const clickMs = new Date(log.click_time || log.created_at).getTime();
         if (!isNaN(clickMs)) {
           const diffMs = Math.abs(baseRefMs - clickMs);
-          if (diffMs <= 7200000) { // < 2 hours
+          if (diffMs <= 86400000) {
             score += 25;
             timeWithinWindow = true;
           }
         }
       }
 
-      // STRICT: If CSV has NO targetUserId, require timeWithinWindow to auto-assign!
       if (!targetUserId && !timeWithinWindow) continue;
 
+      const cTimeMs = (log.click_time || log.created_at) ? new Date(log.click_time || log.created_at).getTime() : 0;
       candidates.push({
         score,
         userId: log.user_id,
         clickId: log.id,
-        reason: `Khớp Lượt click (${log.id}) & Tên sản phẩm`
+        createdAtMs: cTimeMs,
+        reason: isSameDay
+          ? `Khớp Lượt click (${log.id}) theo CÙNG NGÀY (${logDateStr}) & Sản phẩm`
+          : `Khớp Lượt click (${log.id}) & Tên sản phẩm`
       });
     }
   }
 
   if (candidates.length === 0) return null;
 
-  candidates.sort((a, b) => b.score - a.score);
+  candidates.sort((a, b) => {
+    // 1. Nếu có đơn khớp trực tiếp mã đơn (200 điểm) thì luôn ưu tiên hàng đầu
+    if (Math.abs(b.score - a.score) >= 30) {
+      return b.score - a.score;
+    }
+    // 2. Nếu cùng nhiều sản phẩm trong 1 ngày của 1 shop (điểm số tương đương):
+    // ƯU TIÊN LẤY ĐƠN MUỘN NHẤT ĐỂ ĐỐI SOÁT (createdAtMs lớn nhất)
+    const timeB = b.createdAtMs || 0;
+    const timeA = a.createdAtMs || 0;
+    if (timeB !== timeA) {
+      return timeB - timeA; // Muộn nhất xếp lên đầu
+    }
+    return b.score - a.score;
+  });
+
   const best = candidates[0];
 
-  // STRICT threshold 85 required for auto-assigning when no explicit Sub_id
+  // Khớp đạt từ 85 điểm trở lên
   if (best && best.score >= 85) {
     return best;
   }
@@ -1002,7 +1061,7 @@ async function uploadAndAnalyze(req, res) {
     }
 
     // Read all click_logs with click_time & product_url for exact & smart time-window matching
-    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time FROM click_logs WHERE user_id IS NOT NULL');
+    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time, created_at FROM click_logs WHERE user_id IS NOT NULL ORDER BY COALESCE(click_time, created_at) DESC');
     const clickSubIdToUserIdMap = new Map();
     const orderLookupMap = new Map();
 
@@ -1011,8 +1070,8 @@ async function uploadAndAnalyze(req, res) {
       if (log.sub_id && log.user_id) clickSubIdToUserIdMap.set(log.sub_id.toLowerCase(), log.user_id);
     }
 
-    // Read ALL orders that have user_id or are pending/CLK in the system
-    const dbOrdersWithUser = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE user_id IS NOT NULL OR status = 'pending' OR id LIKE 'CLK%'");
+    // Read ALL orders that have user_id or are pending/CLK in the system (ưu tiên đơn mới/muộn nhất trước)
+    const dbOrdersWithUser = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE user_id IS NOT NULL OR status = 'pending' OR id LIKE 'CLK%' ORDER BY created_at DESC");
     const pendingOrders = [];
     for (const p of dbOrdersWithUser) {
       if (p.id) {
@@ -1051,6 +1110,13 @@ async function uploadAndAnalyze(req, res) {
     const { orders: ordersToProcess, invalidCount } = groupRowsByOrderId(rawRows);
     report.invalidCount = invalidCount;
 
+    // Sắp xếp các đơn trong file CSV theo thời gian mua muộn nhất trước
+    ordersToProcess.sort((a, b) => {
+      const tB = b.purchaseTime ? new Date(formatToMySQLDateTime(b.purchaseTime)).getTime() : 0;
+      const tA = a.purchaseTime ? new Date(formatToMySQLDateTime(a.purchaseTime)).getTime() : 0;
+      return tB - tA;
+    });
+
     if (invalidCount > 0) {
       report.details.push({
         id: 'INVALID_ROW',
@@ -1064,6 +1130,8 @@ async function uploadAndAnalyze(req, res) {
       });
     }
 
+    const consumedPendingOrderIds = new Set();
+
     for (const order of ordersToProcess) {
       const { orderId, subId, productName, orderAmount, commission, shopeeStatus, purchaseTime, clickTime, shopId, itemId } = order;
 
@@ -1073,23 +1141,6 @@ async function uploadAndAnalyze(req, res) {
       // Determine Status
       const mappedStatus = mapShopeeStatus(shopeeStatus);
       const userCashback = Math.floor((commission || 0) * cashbackRate);
-
-      // BẮT BUỘC: Chỉ tính & ghi nhận các đơn có SubID từ file import CSV. Đơn nào KHÔNG CÓ SubID thì bỏ qua hoàn toàn!
-      const isSubIdEmpty = !cleanSubId || cleanSubId === '-' || cleanSubId.toLowerCase() === 'null' || cleanSubId.toLowerCase() === 'undefined';
-      if (isSubIdEmpty) {
-        report.missingCount++;
-        report.details.push({
-          id: orderId,
-          name: productName,
-          amount: orderAmount,
-          cashback: userCashback,
-          subId: '',
-          shopeeStatus: mappedStatus,
-          status: 'ignored',
-          reason: 'Bỏ qua hoàn toàn: Đơn hàng không có SubID từ Shopee'
-        });
-        continue;
-      }
 
       const lowerOrderId = orderId.toLowerCase();
       const exists = existingOrdersMap.has(lowerOrderId);
@@ -1122,6 +1173,7 @@ async function uploadAndAnalyze(req, res) {
               pendingOrderId: resolved.pendingOrderId,
               reason: `Khớp Đơn trong hệ thống (${resolved.pendingOrderId}) từ SubID`
             };
+            consumedPendingOrderIds.add(resolved.pendingOrderId.toLowerCase());
           }
         }
       }
@@ -1130,7 +1182,7 @@ async function uploadAndAnalyze(req, res) {
         targetUserId = currentDbUserId || null;
       }
 
-      // If not resolved from direct SubID order match, run smart matching
+      // If not resolved from direct SubID order match, run smart matching (same day + product info)
       if (!smartMatchInfo) {
         smartMatchInfo = findSmartMatchedUser(purchaseTime, productName, orderAmount, allClickLogsFull, pendingOrders, { 
           clickTimeStr: clickTime, 
@@ -1138,12 +1190,16 @@ async function uploadAndAnalyze(req, res) {
           itemId, 
           targetUserId, 
           orderId, 
-          cleanSubId 
+          cleanSubId,
+          consumedOrderIds: consumedPendingOrderIds
         });
 
         if (smartMatchInfo) {
           if (!targetUserId && smartMatchInfo.userId) {
             targetUserId = smartMatchInfo.userId;
+          }
+          if (smartMatchInfo.pendingOrderId) {
+            consumedPendingOrderIds.add(smartMatchInfo.pendingOrderId.toLowerCase());
           }
         }
       }
@@ -1206,7 +1262,7 @@ async function uploadAndAnalyze(req, res) {
       } else {
         // Totally new order or updating pending CLK order
         if (!cleanSubId && !targetUserId && (!smartMatchInfo || !smartMatchInfo.pendingOrderId)) {
-          // Skip importing unmatched CSV order ONLY if it has NO Sub_id1 AND no user match
+          // Skip importing unmatched CSV order ONLY if it has NO Sub_id1, no user match, and no pending order match
           report.missingCount++;
           report.details.push({
             id: orderId,
@@ -1216,7 +1272,7 @@ async function uploadAndAnalyze(req, res) {
             subId: '',
             shopeeStatus: mappedStatus,
             status: 'ignored',
-            reason: 'Bỏ qua không import do không có Sub_id1 & không thuộc về User nào'
+            reason: 'Bỏ qua: Đơn hàng không có SubID và không tìm thấy Đơn chờ cùng ngày khớp với sản phẩm'
           });
           continue;
         }
@@ -1231,7 +1287,7 @@ async function uploadAndAnalyze(req, res) {
           shopeeStatus: mappedStatus,
           status: 'matched',
           reason: (smartMatchInfo && smartMatchInfo.pendingOrderId)
-            ? `Cập nhật Đơn chờ ${smartMatchInfo.pendingOrderId} theo giá CSV cho User ${targetUserId || 'chưa gán'} (${smartMatchInfo.reason})`
+            ? `Cập nhật Mã Đơn chờ ${smartMatchInfo.pendingOrderId} -> ${orderId} cho User ${targetUserId || 'chưa gán'} (${smartMatchInfo.reason})`
             : (targetUserId 
                 ? `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}` 
                 : `Tạo đơn hàng mới với SubID (${cleanSubId}) ở trạng thái ${mappedStatus}`)
@@ -1273,7 +1329,7 @@ async function applyReconciliation(req, res) {
       if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id.toLowerCase(), u.id);
     }
 
-    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time FROM click_logs WHERE user_id IS NOT NULL');
+    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time, created_at FROM click_logs WHERE user_id IS NOT NULL ORDER BY COALESCE(click_time, created_at) DESC');
     const clickSubIdToUserIdMap = new Map();
     const orderLookupMap = new Map();
     const clickIdMap = new Map();
@@ -1289,7 +1345,7 @@ async function applyReconciliation(req, res) {
       }
     }
 
-    const dbOrdersWithUser = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE user_id IS NOT NULL OR status = 'pending' OR id LIKE 'CLK%'");
+    const dbOrdersWithUser = await db.all("SELECT id, user_id, click_id, product_name, order_amount, status, created_at FROM orders WHERE user_id IS NOT NULL OR status = 'pending' OR id LIKE 'CLK%' ORDER BY created_at DESC");
     const pendingOrders = [];
     for (const p of dbOrdersWithUser) {
       if (p.id) {
@@ -1332,6 +1388,13 @@ async function applyReconciliation(req, res) {
     const { orders: ordersToProcess, invalidCount } = groupRowsByOrderId(rawRows);
     ignoredCount += invalidCount;
 
+    // Sắp xếp các đơn trong file CSV theo thời gian mua muộn nhất trước
+    ordersToProcess.sort((a, b) => {
+      const tB = b.purchaseTime ? new Date(formatToMySQLDateTime(b.purchaseTime)).getTime() : 0;
+      const tA = a.purchaseTime ? new Date(formatToMySQLDateTime(a.purchaseTime)).getTime() : 0;
+      return tB - tA;
+    });
+
     // Get system settings for cashback percentage calculation
     const settings = await db.get('SELECT cashback_percentage FROM system_settings WHERE id = 1');
     const cashbackRate = (settings ? settings.cashback_percentage : 50.0) / 100.0;
@@ -1339,18 +1402,13 @@ async function applyReconciliation(req, res) {
     // Begin transaction simulator
     await db.run('BEGIN TRANSACTION');
 
+    const consumedPendingOrderIds = new Set();
+
     for (const order of ordersToProcess) {
       const { orderId, subId, productName, orderAmount, commission, shopeeStatus, purchaseTime, clickTime, shopId, itemId } = order;
 
       const cleanSubId = subId ? subId.trim() : '';
       const mappedStatus = mapShopeeStatus(shopeeStatus);
-
-      // BẮT BUỘC: Chỉ tính & ghi nhận các đơn có SubID từ file import CSV. Đơn nào KHÔNG CÓ SubID thì bỏ qua hoàn toàn!
-      const isSubIdEmpty = !cleanSubId || cleanSubId === '-' || cleanSubId.toLowerCase() === 'null' || cleanSubId.toLowerCase() === 'undefined';
-      if (isSubIdEmpty) {
-        ignoredCount++;
-        continue;
-      }
 
       const lowerOrderId = orderId.toLowerCase();
       const exists = existingOrdersMap.has(lowerOrderId);
@@ -1384,6 +1442,7 @@ async function applyReconciliation(req, res) {
               pendingOrderId: resolved.pendingOrderId,
               reason: `Khớp Đơn trong hệ thống (${resolved.pendingOrderId}) từ SubID`
             };
+            consumedPendingOrderIds.add(resolved.pendingOrderId.toLowerCase());
           }
         }
       }
@@ -1399,7 +1458,8 @@ async function applyReconciliation(req, res) {
           itemId, 
           targetUserId, 
           orderId, 
-          cleanSubId 
+          cleanSubId,
+          consumedOrderIds: consumedPendingOrderIds
         });
 
         if (smartMatchInfo) {
@@ -1408,6 +1468,10 @@ async function applyReconciliation(req, res) {
           }
           if (!targetClickId && smartMatchInfo.clickId) {
             targetClickId = smartMatchInfo.clickId;
+          }
+          if (smartMatchInfo.pendingOrderId) {
+            resolvedPendingOrderId = smartMatchInfo.pendingOrderId;
+            consumedPendingOrderIds.add(smartMatchInfo.pendingOrderId.toLowerCase());
           }
         }
       }
@@ -1562,6 +1626,7 @@ async function applyReconciliation(req, res) {
           await db.run(
             `UPDATE orders
              SET id = ?,
+                 click_id = COALESCE(click_id, ?),
                  product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
                  order_amount = CASE WHEN ? > 0 THEN ? ELSE order_amount END,
                  shopee_commission = ?,
@@ -1573,6 +1638,7 @@ async function applyReconciliation(req, res) {
              WHERE id = ?`,
             [
               orderId,
+              pendingIdToUpdate,
               productName,
               productName,
               Math.floor(orderAmount),

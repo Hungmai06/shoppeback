@@ -28,20 +28,11 @@ async function convertShopeeLink(req, res) {
     // Giải mã short link (nếu người dùng dán link rút gọn dạng vn.shp.ee / shope.ee)
     const originUrl = await resolveShopeeShortLink(rawOriginUrl);
 
-    // 2. Sinh mã tracking clickId và chuẩn hóa sub_id 5 vị trí theo chuẩn 2026:
-    // sub1 = Publisher/KOL (User ID) | sub2 = Campaign | sub3 = Source | sub4 = Post ID | sub5 = Tracking Click ID
+    // 2. Lấy mã tracking clickId và chuẩn hóa duy nhất 1 sub_id (sub_id1 = User ID hoặc Click ID):
     const clickId = generateClickId();
-    const resolvedUserId = req.user ? req.user.id : (req.body.user_id || req.body.userId || null);
-    const userTag = resolvedUserId ? String(resolvedUserId).replace(/-/g, '_') : 'guest';
-    const rawSub = req.body.sub_id || req.body.subParams || req.body.subId;
-    const subParams = rawSub || {
-      sub1: req.body.sub1 || userTag,
-      sub2: req.body.sub2 || 'cashback',
-      sub3: req.body.sub3 || 'web',
-      sub4: req.body.sub4 || '',
-      sub5: req.body.sub5 || clickId
-    };
-    const subId = formatStandardSubId(subParams);
+    const resolvedUserId = req.user ? req.user.id : (req.body.user_id || req.body.userId || req.body.sub_id1 || req.body.sub_id || null);
+    const rawSub = req.body.sub_id || req.body.sub_id1 || req.body.sub1 || req.body.subParams || req.body.subId;
+    const subId = formatStandardSubId(rawSub || resolvedUserId || clickId);
 
     // Lấy cấu hình hệ thống từ CSDL nếu có
     let customBaseUrl = '';
@@ -118,18 +109,11 @@ async function redirectShopeeLink(req, res) {
     // Giải mã short link nếu có
     const originUrl = await resolveShopeeShortLink(rawOriginUrl);
 
-    // 2. Sinh clickId & subId chuẩn 2026
+    // 2. Sinh clickId & duy nhất 1 subId (sub_id1 = User ID hoặc Click ID)
     const clickId = generateClickId();
-    const resolvedUserId = req.user ? req.user.id : (req.query.user_id || req.query.userId || null);
-    const userTag = resolvedUserId ? String(resolvedUserId).replace(/-/g, '_') : 'guest';
-    const subParams = req.query.sub_id || {
-      sub1: req.query.sub1 || userTag,
-      sub2: req.query.sub2 || 'cashback',
-      sub3: req.query.sub3 || 'web',
-      sub4: req.query.sub4 || '',
-      sub5: req.query.sub5 || clickId
-    };
-    const subId = formatStandardSubId(subParams);
+    const resolvedUserId = req.user ? req.user.id : (req.query.user_id || req.query.userId || req.query.sub_id1 || req.query.sub_id || null);
+    const rawSub = req.query.sub_id || req.query.sub_id1 || req.query.sub1 || req.query.subParams;
+    const subId = formatStandardSubId(rawSub || resolvedUserId || clickId);
 
     // Lấy cấu hình hệ thống từ CSDL nếu có
     let customBaseUrl = '';

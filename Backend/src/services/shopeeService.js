@@ -187,70 +187,44 @@ const SHOPEE_AN_REDIR_DOMAINS = {
 };
 
 /**
- * Chuẩn hóa sub_id tối đa 5 vị trí theo chuẩn 2026:
- * sub1 = Publisher/KOL
- * sub2 = Campaign
- * sub3 = Source (fb, tiktok, web…)
- * sub4 = Post/Video ID
- * sub5 = Custom/Remark (hoặc clickId)
- * Quy tắc: Mỗi sub không được chứa "-" bên trong (tự động đổi thành "_").
- * Thiếu vị trí nào để trống nhưng giữ đúng thứ tự.
+/**
+ * Chuẩn hóa sub_id duy nhất (sub_id1) cho Shopee Affiliate:
+ * Chỉ dùng duy nhất 1 sub_id = Mã định danh User ID (hoặc clickId)
+ * Quy tắc: Không chứa dấu "-", độ dài <= 32 ký tự chữ và số.
  * @param {string|Object|Array} subInput
- * @returns {string} sub_id chuẩn định dạng (VD: kolA-summer26-fb-post123-note)
+ * @returns {string} sub_id1 chuẩn định dạng
  */
 function formatStandardSubId(subInput) {
   if (!subInput) return '';
 
   const cleanPart = (val) => {
     if (val === undefined || val === null) return '';
-    return String(val).trim().replace(/\s+/g, '_').replace(/-/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    return String(val).trim().replace(/\s+/g, '_').replace(/-/g, '_').replace(/[^a-zA-Z0-9_]/g, '').substring(0, 32);
   };
 
-  let parts = [];
-
   if (typeof subInput === 'object' && !Array.isArray(subInput)) {
-    parts = [
-      cleanPart(subInput.sub1 ?? subInput.publisher),
-      cleanPart(subInput.sub2 ?? subInput.campaign),
-      cleanPart(subInput.sub3 ?? subInput.source),
-      cleanPart(subInput.sub4 ?? subInput.postId),
-      cleanPart(subInput.sub5 ?? subInput.remark ?? subInput.clickId)
-    ];
+    const raw = subInput.sub1 ?? subInput.sub_id1 ?? subInput.subId ?? subInput.userId ?? subInput.user_id ?? subInput.publisher ?? '';
+    return cleanPart(raw);
   } else if (Array.isArray(subInput)) {
-    parts = subInput.slice(0, 5).map(cleanPart);
+    return cleanPart(subInput[0] ?? '');
   } else if (typeof subInput === 'string') {
     const rawParts = subInput.split('-');
-    if (rawParts.length > 1 && rawParts.length <= 5) {
-      parts = rawParts.map(p => p.trim());
-    } else {
-      parts = [cleanPart(subInput)];
-    }
+    return cleanPart(rawParts[0] ?? subInput);
   }
-
-  // Cắt bỏ các dấu "-" trống ở đuôi
-  let lastNonEmpty = -1;
-  for (let i = parts.length - 1; i >= 0; i--) {
-    if (parts[i]) {
-      lastNonEmpty = i;
-      break;
-    }
-  }
-
-  if (lastNonEmpty === -1) return '';
-  return parts.slice(0, lastNonEmpty + 1).join('-');
+  return cleanPart(subInput);
 }
 
 /**
- * Quy trình 4 bước tạo link Sàn Cam Affiliate chuẩn 2026 (cơ chế an_redir)
+ * Quy trình tạo link Sàn Cam Affiliate chuẩn (cơ chế an_redir)
  * Bước 1: Landing page sạch (https://shopee.vn/product/<shop_id>/<item_id> hoặc <slug>-i.<shop_id>.<item_id>)
  * Bước 2: Encode toàn bộ landing page bằng URL encoding (encodeURIComponent)
  * Bước 3: Ghép tham số vào domain an_redir theo quốc gia
- * Bước 4: Chuẩn hóa sub_id tối đa 5 vị trí (sub1-sub2-sub3-sub4-sub5)
+ * Bước 4: Chuẩn hóa duy nhất 1 sub_id (sub_id1 = mã user/định danh)
  *
  * @param {Object} options
  * @param {string} options.originUrl - Link sản phẩm gốc
  * @param {string} [options.affiliateId] - Shopee Affiliate ID
- * @param {string|Object|Array} [options.subParams] - Cấu trúc sub_id 5 vị trí
+ * @param {string|Object|Array} [options.subParams] - Cấu trúc sub_id 1 vị trí
  * @param {string} [options.country='VN'] - Mã quốc gia (VN, TH, ID, MY, PH, SG, TW, BR, MX, CL, CO)
  * @param {string} [options.customBaseUrl] - URL an_redir tùy biến nếu có
  * @returns {{ finalUrl: string, cleanLanding: string, encodedLanding: string, affiliateId: string, subId: string, domainUrl: string }}
@@ -281,10 +255,11 @@ function buildShopeeAnRedirLink({ originUrl, affiliateId, subParams = '', countr
   // Bước 3: Ghép link
   let finalUrl = `${domainUrl}?origin_link=${encodedLanding}&affiliate_id=${encodeURIComponent(affId)}`;
 
-  // Bước 4: Chuẩn hóa sub_id
+  // Bước 4: Chuẩn hóa sub_id (Chỉ gắn duy nhất 1 sub_id1 = mã định danh thành viên)
   const formattedSubId = formatStandardSubId(subParams);
   if (formattedSubId) {
-    finalUrl += `&sub_id=${encodeURIComponent(formattedSubId)}`;
+    // Gắn cả sub_id và sub_id1 để đảm bảo 100% Shopee ghi nhận vào cột Sub_id1 trong báo cáo đối soát
+    finalUrl += `&sub_id=${encodeURIComponent(formattedSubId)}&sub_id1=${encodeURIComponent(formattedSubId)}`;
   }
 
   return {

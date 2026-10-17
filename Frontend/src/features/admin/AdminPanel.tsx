@@ -2662,8 +2662,8 @@ export default function AdminPanel() {
             </p>
             <ul className="list-disc list-inside space-y-1 text-xs">
               <li><b>Giá đơn hàng & Hoa hồng chuẩn:</b> Sau khi đối soát, số tiền đơn hàng và tiền hoàn thành viên sẽ được cập nhật <b>100% theo giá trị thực tế trong file CSV</b> (thay thế cho mọi giá trị tra cứu ước tính trước đó).</li>
-              <li><b>Khớp theo Sub ID:</b> Cột <code>Sub_id1</code> chứa mã User ID (ví dụ <code>USR101</code>) hoặc mã định danh thành viên.</li>
-              <li><b>Chỉ tính đơn có Sub ID:</b> Đơn hàng bắt buộc phải có mã <code>Sub_id1</code> hợp lệ mới được tính và ghi nhận vào hệ thống. Các đơn không có Sub ID sẽ được tự động bỏ qua hoàn toàn.</li>
+              <li><b>Khớp theo Sub ID:</b> Cột <code>Sub_id1</code> chứa mã User ID duy nhất (ví dụ <code>USR101</code>) của thành viên.</li>
+              <li><b>Đối soát thông minh dự phòng (Cùng ngày & Sản phẩm):</b> Nếu đơn hàng trong file đối soát không có Sub ID (do Shopee không lưu sub), hệ thống sẽ tự động tra khớp theo <b>Thời gian đặt cùng ngày</b> và <b>Thông tin sản phẩm/giá tiền</b> với các đơn chờ trong hệ thống, tự động tính đơn cho thành viên và cập nhật lại Mã Đơn theo ID đơn hàng từ file đối soát.</li>
             </ul>
           </div>
 
