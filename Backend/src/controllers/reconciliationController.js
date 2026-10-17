@@ -1025,9 +1025,11 @@ async function uploadAndAnalyze(req, res) {
       for (const file of files) {
         if (file !== '.gitkeep' && file !== path.basename(tempFilePath)) {
           const filePath = path.join(uploadDir, file);
-          const stats = fs.statSync(filePath);
-          if (now - stats.mtimeMs > 3600000) { // 1 giờ
-            fs.unlinkSync(filePath);
+          if (fs.existsSync(filePath)) {
+            const stats = fs.statSync(filePath);
+            if (stats.isFile() && (now - stats.mtimeMs > 3600000)) { // 1 giờ
+              fs.unlinkSync(filePath);
+            }
           }
         }
       }
@@ -1061,7 +1063,7 @@ async function uploadAndAnalyze(req, res) {
     }
 
     // Read all click_logs with click_time & product_url for exact & smart time-window matching
-    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time, created_at FROM click_logs WHERE user_id IS NOT NULL ORDER BY COALESCE(click_time, created_at) DESC');
+    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time FROM click_logs WHERE user_id IS NOT NULL ORDER BY click_time DESC');
     const clickSubIdToUserIdMap = new Map();
     const orderLookupMap = new Map();
 
@@ -1329,7 +1331,7 @@ async function applyReconciliation(req, res) {
       if (u.affiliate_sub_id) affiliateSubIdToUserIdMap.set(u.affiliate_sub_id.toLowerCase(), u.id);
     }
 
-    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time, created_at FROM click_logs WHERE user_id IS NOT NULL ORDER BY COALESCE(click_time, created_at) DESC');
+    const allClickLogsFull = await db.all('SELECT id, user_id, sub_id, product_url, click_time FROM click_logs WHERE user_id IS NOT NULL ORDER BY click_time DESC');
     const clickSubIdToUserIdMap = new Map();
     const orderLookupMap = new Map();
     const clickIdMap = new Map();
