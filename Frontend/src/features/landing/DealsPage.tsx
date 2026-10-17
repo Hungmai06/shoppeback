@@ -160,7 +160,10 @@ export default function DealsPage() {
           estimatedCashback: Math.floor(checkedProduct.price * (checkedProduct.cashbackRate || 0.07) * 0.5),
           status: 'pending',
           createdTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-          userId: currentUser.id
+          userId: currentUser.id,
+          productUrl: data.originUrl || checkedProduct.url,
+          shopId: checkedProduct.shopId || data.shopId || '',
+          itemId: checkedProduct.itemId || data.itemId || ''
         };
         addOrder(newOrder);
 

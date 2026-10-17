@@ -130,6 +130,12 @@ async function initializeDatabase() {
       await wrapper.exec('ALTER TABLE click_logs ADD COLUMN sub_id VARCHAR(255)');
     } catch (e) { }
     try {
+      await wrapper.exec('ALTER TABLE click_logs ADD COLUMN shop_id VARCHAR(100)');
+    } catch (e) { }
+    try {
+      await wrapper.exec('ALTER TABLE click_logs ADD COLUMN item_id VARCHAR(100)');
+    } catch (e) { }
+    try {
       await wrapper.exec('ALTER TABLE click_logs MODIFY COLUMN user_id VARCHAR(255) NULL');
     } catch (e) { }
 
@@ -157,6 +163,12 @@ async function initializeDatabase() {
     } catch (e) { }
     try {
       await wrapper.exec('ALTER TABLE orders ADD COLUMN shopee_commission REAL');
+    } catch (e) { }
+    try {
+      await wrapper.exec('ALTER TABLE orders ADD COLUMN shop_id VARCHAR(100)');
+    } catch (e) { }
+    try {
+      await wrapper.exec('ALTER TABLE orders ADD COLUMN item_id VARCHAR(100)');
     } catch (e) { }
 
     await wrapper.exec(`
@@ -363,6 +375,12 @@ async function initializeDatabase() {
     try {
       await db.exec('ALTER TABLE click_logs ADD COLUMN sub_id TEXT');
     } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE click_logs ADD COLUMN shop_id TEXT');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE click_logs ADD COLUMN item_id TEXT');
+    } catch (e) { }
 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS orders (
@@ -388,6 +406,12 @@ async function initializeDatabase() {
     } catch (e) { }
     try {
       await db.exec('ALTER TABLE orders ADD COLUMN shopee_commission REAL');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE orders ADD COLUMN shop_id TEXT');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE orders ADD COLUMN item_id TEXT');
     } catch (e) { }
 
     await db.exec(`

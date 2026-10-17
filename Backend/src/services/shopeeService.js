@@ -142,6 +142,53 @@ function normalizeShopeeProductUrl(inputUrl) {
 }
 
 /**
+ * Trích xuất Shop ID và Item ID từ link Shopee hoặc chuỗi sản phẩm
+ */
+function extractShopeeIds(inputUrl) {
+  if (!inputUrl || typeof inputUrl !== 'string') return { shopId: '', itemId: '' };
+  const str = inputUrl.trim();
+
+  // Pattern 1: Hyphen placeholders /product/-/-.ITEM_ID
+  const matchHyphen = str.match(/product\/-\/-\.(\d+)/);
+  if (matchHyphen) {
+    return { shopId: '', itemId: matchHyphen[1] };
+  }
+
+  // Pattern 2: slug-i.SHOP_ID.ITEM_ID or i.SHOP_ID.ITEM_ID
+  const matchItemShop = str.match(/(?:[a-zA-Z0-9_-]+-)?i\.(\d+)\.(\d+)/);
+  if (matchItemShop) {
+    return { shopId: matchItemShop[1], itemId: matchItemShop[2] };
+  }
+
+  // Pattern 3: product/SHOP_ID/ITEM_ID
+  const matchProd = str.match(/product\/(\d+)\/(\d+)/);
+  if (matchProd) {
+    return { shopId: matchProd[1] === '0' ? '' : matchProd[1], itemId: matchProd[2] };
+  }
+
+  // Pattern 4: query parameters item_id & shop_id
+  try {
+    const urlObj = new URL(str.startsWith('http') ? str : `https://${str}`);
+    const itemId = urlObj.searchParams.get('item_id') || urlObj.searchParams.get('itemId') || '';
+    const shopId = urlObj.searchParams.get('shop_id') || urlObj.searchParams.get('shopId') || '';
+    if (itemId) {
+      return { shopId: shopId === '0' ? '' : shopId, itemId };
+    }
+  } catch (e) {}
+
+  // Pattern 5: Any numbers matching Shopee Item ID (typically 9-12 digits)
+  const nums = str.match(/\d{8,13}/g);
+  if (nums && nums.length > 0) {
+    if (nums.length >= 2) {
+      return { shopId: nums[0], itemId: nums[1] };
+    }
+    return { shopId: '', itemId: nums[0] };
+  }
+
+  return { shopId: '', itemId: '' };
+}
+
+/**
  * Xử lý giải mã short link Shopee (vn.shp.ee, s.shopee.vn) thành URL sản phẩm gốc trước khi gửi cho an_redir
  */
 async function resolveShopeeShortLink(inputUrl) {
@@ -381,5 +428,6 @@ module.exports = {
   buildShopeeAnRedirLink,
   createShopeeAffiliateLink,
   generateShopeeAffiliateLink: createShopeeAffiliateLink, // alias for backwards compatibility
-  fetchProductDataFromAddLiveTag
+  fetchProductDataFromAddLiveTag,
+  extractShopeeIds
 };

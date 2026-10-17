@@ -1,8 +1,9 @@
 const { getDatabase } = require('../config/db');
 const { recalculateUserBalances } = require('../services/balanceService');
+const { extractShopeeIds } = require('../services/shopeeService');
 
 async function logClick(req, res) {
-  const { id, clickId: customClickId, productUrl, productName, productImage, orderAmount, estimatedCashback, userId: bodyUserId } = req.body;
+  const { id, clickId: customClickId, productUrl, productName, productImage, orderAmount, estimatedCashback, userId: bodyUserId, shopId: bodyShopId, itemId: bodyItemId } = req.body;
 
   if (!productUrl && !productName) {
     return res.status(400).json({ message: 'Thiếu đường dẫn sản phẩm' });
@@ -13,10 +14,15 @@ async function logClick(req, res) {
     const clickId = id || customClickId || req.body.clickId || ('CLK' + Date.now() + Math.floor(100 + Math.random() * 900));
     const userId = req.user ? req.user.id : (bodyUserId || req.body.userId || null);
 
+    // Extract shopId and itemId from productUrl or productName
+    const idsFromUrl = extractShopeeIds(productUrl || productName || '');
+    const finalShopId = (bodyShopId || idsFromUrl.shopId || '') || null;
+    const finalItemId = (bodyItemId || idsFromUrl.itemId || '') || null;
+
     try {
       await db.run(
-        'INSERT INTO click_logs (id, user_id, product_url) VALUES (?, ?, ?)',
-        [clickId, userId, productUrl || productName]
+        'INSERT INTO click_logs (id, user_id, product_url, shop_id, item_id) VALUES (?, ?, ?, ?, ?)',
+        [clickId, userId, productUrl || productName, finalShopId, finalItemId]
       );
     } catch (cErr) {
       // Ignored if already logged
@@ -30,15 +36,15 @@ async function logClick(req, res) {
 
     try {
       await db.run(
-        `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [clickId, userId, clickId, name, img, amount, cashback]
+        `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, status, shop_id, item_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+        [clickId, userId, clickId, name, img, amount, cashback, finalShopId, finalItemId]
       );
     } catch (oErr) {
       console.warn('Order insertion warning on click:', oErr.message);
     }
 
-    res.status(201).json({ message: 'Đã ghi nhận lượt click mua hàng', clickId });
+    res.status(201).json({ message: 'Đã ghi nhận lượt click mua hàng', clickId, shopId: finalShopId, itemId: finalItemId });
   } catch (error) {
     console.error('Log Click Error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ khi ghi nhận click' });
@@ -379,10 +385,132 @@ async function updateOrderScreenshot(req, res) {
   }
 }
 
+async function adminCreateOrder(req, res) {
+  const {
+    id,
+    userId,
+    productName,
+    productImage,
+    orderAmount,
+    estimatedCashback,
+    realCashback,
+    shopeeCommission,
+    status = 'pending',
+    shopId,
+    itemId,
+    notes
+  } = req.body;
+
+  if (!productName || !productName.trim()) {
+    return res.status(400).json({ message: 'Vui lòng nhập tên sản phẩm' });
+  }
+
+  const orderId = (id && String(id).trim()) ? String(id).trim() : (`ORD${Date.now()}${Math.floor(100 + Math.random() * 900)}`);
+  const finalAmount = Math.max(0, Math.floor(Number(orderAmount) || 0));
+  const finalEstimatedCashback = Math.max(0, Math.floor(Number(estimatedCashback) || 0));
+  const finalRealCashback = realCashback !== undefined && realCashback !== null && realCashback !== '' 
+    ? Math.max(0, Math.floor(Number(realCashback))) 
+    : (status === 'approved' || status === 'paid' ? finalEstimatedCashback : 0);
+  const finalShopeeCommission = shopeeCommission ? Math.max(0, Math.floor(Number(shopeeCommission))) : 0;
+  const targetUserId = (userId && String(userId).trim()) ? String(userId).trim() : null;
+  const cleanShopId = shopId ? String(shopId).trim() : null;
+  const cleanItemId = itemId ? String(itemId).trim() : null;
+
+  try {
+    const db = await getDatabase();
+
+    // Check if orderId already exists
+    const existing = await db.get('SELECT id FROM orders WHERE id = ?', [orderId]);
+    if (existing) {
+      return res.status(400).json({ message: `Mã đơn hàng "${orderId}" đã tồn tại trong hệ thống` });
+    }
+
+    // Verify user exists if provided
+    if (targetUserId) {
+      const user = await db.get('SELECT id FROM users WHERE id = ?', [targetUserId]);
+      if (!user) {
+        return res.status(400).json({ message: `Không tìm thấy thành viên với ID "${targetUserId}"` });
+      }
+    }
+
+    await db.run(
+      `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, shop_id, item_id, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [
+        orderId,
+        targetUserId,
+        orderId,
+        productName.trim(),
+        productImage || '',
+        finalAmount,
+        finalEstimatedCashback,
+        finalRealCashback,
+        finalShopeeCommission,
+        status,
+        cleanShopId,
+        cleanItemId,
+        notes || null
+      ]
+    );
+
+    // If created directly as approved, credit user balance & recalculate
+    if (targetUserId && (status === 'approved' || status === 'paid')) {
+      await recalculateUserBalances(db, [targetUserId]);
+
+      // Check referral bonus (20%)
+      const currentUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
+      if (currentUserObj && currentUserObj.referred_by && finalRealCashback > 0) {
+        const refBonus = Math.floor(finalRealCashback * 0.20);
+        await db.run(
+          `UPDATE users 
+           SET balance = COALESCE(balance, 0) + ?,
+               referral_earnings = COALESCE(referral_earnings, 0) + ?
+           WHERE id = ?`,
+          [refBonus, refBonus, currentUserObj.referred_by]
+        );
+        
+        const refNotifId = `NT${Date.now()}${Math.floor(Math.random()*100)}`;
+        await db.run(
+          `INSERT INTO notifications (id, user_id, title, content, type)
+           VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
+          [refNotifId, currentUserObj.referred_by, `Bạn nhận được +${refBonus.toLocaleString('vi-VN')}đ hoa hồng từ đơn hàng của người bạn giới thiệu.`]
+        );
+      }
+
+      // Notification to user
+      const notifId = `NT${Date.now()}`;
+      await db.run(
+        `INSERT INTO notifications (id, user_id, title, content, type)
+         VALUES (?, ?, 'Đơn hàng mới được tạo', ?, 'order')`,
+        [notifId, targetUserId, `Đơn hàng ${orderId} (${productName.substring(0, 25)}...) đã được quản trị viên tạo và ghi nhận thành công. Tiền hoàn: +${finalRealCashback.toLocaleString('vi-VN')}đ.`]
+      );
+    } else if (targetUserId) {
+      await recalculateUserBalances(db, [targetUserId]);
+    }
+
+    res.status(201).json({
+      message: 'Tạo đơn hàng mới thành công',
+      order: {
+        id: orderId,
+        userId: targetUserId,
+        productName,
+        orderAmount: finalAmount,
+        estimatedCashback: finalEstimatedCashback,
+        realCashback: finalRealCashback,
+        status
+      }
+    });
+  } catch (error) {
+    console.error('Admin Create Order Error:', error);
+    res.status(500).json({ message: error.message || 'Lỗi máy chủ khi tạo đơn hàng' });
+  }
+}
+
 module.exports = {
   logClick,
   getUserOrders,
   adminGetOrders,
+  adminCreateOrder,
   adminUpdateOrderStatus,
   adminDeleteOrder,
   adminClearAllOrders,

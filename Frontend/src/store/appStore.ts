@@ -11,6 +11,9 @@ export interface Order {
   status: 'pending' | 'approved' | 'rejected' | 'returned' | 'paid';
   createdTime: string;
   userId: string;
+  productUrl?: string;
+  shopId?: string;
+  itemId?: string;
   userName?: string;
   userEmail?: string;
   screenshot?: string;
@@ -144,6 +147,7 @@ interface AppState {
   orders: Order[];
   totalAdminOrders: number;
   addOrder: (order: Order) => Promise<void>;
+  createAdminOrder: (orderData: Partial<Order>) => Promise<boolean>;
   updateOrderStatus: (id: string, status: Order['status'], realCashback?: number, notes?: string, userId?: string) => Promise<void>;
   deleteOrderAdmin: (id: string) => Promise<boolean>;
   uploadOrderScreenshot: (id: string, screenshotUrl: string) => void;
@@ -493,18 +497,41 @@ export const useAppStore = create<AppState>((set, get) => ({
         body: JSON.stringify({
           id: order.id,
           clickId: order.id,
-          productUrl: order.productName,
+          productUrl: order.productUrl || order.productName,
           productName: order.productName,
           productImage: order.productImage,
           orderAmount: order.orderAmount,
           estimatedCashback: order.estimatedCashback,
-          userId: order.userId
+          userId: order.userId,
+          shopId: order.shopId || '',
+          itemId: order.itemId || ''
         })
       });
       // Visual feedback in local UI
       set((state) => ({ orders: [order, ...state.orders] }));
     } catch (error) {
       console.error('Click log error:', error);
+    }
+  },
+
+  createAdminOrder: async (orderData) => {
+    try {
+      const res = await fetch(`${API_BASE}/orders/admin`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(orderData)
+      });
+
+      if (res.ok) {
+        await get().fetchAdminOrders();
+        await get().fetchAdminStats();
+        return true;
+      }
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Không thể tạo đơn hàng');
+    } catch (error: any) {
+      console.error('Create admin order error:', error);
+      throw error;
     }
   },
 

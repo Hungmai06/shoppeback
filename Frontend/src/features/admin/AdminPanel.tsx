@@ -55,7 +55,7 @@ export default function AdminPanel() {
     updateOrderStatus, deleteOrderAdmin, updateWithdrawalStatus, updateSettings,
     reconciliationHistory, uploadReconciliationCSV, applyReconciliationCSV,
     updateAdminUser, adminStats, fetchAdminOrders, fetchAdminStats, fetchAdminWithdrawals, fetchAdminUsers, fetchReconciliationLogs, exportOrdersCSV,
-    createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus, syncAdminUserBalances
+    createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus, syncAdminUserBalances, createAdminOrder
   } = useAppStore();
 
   const [isSyncingBalances, setIsSyncingBalances] = useState(false);
@@ -117,6 +117,25 @@ export default function AdminPanel() {
   const [editOrderNotes, setEditOrderNotes] = useState<string>('');
   const [editOrderUserId, setEditOrderUserId] = useState<string>('');
   const [deletingOrder, setDeletingOrder] = useState<Order | null>(null);
+
+  // Create Order states
+  const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState(false);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [newOrderForm, setNewOrderForm] = useState({
+    id: '',
+    userId: '',
+    productName: '',
+    productImage: '',
+    productUrl: '',
+    orderAmount: '',
+    shopeeCommission: '',
+    realCashback: '',
+    estimatedCashback: '',
+    status: 'pending' as Order['status'],
+    notes: '',
+    shopId: '',
+    itemId: ''
+  });
 
   // Reconciliation & Clear Database states for Orders Tab
   const [reconcileModalData, setReconcileModalData] = useState<any>(null);
@@ -408,6 +427,67 @@ export default function AdminPanel() {
       setEditingOrder(null);
     } catch (err: any) {
       toast.error('Lỗi khi cập nhật đơn hàng');
+    }
+  };
+
+  const handleCreateOrderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOrderForm.userId.trim()) {
+      toast.error('Vui lòng chọn hoặc nhập User ID của thành viên sở hữu đơn hàng');
+      return;
+    }
+    if (!newOrderForm.productName.trim()) {
+      toast.error('Vui lòng nhập tên sản phẩm');
+      return;
+    }
+    const orderAmountVal = parseFloat(newOrderForm.orderAmount);
+    if (isNaN(orderAmountVal) || orderAmountVal < 0) {
+      toast.error('Vui lòng nhập giá trị đơn hàng hợp lệ');
+      return;
+    }
+
+    const shopeeCommVal = parseFloat(newOrderForm.shopeeCommission) || 0;
+    const estCashbackVal = parseFloat(newOrderForm.estimatedCashback) || Math.floor(shopeeCommVal * ((settings?.cashbackPercentage ?? 50) / 100));
+    const realCashbackVal = newOrderForm.realCashback ? parseFloat(newOrderForm.realCashback) : estCashbackVal;
+
+    setIsSubmittingOrder(true);
+    try {
+      await createAdminOrder({
+        id: newOrderForm.id.trim() || undefined,
+        userId: newOrderForm.userId.trim(),
+        productName: newOrderForm.productName.trim(),
+        productImage: newOrderForm.productImage.trim() || undefined,
+        productUrl: newOrderForm.productUrl.trim() || undefined,
+        orderAmount: orderAmountVal,
+        shopeeCommission: shopeeCommVal,
+        estimatedCashback: estCashbackVal,
+        realCashback: realCashbackVal,
+        status: newOrderForm.status,
+        notes: newOrderForm.notes.trim() || undefined,
+        shopId: newOrderForm.shopId.trim() || undefined,
+        itemId: newOrderForm.itemId.trim() || undefined
+      });
+      toast.success('Đã tạo đơn hàng mới thành công!');
+      setIsCreateOrderModalOpen(false);
+      setNewOrderForm({
+        id: '',
+        userId: '',
+        productName: '',
+        productImage: '',
+        productUrl: '',
+        orderAmount: '',
+        shopeeCommission: '',
+        realCashback: '',
+        estimatedCashback: '',
+        status: 'pending',
+        notes: '',
+        shopId: '',
+        itemId: ''
+      });
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi khi tạo đơn hàng mới');
+    } finally {
+      setIsSubmittingOrder(false);
     }
   };
 
@@ -1307,6 +1387,29 @@ export default function AdminPanel() {
                   <p className="text-xs text-text-secondary mt-1">Phê duyệt, từ chối đối soát đơn hàng thủ công hoặc cập nhật doanh thu thực nhận bằng file CSV.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={() => {
+                      setNewOrderForm({
+                        id: '',
+                        userId: '',
+                        productName: '',
+                        productImage: '',
+                        productUrl: '',
+                        orderAmount: '',
+                        shopeeCommission: '',
+                        realCashback: '',
+                        estimatedCashback: '',
+                        status: 'pending',
+                        notes: '',
+                        shopId: '',
+                        itemId: ''
+                      });
+                      setIsCreateOrderModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm"
+                  >
+                    <Plus className="h-4 w-4" /> Tạo đơn mới
+                  </Button>
                   {/* Hidden Input for CSV Upload */}
                   <input
                     type="file"
@@ -1732,7 +1835,15 @@ export default function AdminPanel() {
                               {reconcileData.map((row, index) => (
                                 <TableRow key={index}>
                                   <TableCell className="font-bold text-text-secondary">{row.id}</TableCell>
-                                  <TableCell className="max-w-[160px] truncate font-semibold text-xs">{row.name}</TableCell>
+                                  <TableCell className="max-w-[200px] font-semibold text-xs">
+                                    <div className="truncate" title={row.name}>{row.name}</div>
+                                    {(row.shopId || row.itemId) && (
+                                      <div className="flex flex-wrap gap-1 mt-0.5 text-[10px] text-text-secondary font-mono font-normal">
+                                        {row.shopId && <span className="bg-gray-100 text-gray-700 px-1 py-0.5 rounded">Shop: {row.shopId}</span>}
+                                        {row.itemId && <span className="bg-blue-50 text-blue-700 px-1 py-0.5 rounded">Item: {row.itemId}</span>}
+                                      </div>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="text-right font-semibold text-xs">{row.amount.toLocaleString('vi-VN')}đ</TableCell>
                                   <TableCell className="text-right font-bold text-primary text-xs">{row.cashback.toLocaleString('vi-VN')}đ</TableCell>
                                   <TableCell>
@@ -2440,8 +2551,14 @@ export default function AdminPanel() {
                             <span className="text-danger italic font-semibold">Trống</span>
                           )}
                         </TableCell>
-                        <TableCell className="max-w-[150px] truncate font-medium text-xs">
-                          <span title={row.name}>{row.name || '-'}</span>
+                        <TableCell className="max-w-[180px] font-medium text-xs">
+                          <div className="truncate font-semibold" title={row.name}>{row.name || '-'}</div>
+                          {(row.shopId || row.itemId) && (
+                            <div className="flex flex-wrap gap-1 mt-0.5 text-[10px] text-text-secondary font-mono">
+                              {row.shopId && <span className="bg-gray-100 text-gray-700 px-1 py-0.5 rounded" title={`Shop ID: ${row.shopId}`}>Shop: {row.shopId}</span>}
+                              {row.itemId && <span className="bg-blue-50 text-blue-700 px-1 py-0.5 rounded" title={`Item ID: ${row.itemId}`}>Item: {row.itemId}</span>}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-semibold text-xs">
                           {row.amount ? row.amount.toLocaleString('vi-VN') + 'đ' : '0đ'}
@@ -2784,6 +2901,219 @@ export default function AdminPanel() {
               {isClearingOrders ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Xác Nhận Xóa Đơn Chưa Gán
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* CREATE ORDER DIALOG */}
+      <Dialog isOpen={isCreateOrderModalOpen} onClose={() => setIsCreateOrderModalOpen(false)} className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-emerald-700">
+            <ShoppingBag className="w-5 h-5 text-emerald-600" />
+            Tạo đơn hàng mới thủ công
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          <form onSubmit={handleCreateOrderSubmit} className="flex flex-col gap-4 text-left font-sans text-xs">
+            {/* User Selection */}
+            <div className="flex flex-col gap-1.5 relative">
+              <label className="text-xs font-semibold text-text/80">
+                Gán cho thành viên sở hữu đơn hàng <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={newOrderForm.userId}
+                onChange={(e) => setNewOrderForm(prev => ({ ...prev, userId: e.target.value }))}
+                placeholder="Gõ User ID (vd: USR101, USR102) hoặc Email, Tên để tìm kiếm..."
+                className="w-full px-4 py-2.5 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
+                required
+              />
+
+              {/* Dynamic Suggestions List */}
+              {users && users.length > 0 && newOrderForm.userId.trim().length > 0 && (
+                <div className="bg-white border border-border rounded-input shadow-lg max-h-[140px] overflow-y-auto p-1 text-xs space-y-1 z-10">
+                  {users
+                    .filter(u => 
+                      u.id.toLowerCase().includes(newOrderForm.userId.toLowerCase()) ||
+                      u.name.toLowerCase().includes(newOrderForm.userId.toLowerCase()) ||
+                      (u.email && u.email.toLowerCase().includes(newOrderForm.userId.toLowerCase()))
+                    )
+                    .slice(0, 5)
+                    .map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => setNewOrderForm(prev => ({ ...prev, userId: u.id }))}
+                        className="px-3 py-1.5 hover:bg-emerald-50 rounded cursor-pointer flex justify-between items-center transition-all"
+                      >
+                        <div>
+                          <span className="font-bold text-text">{u.name}</span>
+                          <span className="text-text-secondary text-[11px] ml-2">({u.email || 'No email'})</span>
+                        </div>
+                        <span className="font-mono text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded text-[11px]">
+                          {u.id}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* Grid 2 cols for Order ID and Product Name */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">
+                  Mã đơn hàng (Order ID)
+                </label>
+                <input
+                  type="text"
+                  value={newOrderForm.id}
+                  onChange={(e) => setNewOrderForm(prev => ({ ...prev, id: e.target.value }))}
+                  placeholder="Để trống để tự sinh mã đơn"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-mono"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">
+                  Trạng thái ban đầu
+                </label>
+                <select
+                  value={newOrderForm.status}
+                  onChange={(e) => setNewOrderForm(prev => ({ ...prev, status: e.target.value as any }))}
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold"
+                >
+                  <option value="pending">Đang chờ xử lý (Pending)</option>
+                  <option value="approved">Hoàn thành (Cộng tiền ví)</option>
+                  <option value="rejected">Hủy (Rejected)</option>
+                  <option value="returned">Hoàn hàng (Returned)</option>
+                  <option value="paid">Đã thanh toán (Paid)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Product Name */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-text/80">
+                Tên sản phẩm <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={newOrderForm.productName}
+                onChange={(e) => setNewOrderForm(prev => ({ ...prev, productName: e.target.value }))}
+                placeholder="Nhập tên sản phẩm..."
+                className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold"
+                required
+              />
+            </div>
+
+            {/* Shop ID & Item ID */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">
+                  Shop ID Shopee (Tùy chọn)
+                </label>
+                <input
+                  type="text"
+                  value={newOrderForm.shopId}
+                  onChange={(e) => setNewOrderForm(prev => ({ ...prev, shopId: e.target.value }))}
+                  placeholder="vd: 12345678"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-mono"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">
+                  Item ID Shopee (Tùy chọn - Phục vụ đối soát)
+                </label>
+                <input
+                  type="text"
+                  value={newOrderForm.itemId}
+                  onChange={(e) => setNewOrderForm(prev => ({ ...prev, itemId: e.target.value }))}
+                  placeholder="vd: 9876543210"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Amounts: Order Amount, Shopee Commission, Cashback */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">
+                  Giá trị đơn (₫) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={newOrderForm.orderAmount}
+                  onChange={(e) => setNewOrderForm(prev => ({ ...prev, orderAmount: e.target.value }))}
+                  placeholder="vd: 250000"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold"
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">
+                  Hoa hồng Shopee (₫)
+                </label>
+                <input
+                  type="number"
+                  value={newOrderForm.shopeeCommission}
+                  onChange={(e) => {
+                    const comm = e.target.value;
+                    const commNum = parseFloat(comm) || 0;
+                    const autoCb = Math.floor(commNum * ((settings?.cashbackPercentage ?? 50) / 100));
+                    setNewOrderForm(prev => ({
+                      ...prev,
+                      shopeeCommission: comm,
+                      estimatedCashback: comm ? String(autoCb) : '',
+                      realCashback: comm ? String(autoCb) : ''
+                    }));
+                  }}
+                  placeholder="vd: 20000"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">
+                  Hoàn tiền cho khách (₫)
+                </label>
+                <input
+                  type="number"
+                  value={newOrderForm.realCashback || newOrderForm.estimatedCashback}
+                  onChange={(e) => setNewOrderForm(prev => ({
+                    ...prev,
+                    realCashback: e.target.value,
+                    estimatedCashback: e.target.value
+                  }))}
+                  placeholder="Tự tính hoặc nhập tay"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold text-emerald-700"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-text-secondary">
+              💡 Tỉ lệ hoàn tiền hệ thống hiện tại là <b>{settings?.cashbackPercentage ?? 50}%</b> hoa hồng Shopee.
+            </p>
+
+            {/* Notes */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-text/80">Ghi chú (Tùy chọn)</label>
+              <textarea
+                value={newOrderForm.notes}
+                onChange={(e) => setNewOrderForm(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Ghi chú đối soát hoặc thông tin thêm về đơn hàng..."
+                className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary min-h-[60px]"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border/40">
+              <Button type="button" variant="ghost" onClick={() => setIsCreateOrderModalOpen(false)} disabled={isSubmittingOrder} className="font-bold">
+                Hủy bỏ
+              </Button>
+              <Button type="submit" disabled={isSubmittingOrder} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5">
+                {isSubmittingOrder ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Tạo đơn hàng
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 

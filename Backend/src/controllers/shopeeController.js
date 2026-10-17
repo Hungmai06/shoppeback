@@ -6,7 +6,8 @@ const {
   normalizeShopeeProductUrl,
   fetchProductDataFromAddLiveTag,
   formatStandardSubId,
-  buildShopeeAnRedirLink
+  buildShopeeAnRedirLink,
+  extractShopeeIds
 } = require('../services/shopeeService');
 const { getDatabase } = require('../config/db');
 
@@ -58,16 +59,17 @@ async function convertShopeeLink(req, res) {
     const affiliateLink = link2;
 
     // 4. Lưu thông tin click & mapping (sub_id -> user_id) vào DB
+    const { shopId, itemId } = extractShopeeIds(originUrl);
     try {
       await db.run(
-        'INSERT INTO click_logs (id, user_id, product_url, sub_id) VALUES (?, ?, ?, ?)',
-        [clickId, resolvedUserId, originUrl, subId]
+        'INSERT INTO click_logs (id, user_id, product_url, sub_id, shop_id, item_id) VALUES (?, ?, ?, ?, ?, ?)',
+        [clickId, resolvedUserId, originUrl, subId, shopId || null, itemId || null]
       );
     } catch (dbErr) {
       console.warn('Click log insertion warning:', dbErr.message);
     }
 
-    // 5. Trả về cho Frontend cả link1 và link2 cùng subId
+    // 5. Trả về cho Frontend cả link1 và link2 cùng subId, shopId, itemId
     const isCustomSystemLink = Boolean(customBaseUrl && customBaseUrl.trim() && !customBaseUrl.includes('an_redir'));
 
     return res.json({
@@ -79,7 +81,9 @@ async function convertShopeeLink(req, res) {
       cookieProductUrl,
       isCustomSystemLink,
       clickId,
-      subId
+      subId,
+      shopId,
+      itemId
     });
 
   } catch (error) {

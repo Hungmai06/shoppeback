@@ -4,6 +4,7 @@ const csv = require('csv-parser');
 const XLSX = require('xlsx');
 const { getDatabase } = require('../config/db');
 const { recalculateUserBalances } = require('../services/balanceService');
+const { extractShopeeIds } = require('../services/shopeeService');
 
 async function readRowsFromFile(filePath, originalName = '') {
   const ext = path.extname(originalName || filePath).toLowerCase();
@@ -361,9 +362,75 @@ function extractRowFields(row) {
     subId = foundSubParts.join('-');
   }
 
-  // === PRODUCT NAME ===
-  // Official columns: "Tên Item" -> normKey = "tenitem", "Tên Shop" -> normKey = "tenshop"
-  for (const normKey of ['tenitem', 'tensanpham', 'tensp', 'itemname', 'productname', 'tenshop', 'sanpham', 'item']) {
+  // === SHOP ID, ITEM ID, SHOP NAME & MODEL ID ===
+  // Official columns: "Shop id" -> normKey = "shopid", "Tên Cửa Hàng"/"Tên Shop" -> normKey = "tencuahang"/"tenshop"
+  // "Item id" -> normKey = "itemid", "Tên Item"/"Tên sản phẩm" -> normKey = "tenitem"/"tensanpham", "ID Model" -> normKey = "idmodel"
+  let shopId = '';
+  let shopName = '';
+  let itemId = '';
+  let modelId = '';
+
+  // 1. Shop ID
+  for (const normKey of ['shopid', 'idshop', 'mashop', 'idcuahang', 'macuahang', 'cuahangid', 'sellerid', 'idseller']) {
+    if (normMap[normKey] && normMap[normKey].val) {
+      shopId = normMap[normKey].val;
+      break;
+    }
+  }
+  if (!shopId) {
+    for (const [nk, entry] of Object.entries(normMap)) {
+      if ((nk.includes('shopid') || nk.includes('idshop') || nk.includes('cuahangid') || nk.includes('idcuahang')) && entry.val) {
+        shopId = entry.val;
+        break;
+      }
+    }
+  }
+
+  // 2. Shop Name (Tên Cửa Hàng / Tên Shop)
+  for (const normKey of ['tencuahang', 'tenshop', 'shopname', 'cuahang', 'sellername', 'nameshop']) {
+    if (normMap[normKey] && normMap[normKey].val) {
+      shopName = normMap[normKey].val;
+      break;
+    }
+  }
+  if (!shopName) {
+    for (const [nk, entry] of Object.entries(normMap)) {
+      if ((nk.includes('tencuahang') || nk.includes('tenshop') || nk.includes('shopname')) && entry.val) {
+        shopName = entry.val;
+        break;
+      }
+    }
+  }
+
+  // 3. ID Model
+  for (const normKey of ['idmodel', 'modelid', 'mamodel', 'maphanloai', 'idphanloai']) {
+    if (normMap[normKey] && normMap[normKey].val) {
+      modelId = normMap[normKey].val;
+      break;
+    }
+  }
+
+  // 4. Item ID (Ưu tiên Item id chính thức)
+  for (const normKey of ['itemid', 'iditem', 'masanpham', 'idsanpham', 'productid', 'idproduct', 'maitem']) {
+    if (normMap[normKey] && normMap[normKey].val) {
+      itemId = normMap[normKey].val;
+      break;
+    }
+  }
+  if (!itemId) {
+    for (const [nk, entry] of Object.entries(normMap)) {
+      if ((nk.includes('itemid') || nk.includes('iditem') || nk.includes('masanpham')) && entry.val) {
+        itemId = entry.val;
+        break;
+      }
+    }
+  }
+  if (!itemId && modelId) {
+    itemId = modelId;
+  }
+
+  // === PRODUCT NAME (Tên Item / Tên sản phẩm) ===
+  for (const normKey of ['tenitem', 'tensanpham', 'tensp', 'itemname', 'productname', 'sanpham', 'item']) {
     if (normMap[normKey] && normMap[normKey].val) {
       productName = normMap[normKey].val;
       break;
@@ -377,11 +444,14 @@ function extractRowFields(row) {
       }
     }
   }
+  if (!productName && shopName) {
+    productName = shopName;
+  }
 
   // === ORDER AMOUNT ===
-  // Official column: "Giá trị đơn hàng (₫)" -> normKey = "giatridonhangd", fallback "Giá(₫)"
+  // Official columns: "Giá sau chiết khấu", "Doanh thu thuần", "Giá trị đơn hàng (₫)", "Giá(₫)"
   const amountCandidates = [
-    'giatridonhangd', 'giatridonhang', 'giad', 'gia', 'giatrionhangd', 'giatrionhang',
+    'giasauchietkhau', 'doanhthuthuan', 'giatridonhangd', 'giatridonhang', 'giad', 'gia', 'giatrionhangd', 'giatrionhang',
     'giadonhang', 'giadon', 'giatri', 'tongtien', 'ordervalue', 'orderamount',
     'totalamount', 'amount', 'price'
   ];
@@ -403,23 +473,22 @@ function extractRowFields(row) {
     }
   }
 
-  // === COMMISSION (Hoa hồng ròng tiếp thị liên kết - Final net commission) ===
-  // Official columns:
-  // 1. "Hoa hồng ròng tiếp thị liên kết(₫)" -> normKey = "hoahongrongtipthilienketd"
-  // 2. "Tổng hoa hồng đơn hàng(₫)" -> normKey = "tonghoahongdonhangd"
-  // 3. "Hoa hồng đơn hàng từ Shopee(₫)" -> normKey = "hoahongdonhangtushopeed"
-  // 4. "Tổng hoa hồng sản phẩm(₫)" -> normKey = "tonghoahongsanphamd"
+  // === COMMISSION (Hoa hồng ròng tiếp thị liên kết / Tổng hoa hồng) ===
   const commCandidates = [
     'hoahongrongtipthilienketd',     // Hoa hồng ròng tiếp thị liên kết(₫)
     'hoahongrongtipthilienket',
+    'hoahongrong',
     'tonghoahongdonhangd',            // Tổng hoa hồng đơn hàng(₫)
     'tonghoahongdonhang',
     'hoahongdonhangtushopeed',        // Hoa hồng đơn hàng từ Shopee(₫)
     'hoahongdonhangtushopee',
     'tonghoahongsanphamd',            // Tổng hoa hồng sản phẩm(₫)
     'tonghoahongsanpham',
+    'tonghoahong',                    // Tổng hoa hồng
     'hoahongshopeetrensanphamd',     // Hoa hồng Shopee trên sản phẩm(₫)
     'hoahongshopeetrensanpham',
+    'hoahongshopee',
+    'hoahongshop',
     'hoahongtong',
     'hoahongsan',
     'hoahong',
@@ -483,34 +552,19 @@ function extractRowFields(row) {
     }
   }
 
-  // === SHOP ID & ITEM ID ===
-  // Official columns: "Shop id" -> normKey = "shopid", "Item id" -> normKey = "itemid", "ID Model" -> normKey = "idmodel"
-  let shopId = '';
-  let itemId = '';
-  for (const normKey of ['shopid', 'idshop']) {
-    if (normMap[normKey] && normMap[normKey].val) {
-      shopId = normMap[normKey].val;
-      break;
-    }
-  }
-  for (const normKey of ['itemid', 'iditem', 'idmodel', 'modelid', 'productid', 'idproduct']) {
-    if (normMap[normKey] && normMap[normKey].val) {
-      itemId = normMap[normKey].val;
-      break;
-    }
-  }
-
   return {
     orderId,
     subId,
     productName,
+    shopName,
     orderAmount,
     commission,
     shopeeStatus,
     purchaseTime,
     clickTime,
     shopId,
-    itemId
+    itemId,
+    modelId
   };
 }
 
@@ -652,10 +706,28 @@ function mapShopeeStatus(shopeeStatus) {
  * Thuật toán quét đối soát thông minh & linh hoạt:
  * Khớp Đơn chờ CLK (hoặc đơn gán thủ công), Click log, và User theo:
  * 1. Khớp theo ID đơn / SubID trực tiếp
- * 2. Khớp dự phòng thông minh: Thời gian đặt cùng ngày (Same calendar day / trong 24h) VÀ tra thông tin sản phẩm (Tên/Item ID/Shop ID/Giá).
+ * 2. Khớp thông minh theo Item ID, Shop ID, Tên sản phẩm, và Thời gian đặt (cùng ngày / trong 24h).
  */
 function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClickLogsFull, pendingOrders, extraOptions = {}) {
-  const { clickTimeStr, shopId, itemId, targetUserId, orderId, cleanSubId, consumedOrderIds, orderLookupMap } = extraOptions;
+  const {
+    clickTimeStr,
+    shopId,
+    itemId,
+    shopIds = [],
+    itemIds = [],
+    shopName,
+    shopNames = [],
+    productNames = [],
+    targetUserId,
+    orderId,
+    cleanSubId,
+    consumedOrderIds,
+    orderLookupMap
+  } = extraOptions;
+
+  // Tập hợp danh sách Item IDs và Shop IDs từ file Excel
+  const allItemIds = new Set((itemIds.length ? itemIds : (itemId ? [itemId] : [])).map(x => String(x).trim().toLowerCase()).filter(Boolean));
+  const allShopIds = new Set((shopIds.length ? shopIds : (shopId ? [shopId] : [])).map(x => String(x).trim().toLowerCase()).filter(Boolean));
 
   // Direct match by ID / click_id in pendingOrders
   if (pendingOrders && pendingOrders.length > 0) {
@@ -724,69 +796,82 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   const csvDateStr = getCalendarDateStr(purchaseTimeStr) || getCalendarDateStr(clickTimeStr);
   const candidates = [];
 
-  // Robust Product Matcher
-  const isProductMatch = (pName, pUrlOrName) => {
-    if (!pName && !pUrlOrName && !itemId && !shopId) return false;
-    const str1 = (pName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const str2 = (pUrlOrName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
+  // Robust Product Matcher: BẮT BUỘC KHỚP SẢN PHẨM (Item ID / Mã model / Tên sản phẩm rõ ràng)
+  // TUYỆT ĐỐI KHÔNG KHỚP NẾU CHỈ CÓ SHOP ID MÀ SẢN PHẨM KHÁC NHAU
+  const isProductMatch = (excelName, targetUrlOrName, targetShopId = '', targetItemId = '') => {
     // 1. Direct Item ID match
-    if (itemId && String(itemId).trim().length >= 4) {
-      const cleanItem = String(itemId).trim().toLowerCase();
-      if (str1.includes(cleanItem) || str2.includes(cleanItem)) return true;
+    if (targetItemId && allItemIds.has(String(targetItemId).trim().toLowerCase())) {
+      return { matched: true, matchType: 'itemId', matchedId: targetItemId, shopMatched: true };
     }
 
-    // 2. Direct Shop ID match
-    if (shopId && String(shopId).trim().length >= 4) {
-      const cleanShop = String(shopId).trim().toLowerCase();
-      if (str1.includes(cleanShop) || str2.includes(cleanShop)) return true;
+    let shopMatched = false;
+    if (targetShopId && allShopIds.has(String(targetShopId).trim().toLowerCase())) {
+      shopMatched = true;
     }
 
-    // 3. Extract numbers/IDs from product URL or string
-    const nums1 = str1.match(/\d{5,}/g) || [];
-    const nums2 = str2.match(/\d{5,}/g) || [];
-    for (const num1 of nums1) {
-      if (nums2.includes(num1)) return true;
+    const str1 = (excelName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const str2 = (targetUrlOrName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // 2. Check if any itemId from Excel is present inside targetUrlOrName (dài >= 6 số)
+    for (const itId of allItemIds) {
+      if (itId.length >= 6 && (str2.includes(itId) || str1.includes(itId))) {
+        return { matched: true, matchType: 'itemId', matchedId: itId, shopMatched };
+      }
     }
 
-    // 4. Tokenized Word Comparison (ignore generic words, check specific model codes)
+    // 3. Check if any shopId from Excel is present inside targetUrlOrName
+    for (const shId of allShopIds) {
+      if (shId.length >= 5 && (str2.includes(shId) || str1.includes(shId))) {
+        shopMatched = true;
+        break;
+      }
+    }
+
+    // 4. Tokenized Word Comparison (loại bỏ từ dừng, chỉ xét từ khóa đặc trưng)
     const words1 = str1.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
     const words2 = str2.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
     const stopWords = new Set([
       'shopee', 'mall', 'san', 'pham', 'chinh', 'hang', 'cao', 'cap', 'nam', 'nu',
       'shop', 'mua', 'ban', 'giam', 'gia', 'hot', 'combo', 'bo', 'set', 'moi',
-      'dep', 'thoi', 'trang', 'tiet', 'kiem', 'uu', 'dai', 'freeship', 'do', 'cho'
+      'dep', 'thoi', 'trang', 'tiet', 'kiem', 'uu', 'dai', 'freeship', 'do', 'cho',
+      'chuan', 'xin', 'loai', 'mau', 'size', 'day', 'va', 'cua', 'tai', 'cac'
     ]);
 
     const keyWords1 = words1.filter(w => !stopWords.has(w));
     const keyWords2 = words2.filter(w => !stopWords.has(w));
 
-    // Specific model code check (e.g. tx017, vachino, iphone15, xm4)
+    // Specific model code check (e.g. tx017, vachino, iphone15, xm4, s1 mini)
     for (const w1 of keyWords1) {
       if (w1.length >= 3 && (/\d/.test(w1) || w1.length >= 5)) {
-        if (keyWords2.some(w2 => w2.includes(w1) || w1.includes(w2))) {
-          return true;
+        if (keyWords2.some(w2 => w2 === w1 || (w1.length >= 4 && (w2.includes(w1) || w1.includes(w2))))) {
+          return { matched: true, matchType: 'modelCode', matchedCode: w1, shopMatched };
         }
       }
     }
 
-    let matchCount = 0;
+    // Phải khớp ít nhất 2 từ khóa đặc trưng (chiều dài >= 3 ký tự)
+    const matchedWords = [];
     for (const w1 of keyWords1) {
-      if (keyWords2.some(w2 => w2 === w1 || (w1.length >= 4 && w2.includes(w1)))) {
-        matchCount++;
+      if (w1.length >= 3 && keyWords2.some(w2 => w2 === w1 || (w1.length >= 5 && w2.includes(w1)))) {
+        matchedWords.push(w1);
       }
     }
 
-    if (matchCount >= 2) return true;
-    if (matchCount >= 1 && (keyWords1.length <= 2 || keyWords2.length <= 2)) return true;
-
-    const clean1 = str1.replace(/[^a-z0-9]/g, '');
-    const clean2 = str2.replace(/[^a-z0-9]/g, '');
-    if (clean1.length >= 8 && clean2.length >= 8) {
-      if (clean1.includes(clean2) || clean2.includes(clean1)) return true;
+    if (matchedWords.length >= 2) {
+      return { matched: true, matchType: 'nameWords', matchCount: matchedWords.length, matchedWords, shopMatched };
     }
 
-    return false;
+    // Chuỗi con dài tối thiểu 12 ký tự không tính khoảng trắng
+    const clean1 = str1.replace(/[^a-z0-9]/g, '');
+    const clean2 = str2.replace(/[^a-z0-9]/g, '');
+    if (clean1.length >= 12 && clean2.length >= 12) {
+      if (clean1.includes(clean2) || clean2.includes(clean1)) {
+        return { matched: true, matchType: 'nameSubstring', shopMatched };
+      }
+    }
+
+    // KHÔNG BAO GIỜ KHỚP NẾU CHỈ CÓ SHOP ID HOẶC TỪ KHÓA CHUNG CHUNG
+    return { matched: false };
   };
 
   // 1. Quét các đơn hàng pending trong CSDL
@@ -796,27 +881,57 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
         continue;
       }
 
-      // If targetUserId is set (from Sub_id1 or manual assignment), only check matching pending orders for targetUserId or unassigned pending orders
       if (targetUserId && pending.user_id && pending.user_id !== targetUserId) {
         continue;
       }
 
-      const productMatched = isProductMatch(productName, pending.product_name);
-      if (!productMatched) continue;
+      // Trích xuất shopId & itemId của pending order nếu có
+      let pShopId = pending.shop_id || '';
+      let pItemId = pending.item_id || '';
+      if (!pShopId || !pItemId) {
+        const extracted = extractShopeeIds(pending.product_name || '');
+        if (!pShopId && extracted.shopId) pShopId = extracted.shopId;
+        if (!pItemId && extracted.itemId) pItemId = extracted.itemId;
+      }
 
-      let score = 70;
+      const matchRes = isProductMatch(productName, pending.product_name, pShopId, pItemId);
+      if (!matchRes.matched) continue;
+
+      let score = 0;
+
+      // 1. Điểm số sản phẩm
+      if (matchRes.matchType === 'itemId') {
+        score += 80; // Item ID là duy nhất trên Shopee
+      } else if (matchRes.matchType === 'modelCode') {
+        score += 60; // Trùng mã model sản phẩm
+      } else if (matchRes.matchType === 'nameWords' && matchRes.matchCount >= 2) {
+        score += 45; // Trùng nhiều từ khóa đặc trưng
+      } else if (matchRes.matchType === 'nameSubstring') {
+        score += 45;
+      } else {
+        continue; // Bỏ qua nếu không thỏa mãn sản phẩm
+      }
+
+      // 2. Điểm cộng khớp Shop ID
+      const shopMatched = matchRes.shopMatched || (pShopId && allShopIds.has(String(pShopId).toLowerCase()));
+      if (shopMatched) {
+        score += 25;
+      }
+
+      // 3. Điểm cộng khớp người dùng
       if (targetUserId && pending.user_id && pending.user_id === targetUserId) {
         score += 30;
       }
 
-      let timeWithinWindow = false;
+      // 4. Khớp thời gian
       let isSameDay = false;
+      let timeWithinWindow = false;
       const pendingDateStr = getCalendarDateStr(pending.created_at);
 
       if (csvDateStr && pendingDateStr && csvDateStr === pendingDateStr) {
         isSameDay = true;
         timeWithinWindow = true;
-        score += 35; // Khớp cùng ngày theo ngày đặt
+        score += 35; // Khớp cùng ngày lịch
       } else if (baseRefMs && pending.created_at) {
         const pendingMs = new Date(pending.created_at).getTime();
         if (!isNaN(pendingMs)) {
@@ -825,22 +940,43 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
             score += 25;
             timeWithinWindow = true;
           } else if (diffMs <= 172800000) { // trong vòng 48 giờ
-            score += 15;
+            score += 10;
             timeWithinWindow = true;
           }
         }
       }
 
-      // Kiểm tra độ khớp giá đơn hàng
+      // 5. Khớp giá tiền
+      let priceMatched = false;
       if (orderAmount > 0 && pending.order_amount > 0) {
         const pDiff = Math.abs(orderAmount - pending.order_amount) / Math.max(orderAmount, pending.order_amount);
-        if (pDiff <= 0.15) {
+        if (pDiff <= 0.20) {
           score += 15;
+          priceMatched = true;
+        } else if (pDiff > 0.50 && matchRes.matchType !== 'itemId') {
+          score -= 30; // Chênh lệch giá quá lớn trừ trường hợp trùng Item ID
         }
       }
 
-      if (!targetUserId && !pending.user_id) continue;
-      if (!targetUserId && !timeWithinWindow) continue;
+      // BẮT BUỘC PHẢI THỎA MÃN ĐIỀU KIỆN THỜI GIAN & ĐỘ TIN CẬY
+      if (!timeWithinWindow) continue;
+
+      const isValid = (
+        matchRes.matchType === 'itemId' ||
+        (matchRes.matchType === 'modelCode' && isSameDay) ||
+        (matchRes.matchType === 'nameWords' && isSameDay && (shopMatched || priceMatched))
+      );
+
+      if (!isValid || score < 95) continue;
+
+      let matchReason = '';
+      if (matchRes.matchType === 'itemId') {
+        matchReason = `Khớp Đơn chờ (${pending.id}) theo Item ID (${matchRes.matchedId || pItemId})${isSameDay ? ' & Cùng ngày' : ''}`;
+      } else if (matchRes.matchType === 'modelCode') {
+        matchReason = `Khớp Đơn chờ (${pending.id}) theo Mã model (${matchRes.matchedCode}) & Cùng ngày`;
+      } else {
+        matchReason = `Khớp Đơn chờ (${pending.id}) theo Tên sản phẩm & CÙNG NGÀY (${pendingDateStr})`;
+      }
 
       const pTimeMs = pending.created_at ? new Date(pending.created_at).getTime() : 0;
       candidates.push({
@@ -849,9 +985,11 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
         clickId: pending.click_id || pending.id,
         pendingOrderId: pending.id,
         createdAtMs: pTimeMs,
-        reason: isSameDay 
-          ? `Khớp Đơn chờ (${pending.id}) theo CÙNG NGÀY (${pendingDateStr}) & Tên sản phẩm` 
-          : `Khớp Đơn chờ (${pending.id}) & Tên sản phẩm/Shop ID`
+        matchType: matchRes.matchType,
+        isSameDay,
+        shopMatched,
+        priceMatched,
+        reason: matchReason
       });
     }
   }
@@ -876,16 +1014,40 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
       if (!linkedPending || !linkedPending.id) continue;
       if (consumedOrderIds && consumedOrderIds.has(linkedPending.id.toLowerCase())) continue;
 
-      const productMatched = isProductMatch(productName, log.product_url) || isProductMatch(productName, linkedPending.product_name);
-      if (!productMatched) continue;
-
-      let score = 70;
-      if (targetUserId && (log.user_id === targetUserId || linkedPending.user_id === targetUserId)) {
-        score += 25;
+      // Lấy Shop ID và Item ID từ click log nếu có
+      let logShopId = log.shop_id || '';
+      let logItemId = log.item_id || '';
+      if (!logShopId || !logItemId) {
+        const extracted = extractShopeeIds(log.product_url || '');
+        if (!logShopId && extracted.shopId) logShopId = extracted.shopId;
+        if (!logItemId && extracted.itemId) logItemId = extracted.itemId;
       }
 
-      let timeWithinWindow = false;
+      const matchRes = isProductMatch(productName, log.product_url, logShopId, logItemId) || isProductMatch(productName, linkedPending.product_name, linkedPending.shop_id || logShopId, linkedPending.item_id || logItemId);
+      if (!matchRes.matched) continue;
+
+      let score = 0;
+      if (matchRes.matchType === 'itemId') {
+        score += 80;
+      } else if (matchRes.matchType === 'modelCode') {
+        score += 60;
+      } else if (matchRes.matchType === 'nameWords' && matchRes.matchCount >= 2) {
+        score += 45;
+      } else if (matchRes.matchType === 'nameSubstring') {
+        score += 45;
+      } else {
+        continue;
+      }
+
+      const shopMatched = matchRes.shopMatched || (logShopId && allShopIds.has(String(logShopId).toLowerCase()));
+      if (shopMatched) score += 25;
+
+      if (targetUserId && (log.user_id === targetUserId || linkedPending.user_id === targetUserId)) {
+        score += 30;
+      }
+
       let isSameDay = false;
+      let timeWithinWindow = false;
       const logDateStr = getCalendarDateStr(log.click_time || linkedPending.created_at);
 
       if (csvDateStr && logDateStr && csvDateStr === logDateStr) {
@@ -903,7 +1065,24 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
         }
       }
 
-      if (!targetUserId && !timeWithinWindow) continue;
+      if (!timeWithinWindow) continue;
+
+      const isValid = (
+        matchRes.matchType === 'itemId' ||
+        (matchRes.matchType === 'modelCode' && isSameDay) ||
+        (matchRes.matchType === 'nameWords' && isSameDay && shopMatched)
+      );
+
+      if (!isValid || score < 95) continue;
+
+      let matchReason = '';
+      if (matchRes.matchType === 'itemId') {
+        matchReason = `Khớp Đơn chờ CLK (${linkedPending.id}) theo Item ID (${matchRes.matchedId || logItemId})${isSameDay ? ' & Cùng ngày' : ''}`;
+      } else if (matchRes.matchType === 'modelCode') {
+        matchReason = `Khớp Đơn chờ CLK (${linkedPending.id}) theo Mã model (${matchRes.matchedCode}) & Cùng ngày`;
+      } else {
+        matchReason = `Khớp Đơn chờ CLK (${linkedPending.id}) theo CÙNG NGÀY (${logDateStr}) & Tên sản phẩm`;
+      }
 
       const cTimeMs = linkedPending.created_at ? new Date(linkedPending.created_at).getTime() : ((log.click_time) ? new Date(log.click_time).getTime() : 0);
       candidates.push({
@@ -912,9 +1091,10 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
         clickId: log.id || linkedPending.click_id,
         pendingOrderId: linkedPending.id,
         createdAtMs: cTimeMs,
-        reason: isSameDay
-          ? `Khớp Đơn chờ CLK (${linkedPending.id}) theo CÙNG NGÀY (${logDateStr}) & Sản phẩm`
-          : `Khớp Đơn chờ CLK (${linkedPending.id}) & Tên sản phẩm`
+        matchType: matchRes.matchType,
+        isSameDay,
+        shopMatched,
+        reason: matchReason
       });
     }
   }
@@ -922,24 +1102,23 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
   if (candidates.length === 0) return null;
 
   candidates.sort((a, b) => {
-    // 1. Nếu có đơn khớp trực tiếp mã đơn (200 điểm) thì luôn ưu tiên hàng đầu
-    if (Math.abs(b.score - a.score) >= 30) {
+    // 1. Ưu tiên điểm số cao hơn
+    if (Math.abs(b.score - a.score) >= 15) {
       return b.score - a.score;
     }
-    // 2. Nếu cùng nhiều sản phẩm trong 1 ngày của 1 shop (điểm số tương đương):
-    // ƯU TIÊN LẤY ĐƠN MUỘN NHẤT ĐỂ ĐỐI SOÁT (createdAtMs lớn nhất)
+    // 2. Nếu cùng mức điểm, ưu tiên đơn muộn nhất (createdAtMs lớn nhất)
     const timeB = b.createdAtMs || 0;
     const timeA = a.createdAtMs || 0;
     if (timeB !== timeA) {
-      return timeB - timeA; // Muộn nhất xếp lên đầu
+      return timeB - timeA;
     }
     return b.score - a.score;
   });
 
   const best = candidates[0];
 
-  // Khớp đạt từ 85 điểm trở lên VÀ BẮT BUỘC PHẢI CÓ ĐƠN CHỜ CLK TRÊN WEB
-  if (best && best.score >= 85 && best.pendingOrderId) {
+  // Khớp đạt từ 95 điểm trở lên VÀ BẮT BUỘC PHẢI CÓ ĐƠN CHỜ CLK TRÊN WEB
+  if (best && best.score >= 95 && best.pendingOrderId) {
     return best;
   }
 
@@ -964,13 +1143,19 @@ function groupRowsByOrderId(rows) {
         orderId: fields.orderId,
         subId: fields.subId || '',
         productNames: fields.productName ? [fields.productName] : [],
+        shopNames: fields.shopName ? [fields.shopName] : [],
+        shopIds: fields.shopId ? [fields.shopId] : [],
+        itemIds: fields.itemId ? [fields.itemId] : [],
+        modelIds: fields.modelId ? [fields.modelId] : [],
         orderAmount: fields.orderAmount || 0,
         commission: fields.commission || 0,
         shopeeStatus: fields.shopeeStatus || '',
         purchaseTime: fields.purchaseTime,
         clickTime: fields.clickTime || null,
         shopId: fields.shopId || '',
-        itemId: fields.itemId || ''
+        itemId: fields.itemId || '',
+        modelId: fields.modelId || '',
+        shopName: fields.shopName || ''
       });
     } else {
       const existing = grouped.get(lowerId);
@@ -981,6 +1166,19 @@ function groupRowsByOrderId(rows) {
       if (fields.productName && !existing.productNames.includes(fields.productName)) {
         existing.productNames.push(fields.productName);
       }
+      if (fields.shopName && !existing.shopNames.includes(fields.shopName)) {
+        existing.shopNames.push(fields.shopName);
+      }
+      if (fields.shopId && !existing.shopIds.includes(fields.shopId)) {
+        existing.shopIds.push(fields.shopId);
+      }
+      if (fields.itemId && !existing.itemIds.includes(fields.itemId)) {
+        existing.itemIds.push(fields.itemId);
+      }
+      if (fields.modelId && !existing.modelIds.includes(fields.modelId)) {
+        existing.modelIds.push(fields.modelId);
+      }
+
       existing.orderAmount += fields.orderAmount || 0;
       existing.commission += fields.commission || 0;
       if (fields.shopeeStatus && !existing.shopeeStatus) {
@@ -998,6 +1196,9 @@ function groupRowsByOrderId(rows) {
       if (!existing.itemId && fields.itemId) {
         existing.itemId = fields.itemId;
       }
+      if (!existing.shopName && fields.shopName) {
+        existing.shopName = fields.shopName;
+      }
     }
   }
 
@@ -1011,13 +1212,19 @@ function groupRowsByOrderId(rows) {
       orderId: item.orderId,
       subId: item.subId,
       productName: combinedName || 'Sản phẩm mua từ Shopee',
+      shopName: item.shopNames.join(', ') || item.shopName || '',
       orderAmount: Math.floor(item.orderAmount),
       commission: Math.floor(item.commission),
       shopeeStatus: item.shopeeStatus,
       purchaseTime: item.purchaseTime,
       clickTime: item.clickTime,
-      shopId: item.shopId,
-      itemId: item.itemId
+      shopId: item.shopIds.join(', ') || item.shopId || '',
+      itemId: item.itemIds.join(', ') || item.itemId || '',
+      modelId: item.modelIds.join(', ') || item.modelId || '',
+      shopIds: item.shopIds,
+      itemIds: item.itemIds,
+      productNames: item.productNames,
+      shopNames: item.shopNames
     };
   });
 
@@ -1205,6 +1412,11 @@ async function uploadAndAnalyze(req, res) {
           clickTimeStr: clickTime, 
           shopId, 
           itemId, 
+          shopIds: order.shopIds || (shopId ? [shopId] : []),
+          itemIds: order.itemIds || (itemId ? [itemId] : []),
+          shopName: order.shopName,
+          shopNames: order.shopNames,
+          productNames: order.productNames,
           targetUserId, 
           orderId, 
           cleanSubId,
@@ -1233,6 +1445,9 @@ async function uploadAndAnalyze(req, res) {
           report.details.push({
             id: orderId,
             name: productName || 'Sản phẩm đã thanh toán',
+            shopId: order.shopId || '',
+            itemId: order.itemId || '',
+            shopName: order.shopName || '',
             amount: orderAmount,
             cashback: userCashback,
             subId: targetUserId,
@@ -1245,6 +1460,9 @@ async function uploadAndAnalyze(req, res) {
           report.details.push({
             id: orderId,
             name: productName,
+            shopId: order.shopId || '',
+            itemId: order.itemId || '',
+            shopName: order.shopName || '',
             amount: orderAmount,
             cashback: userCashback,
             subId: targetUserId,
@@ -1269,6 +1487,9 @@ async function uploadAndAnalyze(req, res) {
           report.details.push({
             id: orderId,
             name: productName,
+            shopId: order.shopId || '',
+            itemId: order.itemId || '',
+            shopName: order.shopName || '',
             amount: orderAmount,
             cashback: userCashback,
             subId: targetUserId,
@@ -1288,6 +1509,9 @@ async function uploadAndAnalyze(req, res) {
           report.details.push({
             id: orderId,
             name: productName,
+            shopId: order.shopId || '',
+            itemId: order.itemId || '',
+            shopName: order.shopName || '',
             amount: orderAmount,
             cashback: userCashback,
             subId: cleanSubId || targetUserId || '',
@@ -1303,6 +1527,9 @@ async function uploadAndAnalyze(req, res) {
         report.details.push({
           id: orderId,
           name: productName,
+          shopId: order.shopId || '',
+          itemId: order.itemId || '',
+          shopName: order.shopName || '',
           amount: orderAmount,
           cashback: userCashback,
           subId: targetUserId || smartMatchInfo.userId || cleanSubId,
@@ -1474,6 +1701,11 @@ async function applyReconciliation(req, res) {
           clickTimeStr: clickTime, 
           shopId, 
           itemId, 
+          shopIds: order.shopIds || (shopId ? [shopId] : []),
+          itemIds: order.itemIds || (itemId ? [itemId] : []),
+          shopName: order.shopName,
+          shopNames: order.shopNames,
+          productNames: order.productNames,
           targetUserId, 
           orderId, 
           cleanSubId,
@@ -1522,7 +1754,7 @@ async function applyReconciliation(req, res) {
           continue;
         }
 
-        // Always update order with exact CSV price, commission, cashback and product name
+        // Always update order with exact CSV price, commission, cashback, product name, shopId and itemId
         await db.run(
           `UPDATE orders
            SET status = ?,
@@ -1532,9 +1764,11 @@ async function applyReconciliation(req, res) {
                shopee_commission = ?,
                order_amount = ?,
                product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
+               shop_id = CASE WHEN ? != '' THEN ? ELSE shop_id END,
+               item_id = CASE WHEN ? != '' THEN ? ELSE item_id END,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [newStatus, newUserId, userCashback, userCashback, Math.floor(commission), Math.floor(orderAmount), productName, productName, dbOrder.id]
+          [newStatus, newUserId, userCashback, userCashback, Math.floor(commission), Math.floor(orderAmount), productName, productName, shopId, shopId, itemId, itemId, dbOrder.id]
         );
 
         // Delete duplicate CLK pending order if smartMatch matched a different pending order ID
@@ -1653,6 +1887,8 @@ async function applyReconciliation(req, res) {
                real_cashback = ?,
                status = ?,
                user_id = COALESCE(?, user_id),
+               shop_id = CASE WHEN ? != '' THEN ? ELSE shop_id END,
+               item_id = CASE WHEN ? != '' THEN ? ELSE item_id END,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
           [
@@ -1667,6 +1903,10 @@ async function applyReconciliation(req, res) {
             userCashback,
             mappedStatus,
             finalUserId,
+            shopId,
+            shopId,
+            itemId,
+            itemId,
             pendingIdToUpdate
           ]
         );
