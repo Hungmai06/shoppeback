@@ -491,11 +491,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
+          id: order.id,
+          clickId: order.id,
           productUrl: order.productName,
           productName: order.productName,
           productImage: order.productImage,
           orderAmount: order.orderAmount,
-          estimatedCashback: order.estimatedCashback
+          estimatedCashback: order.estimatedCashback,
+          userId: order.userId
         })
       });
       // Visual feedback in local UI

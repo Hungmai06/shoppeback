@@ -655,7 +655,7 @@ function mapShopeeStatus(shopeeStatus) {
  * 2. Khớp dự phòng thông minh: Thời gian đặt cùng ngày (Same calendar day / trong 24h) VÀ tra thông tin sản phẩm (Tên/Item ID/Shop ID/Giá).
  */
 function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClickLogsFull, pendingOrders, extraOptions = {}) {
-  const { clickTimeStr, shopId, itemId, targetUserId, orderId, cleanSubId, consumedOrderIds } = extraOptions;
+  const { clickTimeStr, shopId, itemId, targetUserId, orderId, cleanSubId, consumedOrderIds, orderLookupMap } = extraOptions;
 
   // Direct match by ID / click_id in pendingOrders
   if (pendingOrders && pendingOrders.length > 0) {
@@ -856,30 +856,44 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
     }
   }
 
-  // 2. Quét bảng click_logs
+  // 2. Quét bảng click_logs và liên kết với Đơn chờ CLK trên web
   if (allClickLogsFull && allClickLogsFull.length > 0) {
     for (const log of allClickLogsFull) {
       if (!log.user_id) continue;
       if (targetUserId && log.user_id !== targetUserId) continue;
 
-      const productMatched = isProductMatch(productName, log.product_url);
+      // Tìm đơn chờ CLK tương ứng trên web
+      let linkedPending = null;
+      if (orderLookupMap) {
+        if (log.id && orderLookupMap.has(log.id.toLowerCase())) {
+          linkedPending = orderLookupMap.get(log.id.toLowerCase());
+        } else if (log.sub_id && orderLookupMap.has(log.sub_id.toLowerCase())) {
+          linkedPending = orderLookupMap.get(log.sub_id.toLowerCase());
+        }
+      }
+
+      // Chỉ xét nếu lượt click này đã tạo ra Đơn chờ CLK trên web
+      if (!linkedPending || !linkedPending.id) continue;
+      if (consumedOrderIds && consumedOrderIds.has(linkedPending.id.toLowerCase())) continue;
+
+      const productMatched = isProductMatch(productName, log.product_url) || isProductMatch(productName, linkedPending.product_name);
       if (!productMatched) continue;
 
-      let score = 65;
-      if (targetUserId && log.user_id === targetUserId) {
+      let score = 70;
+      if (targetUserId && (log.user_id === targetUserId || linkedPending.user_id === targetUserId)) {
         score += 25;
       }
 
       let timeWithinWindow = false;
       let isSameDay = false;
-      const logDateStr = getCalendarDateStr(log.click_time || log.created_at);
+      const logDateStr = getCalendarDateStr(log.click_time || linkedPending.created_at);
 
       if (csvDateStr && logDateStr && csvDateStr === logDateStr) {
         isSameDay = true;
         timeWithinWindow = true;
         score += 35;
       } else if (baseRefMs) {
-        const clickMs = new Date(log.click_time || log.created_at).getTime();
+        const clickMs = new Date(log.click_time || linkedPending.created_at).getTime();
         if (!isNaN(clickMs)) {
           const diffMs = Math.abs(baseRefMs - clickMs);
           if (diffMs <= 86400000) {
@@ -891,15 +905,16 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
 
       if (!targetUserId && !timeWithinWindow) continue;
 
-      const cTimeMs = (log.click_time || log.created_at) ? new Date(log.click_time || log.created_at).getTime() : 0;
+      const cTimeMs = linkedPending.created_at ? new Date(linkedPending.created_at).getTime() : ((log.click_time) ? new Date(log.click_time).getTime() : 0);
       candidates.push({
         score,
-        userId: log.user_id,
-        clickId: log.id,
+        userId: linkedPending.user_id || log.user_id,
+        clickId: log.id || linkedPending.click_id,
+        pendingOrderId: linkedPending.id,
         createdAtMs: cTimeMs,
         reason: isSameDay
-          ? `Khớp Lượt click (${log.id}) theo CÙNG NGÀY (${logDateStr}) & Sản phẩm`
-          : `Khớp Lượt click (${log.id}) & Tên sản phẩm`
+          ? `Khớp Đơn chờ CLK (${linkedPending.id}) theo CÙNG NGÀY (${logDateStr}) & Sản phẩm`
+          : `Khớp Đơn chờ CLK (${linkedPending.id}) & Tên sản phẩm`
       });
     }
   }
@@ -923,8 +938,8 @@ function findSmartMatchedUser(purchaseTimeStr, productName, orderAmount, allClic
 
   const best = candidates[0];
 
-  // Khớp đạt từ 85 điểm trở lên
-  if (best && best.score >= 85) {
+  // Khớp đạt từ 85 điểm trở lên VÀ BẮT BUỘC PHẢI CÓ ĐƠN CHỜ CLK TRÊN WEB
+  if (best && best.score >= 85 && best.pendingOrderId) {
     return best;
   }
 
@@ -1193,7 +1208,8 @@ async function uploadAndAnalyze(req, res) {
           targetUserId, 
           orderId, 
           cleanSubId,
-          consumedOrderIds: consumedPendingOrderIds
+          consumedOrderIds: consumedPendingOrderIds,
+          orderLookupMap
         });
 
         if (smartMatchInfo) {
@@ -1262,37 +1278,37 @@ async function uploadAndAnalyze(req, res) {
           });
         }
       } else {
-        // Totally new order or updating pending CLK order
-        if (!cleanSubId && !targetUserId && (!smartMatchInfo || !smartMatchInfo.pendingOrderId)) {
-          // Skip importing unmatched CSV order ONLY if it has NO Sub_id1, no user match, and no pending order match
+        // Đơn hàng mới từ file CSV Shopee (chưa từng đối soát trước đó)
+        // BẮT BUỘC PHẢI KHỚP VỚI MỘT ĐƠN ĐANG CHỜ TẠO BẰNG CLK TRÊN WEB
+        const matchedPendingId = (smartMatchInfo && smartMatchInfo.pendingOrderId) ? smartMatchInfo.pendingOrderId : null;
+
+        if (!matchedPendingId) {
+          // BỎ QUA: Không có đơn chờ CLK nào trên web khớp với dòng này
           report.missingCount++;
           report.details.push({
             id: orderId,
             name: productName,
             amount: orderAmount,
             cashback: userCashback,
-            subId: '',
+            subId: cleanSubId || targetUserId || '',
             shopeeStatus: mappedStatus,
             status: 'ignored',
-            reason: 'Bỏ qua: Đơn hàng không có SubID và không tìm thấy Đơn chờ cùng ngày khớp với sản phẩm'
+            reason: 'Bỏ qua: Không tìm thấy đơn chờ CLK nào trên web khớp với đơn này (Chỉ đối soát các đơn có phát sinh CLK trên web)'
           });
           continue;
         }
 
+        // Khớp thành công với đơn CLK đang chờ trên web
         report.matchedCount++;
         report.details.push({
           id: orderId,
           name: productName,
           amount: orderAmount,
           cashback: userCashback,
-          subId: targetUserId || cleanSubId,
+          subId: targetUserId || smartMatchInfo.userId || cleanSubId,
           shopeeStatus: mappedStatus,
           status: 'matched',
-          reason: (smartMatchInfo && smartMatchInfo.pendingOrderId)
-            ? `Cập nhật Mã Đơn chờ ${smartMatchInfo.pendingOrderId} -> ${orderId} cho User ${targetUserId || 'chưa gán'} (${smartMatchInfo.reason})`
-            : (targetUserId 
-                ? `Tạo đơn hàng mới cho User ${targetUserId} ở trạng thái ${mappedStatus}` 
-                : `Tạo đơn hàng mới với SubID (${cleanSubId}) ở trạng thái ${mappedStatus}`)
+          reason: `Khớp & cập nhật Đơn chờ CLK trên web (${matchedPendingId}) -> ${orderId} cho User ${targetUserId || smartMatchInfo.userId || 'chưa gán'} (${smartMatchInfo.reason})`
         });
       }
     }
@@ -1461,7 +1477,8 @@ async function applyReconciliation(req, res) {
           targetUserId, 
           orderId, 
           cleanSubId,
-          consumedOrderIds: consumedPendingOrderIds
+          consumedOrderIds: consumedPendingOrderIds,
+          orderLookupMap
         });
 
         if (smartMatchInfo) {
@@ -1613,104 +1630,78 @@ async function applyReconciliation(req, res) {
 
         updatedCount++;
       } else {
-        // Totally new order or updating pending CLK order
+        // Đơn hàng mới từ file CSV Shopee (chưa từng có trong hệ thống)
+        // BẮT BUỘC PHẢI KHỚP VỚI MỘT ĐƠN ĐANG CHỜ TẠO BẰNG CLK TRÊN WEB
         const pendingIdToUpdate = resolvedPendingOrderId || ((smartMatchInfo && smartMatchInfo.pendingOrderId) ? smartMatchInfo.pendingOrderId : null);
 
-        // Skip importing unmatched CSV order ONLY if it has NO Sub_id1, no user, and no pending click order
-        if (!cleanSubId && !targetUserId && !pendingIdToUpdate) {
+        if (!pendingIdToUpdate) {
+          // Không tìm thấy đơn chờ CLK tương ứng trên web -> BỎ QUA, TUYỆT ĐỐI KHÔNG TẠO ĐƠN MỚI
           ignoredCount++;
           continue;
         }
 
-        const orderTime = formatToMySQLDateTime(purchaseTime);
+        const finalUserId = targetUserId || (smartMatchInfo && smartMatchInfo.userId) || null;
 
-        if (pendingIdToUpdate) {
-          await db.run(
-            `UPDATE orders
-             SET id = ?,
-                 click_id = COALESCE(click_id, ?),
-                 product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
-                 order_amount = CASE WHEN ? > 0 THEN ? ELSE order_amount END,
-                 shopee_commission = ?,
-                 estimated_cashback = ?,
-                 real_cashback = ?,
-                 status = ?,
-                 user_id = ?,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [
-              orderId,
-              pendingIdToUpdate,
-              productName,
-              productName,
-              Math.floor(orderAmount),
-              Math.floor(orderAmount),
-              Math.floor(commission),
-              userCashback,
-              userCashback,
-              mappedStatus,
-              targetUserId,
-              pendingIdToUpdate
-            ]
-          );
-        } else {
-          if (targetClickId) {
-            await db.run('DELETE FROM orders WHERE (id = ? OR click_id = ?) AND status = "pending"', [targetClickId, targetClickId]);
-          }
-
-          await db.run(
-            `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, shopee_commission, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-            [
-              orderId,
-              targetUserId,
-              targetClickId,
-              productName,
-              '',
-              Math.floor(orderAmount),
-              userCashback,
-              userCashback,
-              Math.floor(commission),
-              mappedStatus,
-              orderTime
-            ]
-          );
-        }
+        await db.run(
+          `UPDATE orders
+           SET id = ?,
+               click_id = COALESCE(click_id, ?),
+               product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
+               order_amount = CASE WHEN ? > 0 THEN ? ELSE order_amount END,
+               shopee_commission = ?,
+               estimated_cashback = ?,
+               real_cashback = ?,
+               status = ?,
+               user_id = COALESCE(?, user_id),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [
+            orderId,
+            pendingIdToUpdate,
+            productName,
+            productName,
+            Math.floor(orderAmount),
+            Math.floor(orderAmount),
+            Math.floor(commission),
+            userCashback,
+            userCashback,
+            mappedStatus,
+            finalUserId,
+            pendingIdToUpdate
+          ]
+        );
 
         // Calculate and add money to user if new order is already approved
-        if (targetUserId && mappedStatus === 'approved') {
+        if (finalUserId && (mappedStatus === 'approved' || mappedStatus === 'paid')) {
           const finalCashback = userCashback;
-          await db.run(
-            `UPDATE users 
-             SET balance = COALESCE(balance, 0) + ?,
-                 total_cashback = COALESCE(total_cashback, 0) + ?
-             WHERE id = ?`,
-            [finalCashback, finalCashback, targetUserId]
-          );
-
-          // Check for referral bonus (20%)
-          const targetUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [targetUserId]);
-          if (targetUserObj && targetUserObj.referred_by) {
-            const refBonus = Math.floor(finalCashback * 0.20);
+          if (finalCashback > 0) {
             await db.run(
               `UPDATE users 
                SET balance = COALESCE(balance, 0) + ?,
-                   referral_earnings = COALESCE(referral_earnings, 0) + ?
+                   total_cashback = COALESCE(total_cashback, 0) + ?
                WHERE id = ?`,
-              [refBonus, refBonus, targetUserObj.referred_by]
+              [finalCashback, finalCashback, finalUserId]
             );
-            const refNotifId = `NT${Date.now()}${Math.floor(Math.random()*100)}`;
-            await db.run(
-              `INSERT INTO notifications (id, user_id, title, content, type)
-               VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
-              [refNotifId, targetUserObj.referred_by, `Bạn nhận được +${refBonus.toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
-            );
-          }
-        }
 
-        // Notify only if user is assigned
-        if (targetUserId) {
-          if (mappedStatus === 'approved') {
+            // Check for referral bonus (20%)
+            const targetUserObj = await db.get('SELECT referred_by FROM users WHERE id = ?', [finalUserId]);
+            if (targetUserObj && targetUserObj.referred_by) {
+              const refBonus = Math.floor(finalCashback * 0.20);
+              await db.run(
+                `UPDATE users 
+                 SET balance = COALESCE(balance, 0) + ?,
+                     referral_earnings = COALESCE(referral_earnings, 0) + ?
+                 WHERE id = ?`,
+                [refBonus, refBonus, targetUserObj.referred_by]
+              );
+              const refNotifId = `NT${Date.now()}${Math.floor(Math.random()*100)}`;
+              await db.run(
+                `INSERT INTO notifications (id, user_id, title, content, type)
+                 VALUES (?, ?, 'Hoa hồng giới thiệu', ?, 'system')`,
+                [refNotifId, targetUserObj.referred_by, `Bạn nhận được +${refBonus.toLocaleString('vi-VN')}đ hoa hồng từ giao dịch của người bạn giới thiệu.`]
+              );
+            }
+
             const notifId = `NT${Date.now()}${Math.floor(10 + Math.random() * 90)}`;
             const amountDisplay = userCashback.toLocaleString('vi-VN');
             await db.run(
@@ -1718,27 +1709,15 @@ async function applyReconciliation(req, res) {
                VALUES (?, ?, ?, ?, 'order')`,
               [
                 notifId,
-                targetUserId,
-                'Đơn hàng ghi nhận & đã duyệt',
-                `Đơn hàng mới ${orderId} (${(productName || 'Sản phẩm').substring(0, 20)}...) đã được thêm và duyệt thành công. Tiền hoàn +${amountDisplay}đ đã được cộng.`
-              ]
-            );
-          } else {
-            const notifId = `NT${Date.now()}${Math.floor(10 + Math.random() * 90)}`;
-            await db.run(
-              `INSERT INTO notifications (id, user_id, title, content, type)
-               VALUES (?, ?, ?, ?, 'order')`,
-              [
-                notifId,
-                targetUserId,
-                'Đơn hàng mới được ghi nhận',
-                `Đơn hàng Shopee ${orderId} trị giá ${orderAmount.toLocaleString('vi-VN')}đ đã được cập nhật vào lịch sử. Đang chờ đối soát.`
+                finalUserId,
+                'Đơn hàng Shopee đã đối soát thành công',
+                `Đơn hàng ${orderId} (${(productName || 'Sản phẩm').substring(0, 20)}...) khớp với đơn ${pendingIdToUpdate} trên web đã được duyệt. Tiền hoàn +${amountDisplay}đ đã được cộng.`
               ]
             );
           }
         }
 
-        insertedCount++;
+        updatedCount++;
       }
     }
 

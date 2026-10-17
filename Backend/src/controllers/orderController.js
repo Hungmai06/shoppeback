@@ -2,7 +2,7 @@ const { getDatabase } = require('../config/db');
 const { recalculateUserBalances } = require('../services/balanceService');
 
 async function logClick(req, res) {
-  const { productUrl, productName, productImage, orderAmount, estimatedCashback } = req.body;
+  const { id, clickId: customClickId, productUrl, productName, productImage, orderAmount, estimatedCashback, userId: bodyUserId } = req.body;
 
   if (!productUrl && !productName) {
     return res.status(400).json({ message: 'Thiếu đường dẫn sản phẩm' });
@@ -10,13 +10,17 @@ async function logClick(req, res) {
 
   try {
     const db = await getDatabase();
-    const clickId = `CLK${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
-    const userId = req.user ? req.user.id : null;
+    const clickId = id || customClickId || req.body.clickId || ('CLK' + Date.now() + Math.floor(100 + Math.random() * 900));
+    const userId = req.user ? req.user.id : (bodyUserId || req.body.userId || null);
 
-    await db.run(
-      'INSERT INTO click_logs (id, user_id, product_url) VALUES (?, ?, ?)',
-      [clickId, userId, productUrl || productName]
-    );
+    try {
+      await db.run(
+        'INSERT INTO click_logs (id, user_id, product_url) VALUES (?, ?, ?)',
+        [clickId, userId, productUrl || productName]
+      );
+    } catch (cErr) {
+      // Ignored if already logged
+    }
 
     // Save pending order to orders table so user and admin can see and manage it
     const name = productName || productUrl;
