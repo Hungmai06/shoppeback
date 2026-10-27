@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, Button } from '../../components/ui/core';
 import { 
   Users, MousePointerClick, UserPlus, Clock, Wallet, 
-  RefreshCw, CheckCircle2, AlertCircle, ShoppingBag, Search,
-  ArrowUpRight, Filter
+  RefreshCw, CheckCircle2, AlertCircle, ShoppingBag, Search
 } from 'lucide-react';
 import { toast } from 'sonner';
 

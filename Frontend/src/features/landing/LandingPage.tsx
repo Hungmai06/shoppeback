@@ -5,7 +5,7 @@ import {
   Search, CheckCircle2, ShieldCheck, Zap, LineChart,
   ArrowRight, Copy, Heart, Share2,
   MessageSquare, Star, ShoppingBag, Sparkles, AlertCircle, Wallet,
-  Store, Activity, ShoppingCart, Link2, Clock, ShieldAlert, RefreshCw, Users, ExternalLink,
+  Store, Activity, ShoppingCart, Link2, Clock, ShieldAlert, RefreshCw, Users,
   Clipboard, Info
 } from 'lucide-react';
 import { Button, Card, CardContent, Badge, Accordion, AccordionItem } from '../../components/ui/core';
@@ -315,11 +315,6 @@ export default function LandingPage() {
     }
   };
 
-  const handleCheckLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await fetchShopeeProduct(shopeeLink);
-  };
-
   const handleUnifiedSearch = async (linkParam?: string) => {
     const rawInput = (linkParam !== undefined ? linkParam : (unifiedLink || shopeeLink || tiktokLink)).trim();
     if (!rawInput) {
@@ -494,29 +489,6 @@ export default function LandingPage() {
     } finally {
       setIsTikTokSearching(false);
     }
-  };
-
-  const handleCheckTikTokLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const linkInput = tiktokLink.trim();
-    if (!linkInput) {
-      toast.error('Vui lòng nhập link sản phẩm hoặc video TikTok Shop');
-      return;
-    }
-
-    // Auto detect Shopee
-    const isShopeeUrl = linkInput.includes('shopee.vn') ||
-                        linkInput.includes('shp.ee') ||
-                        linkInput.includes('s.shopee.vn') ||
-                        /^\d+$/.test(linkInput);
-    if (isShopeeUrl) {
-      setActivePlatform('shopee');
-      setShopeeLink(linkInput);
-      toast.info('Đã tự động chuyển sang tab Shopee');
-      return;
-    }
-
-    await fetchTikTokProduct(linkInput);
   };
 
   const handleOpenTikTokAffiliateLink = () => {

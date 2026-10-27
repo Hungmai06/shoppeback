@@ -5,7 +5,7 @@ import {
   ArrowUpRight, LifeBuoy, Settings, LogOut, Package, Clock,
   CheckCircle2, AlertTriangle, Coins, Upload,
   Check, ShieldCheck, ChevronRight,
-  FileText, Landmark, Users, Copy, MousePointerClick, UserPlus, Send, Link2
+  FileText, Landmark, Users, Copy, Send, Link2
 } from 'lucide-react';
 import {
   Button, Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -80,11 +80,11 @@ export default function UserDashboard() {
   const [uploadingOrderId, setUploadingOrderId] = useState<string | null>(null);
 
   // Referral states
-  const [refStats, setRefStats] = useState<ReferralStats>({
+  const [, setRefStats] = useState<ReferralStats>({
     clicks: 0, f1Count: 0, pendingCommission: 0, approvedCommission: 0
   });
-  const [refHistory, setRefHistory] = useState<ReferralHistory[]>([]);
-  const [refLoading, setRefLoading] = useState(true);
+  const [, setRefHistory] = useState<ReferralHistory[]>([]);
+  const [, setRefLoading] = useState(true);
 
   // Redirect if not logged in
   React.useEffect(() => {

@@ -1,6 +1,5 @@
-import React from 'react';
 import { useAppStore } from '../../store/appStore';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button } from '../../components/ui/core';
+import { Card, CardContent, CardHeader, CardTitle, Button } from '../../components/ui/core';
 import { Users, Copy, Link2, Wallet, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
