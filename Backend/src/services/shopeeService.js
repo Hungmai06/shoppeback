@@ -405,6 +405,13 @@ async function fetchProductDataFromAddLiveTag(linkOrId, apiKey) {
       if (data.productInfo.price !== undefined && data.productInfo.price !== null) {
         data.productInfo.price = Math.floor(Number(data.productInfo.price) || 0);
       }
+      const rawComm = Math.max(
+        Number(data.productInfo.commission) || 0,
+        (Number(data.productInfo.sellerComFinal) || 0) + (Number(data.productInfo.shopeeComFinal) || 0)
+      );
+      data.productInfo.commission = rawComm;
+      data.productInfo.totalCommission = rawComm;
+      data.productInfo.estimatedCashback = Math.floor(rawComm * 0.5);
     }
     return data;
   } catch (err) {

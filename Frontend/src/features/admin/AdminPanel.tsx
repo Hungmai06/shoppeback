@@ -48,6 +48,18 @@ const getPageNumbers = (currentPage: number, totalPages: number) => {
   return rangeWithDots;
 };
 
+const TikTokIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 3 15.68a6.34 6.34 0 0 0 10.82 4.49 6.27 6.27 0 0 0 1.94-4.5V8.92a8.28 8.28 0 0 0 4.83 1.57V7.05a4.8 4.8 0 0 1-1-.36z" />
+  </svg>
+);
+
+const ShopeeIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M19.5 7.5h-2.25V6A5.25 5.25 0 0 0 12 .75 5.25 5.25 0 0 0 6.75 6v1.5H4.5A2.25 2.25 0 0 0 2.25 9.75l1.5 11.25A2.25 2.25 0 0 0 6 23.25h12a2.25 2.25 0 0 0 2.25-2.25l1.5-11.25A2.25 2.25 0 0 0 19.5 7.5zm-11.25-1.5a3.75 3.75 0 0 1 7.5 0v1.5h-7.5V6zm4.12 11.83c-2.3 0-3.62-1.12-3.62-2.83 0-1.85 1.5-2.45 3.12-2.9 1.5-.42 2.15-.75 2.15-1.48 0-.75-.72-1.25-1.8-1.25-1.2 0-2.12.55-2.58 1.15l-1.05-.98c.75-.92 2-1.62 3.65-1.62 2.1 0 3.42 1.12 3.42 2.75 0 1.78-1.42 2.38-3.05 2.82-1.55.42-2.22.78-2.22 1.55 0 .8.8 1.32 1.98 1.32 1.45 0 2.45-.65 2.92-1.32l1.05.95c-.75 1.05-2.15 1.86-3.96 1.86z"/>
+  </svg>
+);
+
 export default function AdminPanel() {
   const navigate = useNavigate();
   const {
@@ -55,12 +67,14 @@ export default function AdminPanel() {
     updateOrderStatus, deleteOrderAdmin, updateWithdrawalStatus, updateSettings,
     reconciliationHistory, uploadReconciliationCSV, applyReconciliationCSV,
     updateAdminUser, adminStats, fetchAdminOrders, fetchAdminStats, fetchAdminWithdrawals, fetchAdminUsers, fetchReconciliationLogs, exportOrdersCSV,
-    createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus, syncAdminUserBalances, createAdminOrder
+    createAdminUser, deleteAdminUser, resetUserPassword, toggleUserStatus, syncAdminUserBalances, createAdminOrder,
+    tiktokOrders, totalAdminTikTokOrders, tiktokStats, fetchAdminTikTokOrders, updateTikTokOrderStatus,
+    createAdminTikTokOrder, deleteTikTokOrderAdmin, syncTikTokOrdersAdmin, fetchRiohubLiveOrders, clearAllTikTokOrdersAdmin
   } = useAppStore();
 
   const [isSyncingBalances, setIsSyncingBalances] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'orders' | 'withdrawals' | 'reconciliation' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'orders' | 'tiktok-orders' | 'withdrawals' | 'reconciliation' | 'settings'>('dashboard');
 
   // Search & Filter States
   const [userSearch, setUserSearch] = useState('');
@@ -68,6 +82,7 @@ export default function AdminPanel() {
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [statsRange, setStatsRange] = useState<'all' | 'today' | '7days' | '30days' | 'this_month'>('all');
+  const [statsPlatform, setStatsPlatform] = useState<'all' | 'shopee' | 'tiktok'>('all');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>('');
 
   // Order Pagination & Loading states
@@ -76,15 +91,73 @@ export default function AdminPanel() {
   const ordersPerPage = 10;
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // TikTok Orders States
+  const [tiktokSearch, setTiktokSearch] = useState('');
+  const [tiktokStatusFilter, setTiktokStatusFilter] = useState('all');
+  const [tiktokPage, setTiktokPage] = useState(1);
+  const [isLoadingTikTokOrders, setIsLoadingTikTokOrders] = useState(false);
+  const [isSyncingTikTok, setIsSyncingTikTok] = useState(false);
+  const [editingTikTokOrder, setEditingTikTokOrder] = useState<Order | null>(null);
+  const [editTikTokStatus, setEditTikTokStatus] = useState<Order['status']>('pending');
+  const [editTikTokRealCashback, setEditTikTokRealCashback] = useState('');
+  const [editTikTokNotes, setEditTikTokNotes] = useState('');
+  const [editTikTokUserId, setEditTikTokUserId] = useState('');
+  const [deletingTikTokOrder, setDeletingTikTokOrder] = useState<Order | null>(null);
+  const [isCreateTikTokModalOpen, setIsCreateTikTokModalOpen] = useState(false);
+  const [isSubmittingTikTokOrder, setIsSubmittingTikTokOrder] = useState(false);
+  const [newTikTokForm, setNewTikTokForm] = useState({
+    id: '',
+    userId: '',
+    productName: '',
+    productImage: '',
+    orderAmount: '',
+    estimatedCashback: '',
+    realCashback: '',
+    tiktokCommission: '',
+    status: 'pending' as Order['status'],
+    notes: ''
+  });
+  const [isClearTikTokModalOpen, setIsClearTikTokModalOpen] = useState(false);
+  const [isClearUnassignedTikTokModalOpen, setIsClearUnassignedTikTokModalOpen] = useState(false);
+
+  // RioHub Live Reconciliation States
+  const [isRiohubReconcileModalOpen, setIsRiohubReconcileModalOpen] = useState(false);
+  const [isQueryingRiohub, setIsQueryingRiohub] = useState(false);
+  const [isReconcilingRiohub, setIsReconcilingRiohub] = useState(false);
+  const [riohubFilters, setRiohubFilters] = useState({
+    creator_username: '',
+    order_id: '',
+    time_start: '',
+    time_end: '',
+    update_time_start: '',
+    update_time_end: '',
+    status: '',
+    settlement_status: '',
+    content_type: '',
+    page_size: '50'
+  });
+  const [riohubOrdersResult, setRiohubOrdersResult] = useState<{
+    creator_username?: string;
+    page?: number;
+    page_size?: number;
+    total?: number;
+    orders: any[];
+  } | null>(null);
+  const [selectedRiohubOrderIds, setSelectedRiohubOrderIds] = useState<string[]>([]);
+
   React.useEffect(() => {
     setOrderPage(1);
   }, [orderSearch, orderStatusFilter]);
+
+  React.useEffect(() => {
+    setTiktokPage(1);
+  }, [tiktokSearch, tiktokStatusFilter]);
 
   // Fetch paginated and filtered orders & active tab data from backend
   React.useEffect(() => {
     if (currentUser?.role === 'admin') {
       if (activeTab === 'dashboard') {
-        fetchAdminStats(statsRange, selectedMonthFilter);
+        fetchAdminStats(statsRange, selectedMonthFilter, statsPlatform);
       } else if (activeTab === 'users') {
         fetchAdminUsers();
       } else if (activeTab === 'orders') {
@@ -95,13 +168,21 @@ export default function AdminPanel() {
           setIsLoadingOrders(false);
         }, 300);
         return () => clearTimeout(delay);
+      } else if (activeTab === 'tiktok-orders') {
+        if (users.length === 0) fetchAdminUsers();
+        setIsLoadingTikTokOrders(true);
+        const delay = setTimeout(async () => {
+          await fetchAdminTikTokOrders(tiktokPage, 10, tiktokSearch, tiktokStatusFilter);
+          setIsLoadingTikTokOrders(false);
+        }, 300);
+        return () => clearTimeout(delay);
       } else if (activeTab === 'withdrawals') {
         fetchAdminWithdrawals();
       } else if (activeTab === 'reconciliation') {
         fetchReconciliationLogs();
       }
     }
-  }, [activeTab, orderPage, orderSearch, orderStatusFilter, statsRange, selectedMonthFilter, currentUser]);
+  }, [activeTab, orderPage, orderSearch, orderStatusFilter, tiktokPage, tiktokSearch, tiktokStatusFilter, statsRange, selectedMonthFilter, statsPlatform, currentUser]);
 
   // Selected items for Modals
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
@@ -248,25 +329,52 @@ export default function AdminPanel() {
     try {
       const token = localStorage.getItem('token');
       const apiBase = import.meta.env.VITE_API_BASE || '/api';
-      const res = await fetch(`${apiBase}/orders/admin?search=${encodeURIComponent(user.id)}&limit=100`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const mapped = (data.orders || []).map((o: any) => ({
-          id: o.id,
-          productName: o.product_name,
-          orderAmount: o.order_amount,
-          estimatedCashback: o.estimated_cashback,
-          realCashback: o.real_cashback !== null && o.real_cashback !== undefined ? o.real_cashback : o.estimated_cashback,
-          status: o.status,
-          createdTime: o.created_at
-        }));
-        setUserOrdersList(mapped);
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      };
+
+      const [shopeeRes, tiktokRes] = await Promise.all([
+        fetch(`${apiBase}/orders/admin?search=${encodeURIComponent(user.id)}&limit=100`, { headers }).catch(() => null),
+        fetch(`${apiBase}/tiktok/admin/orders?search=${encodeURIComponent(user.id)}&limit=100`, { headers }).catch(() => null)
+      ]);
+
+      const combined: any[] = [];
+
+      if (shopeeRes && shopeeRes.ok) {
+        const sData = await shopeeRes.json();
+        (sData.orders || []).forEach((o: any) => {
+          combined.push({
+            id: o.id,
+            platform: 'shopee',
+            productName: o.product_name,
+            orderAmount: Number(o.order_amount) || 0,
+            estimatedCashback: Number(o.estimated_cashback) || 0,
+            realCashback: o.real_cashback !== null && o.real_cashback !== undefined ? Number(o.real_cashback) : Number(o.estimated_cashback || 0),
+            status: o.status,
+            createdTime: o.created_at
+          });
+        });
       }
+
+      if (tiktokRes && tiktokRes.ok) {
+        const tData = await tiktokRes.json();
+        (tData.orders || []).forEach((o: any) => {
+          combined.push({
+            id: o.id,
+            platform: 'tiktok',
+            productName: o.product_name,
+            orderAmount: Number(o.order_amount) || 0,
+            estimatedCashback: Number(o.estimated_cashback) || 0,
+            realCashback: o.real_cashback !== null && o.real_cashback !== undefined ? Number(o.real_cashback) : Number(o.estimated_cashback || 0),
+            status: o.status,
+            createdTime: o.created_at
+          });
+        });
+      }
+
+      combined.sort((a, b) => new Date(b.createdTime || 0).getTime() - new Date(a.createdTime || 0).getTime());
+      setUserOrdersList(combined);
     } catch (err) {
       console.error('Fetch user orders error:', err);
     } finally {
@@ -302,6 +410,11 @@ export default function AdminPanel() {
   const [sysLazadaCookieUrl, setSysLazadaCookieUrl] = useState(settings.lazadaCookieUrl || "https://s.lazada.vn/s.an_redir");
   const [sysTiktokAffiliateId, setSysTiktokAffiliateId] = useState(settings.tiktokAffiliateId || "");
   const [sysTiktokCookieUrl, setSysTiktokCookieUrl] = useState(settings.tiktokCookieUrl || "https://vt.tiktok.com/an_redir");
+  const [sysRiohubApiKey, setSysRiohubApiKey] = useState(settings.riohubApiKey || "");
+  const [sysRiohubCreatorUsername, setSysRiohubCreatorUsername] = useState(settings.riohubCreatorUsername || "");
+  const [sysRiohubWebhookSecret, setSysRiohubWebhookSecret] = useState(settings.riohubWebhookSecret || "");
+  const [showRiohubKey, setShowRiohubKey] = useState(false);
+  const [isSyncingTiktokOrders, setIsSyncingTiktokOrders] = useState(false);
   const [sysTikiAffiliateId, setSysTikiAffiliateId] = useState(settings.tikiAffiliateId || "");
   const [sysTikiCookieUrl, setSysTikiCookieUrl] = useState(settings.tikiCookieUrl || "https://tiki.vn/an_redir");
   const [sysTeleNotify, setSysTeleNotify] = useState(settings.telegramNotification);
@@ -324,6 +437,9 @@ export default function AdminPanel() {
       setSysLazadaCookieUrl(settings.lazadaCookieUrl || "https://s.lazada.vn/s.an_redir");
       setSysTiktokAffiliateId(settings.tiktokAffiliateId || "");
       setSysTiktokCookieUrl(settings.tiktokCookieUrl || "https://vt.tiktok.com/an_redir");
+      setSysRiohubApiKey(settings.riohubApiKey || "");
+      setSysRiohubCreatorUsername(settings.riohubCreatorUsername || "");
+      setSysRiohubWebhookSecret(settings.riohubWebhookSecret || "");
       setSysTikiAffiliateId(settings.tikiAffiliateId || "");
       setSysTikiCookieUrl(settings.tikiCookieUrl || "https://tiki.vn/an_redir");
       setSysTeleNotify(settings.telegramNotification);
@@ -368,6 +484,7 @@ export default function AdminPanel() {
   const totalUsersCount = adminStats?.summary?.totalUsers ?? users.length;
   const totalOrdersCount = adminStats?.summary?.totalOrders ?? 0;
   const pendingOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Đang chờ xử lý')?.value || 0;
+  const pendingTikTokOrdersCount = tiktokOrders.filter(o => o.status === 'pending').length;
   const approvedOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Hoàn thành')?.value || 0;
   const rejectedOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Hủy' || s.name === 'Hoàn hàng')?.value || 0;
   const cashbackPaidCount = adminStats?.statusDistribution?.find(s => s.name === 'Đã thanh toán')?.value || 0;
@@ -491,6 +608,188 @@ export default function AdminPanel() {
     }
   };
 
+  const handleUpdateTikTokStatus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTikTokOrder) return;
+    try {
+      await updateTikTokOrderStatus(
+        editingTikTokOrder.id,
+        editTikTokStatus,
+        editTikTokRealCashback ? Number(editTikTokRealCashback) : undefined,
+        editTikTokNotes,
+        editTikTokUserId
+      );
+      toast.success(`Đã cập nhật đơn hàng TikTok ${editingTikTokOrder.id} thành công!`);
+      setEditingTikTokOrder(null);
+    } catch (err: any) {
+      toast.error('Lỗi khi cập nhật đơn hàng TikTok');
+    }
+  };
+
+  const handleCreateTikTokOrderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTikTokForm.productName.trim()) {
+      toast.error('Vui lòng nhập tên sản phẩm TikTok');
+      return;
+    }
+    const orderAmountVal = parseFloat(newTikTokForm.orderAmount);
+    if (isNaN(orderAmountVal) || orderAmountVal < 0) {
+      toast.error('Vui lòng nhập giá trị đơn hàng hợp lệ');
+      return;
+    }
+    const commVal = parseFloat(newTikTokForm.tiktokCommission) || 0;
+    const estCashbackVal = parseFloat(newTikTokForm.estimatedCashback) || Math.floor(commVal * ((settings?.cashbackPercentage ?? 50) / 100));
+    const realCashbackVal = newTikTokForm.realCashback ? parseFloat(newTikTokForm.realCashback) : (newTikTokForm.status === 'approved' ? estCashbackVal : 0);
+
+    setIsSubmittingTikTokOrder(true);
+    try {
+      await createAdminTikTokOrder({
+        id: newTikTokForm.id.trim() || undefined,
+        userId: newTikTokForm.userId.trim() || undefined,
+        productName: newTikTokForm.productName.trim(),
+        productImage: newTikTokForm.productImage.trim() || undefined,
+        orderAmount: orderAmountVal,
+        tiktokCommission: commVal,
+        estimatedCashback: estCashbackVal,
+        realCashback: realCashbackVal,
+        status: newTikTokForm.status,
+        notes: newTikTokForm.notes.trim() || undefined
+      });
+      toast.success('Đã tạo đơn hàng TikTok mới thành công!');
+      setIsCreateTikTokModalOpen(false);
+      setNewTikTokForm({
+        id: '',
+        userId: '',
+        productName: '',
+        productImage: '',
+        orderAmount: '',
+        estimatedCashback: '',
+        realCashback: '',
+        tiktokCommission: '',
+        status: 'pending',
+        notes: ''
+      });
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi khi tạo đơn hàng TikTok');
+    } finally {
+      setIsSubmittingTikTokOrder(false);
+    }
+  };
+
+  const handleDeleteTikTokOrder = async (id: string) => {
+    const ok = await deleteTikTokOrderAdmin(id);
+    if (ok) {
+      toast.success('Đã xóa đơn hàng TikTok thành công!');
+      setDeletingTikTokOrder(null);
+    } else {
+      toast.error('Lỗi khi xóa đơn hàng TikTok');
+    }
+  };
+
+  const handleClearAllTikTokOrders = async () => {
+    const ok = await clearAllTikTokOrdersAdmin(false);
+    if (ok) {
+      toast.success('Đã xóa toàn bộ đơn hàng TikTok và đồng bộ lại ví!');
+      setIsClearTikTokModalOpen(false);
+    } else {
+      toast.error('Lỗi khi xóa đơn hàng TikTok');
+    }
+  };
+
+  const handleClearUnassignedTikTokOrders = async () => {
+    const ok = await clearAllTikTokOrdersAdmin(true);
+    if (ok) {
+      toast.success('Đã xóa các đơn hàng TikTok chưa gán User!');
+      setIsClearUnassignedTikTokModalOpen(false);
+    } else {
+      toast.error('Lỗi khi xóa đơn hàng TikTok');
+    }
+  };
+
+  const handleSyncTikTokFromRioHub = async () => {
+    setIsSyncingTikTok(true);
+    try {
+      const res = await syncTikTokOrdersAdmin();
+      if (res.success) {
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      toast.error('Lỗi kết nối khi đồng bộ: ' + err.message);
+    } finally {
+      setIsSyncingTikTok(false);
+    }
+  };
+
+  const handleQueryRiohubOrders = async () => {
+    setIsQueryingRiohub(true);
+    try {
+      const res = await fetchRiohubLiveOrders({
+        creator_username: riohubFilters.creator_username || (settings as any)?.riohubCreatorUsername || '',
+        order_id: riohubFilters.order_id,
+        time_start: riohubFilters.time_start,
+        time_end: riohubFilters.time_end,
+        update_time_start: riohubFilters.update_time_start,
+        update_time_end: riohubFilters.update_time_end,
+        status: riohubFilters.status,
+        settlement_status: riohubFilters.settlement_status,
+        content_type: riohubFilters.content_type,
+        page_size: riohubFilters.page_size
+      });
+
+      if (res.success) {
+        setRiohubOrdersResult({
+          creator_username: res.creator_username,
+          page: res.page,
+          page_size: res.page_size,
+          total: res.total,
+          orders: res.orders || []
+        });
+        setSelectedRiohubOrderIds((res.orders || []).map((o: any) => o.order_id));
+        toast.success(`Đã tải ${res.orders?.length || 0} đơn hàng TikTok (Tổng số: ${res.total || 0})`);
+      } else {
+        toast.error(res.message || 'Lỗi truy vấn đơn hàng TikTok');
+      }
+    } catch (err: any) {
+      toast.error('Lỗi kết nối máy chủ: ' + err.message);
+    } finally {
+      setIsQueryingRiohub(false);
+    }
+  };
+
+  const handleApplyRiohubReconciliation = async (onlySelected = true) => {
+    if (!riohubOrdersResult || riohubOrdersResult.orders.length === 0) {
+      toast.error('Chưa có đơn hàng nào để đối soát');
+      return;
+    }
+
+    const ordersToSync = onlySelected
+      ? riohubOrdersResult.orders.filter((o: any) => selectedRiohubOrderIds.includes(o.order_id))
+      : riohubOrdersResult.orders;
+
+    if (ordersToSync.length === 0) {
+      toast.error('Vui lòng chọn ít nhất 1 đơn hàng để đối soát');
+      return;
+    }
+
+    setIsReconcilingRiohub(true);
+    try {
+      const res = await syncTikTokOrdersAdmin({ orders: ordersToSync });
+      if (res.success) {
+        toast.success(res.message);
+        // Refresh lại danh sách xem trước
+        await handleQueryRiohubOrders();
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      toast.error('Lỗi khi thực hiện đối soát: ' + err.message);
+    } finally {
+      setIsReconcilingRiohub(false);
+    }
+  };
+
   const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -546,6 +845,9 @@ export default function AdminPanel() {
       lazadaCookieUrl: sysLazadaCookieUrl,
       tiktokAffiliateId: sysTiktokAffiliateId,
       tiktokCookieUrl: sysTiktokCookieUrl,
+      riohubApiKey: sysRiohubApiKey.trim(),
+      riohubCreatorUsername: sysRiohubCreatorUsername.trim(),
+      riohubWebhookSecret: sysRiohubWebhookSecret.trim(),
       tikiAffiliateId: sysTikiAffiliateId,
       tikiCookieUrl: sysTikiCookieUrl,
       telegramNotification: sysTeleNotify,
@@ -553,6 +855,34 @@ export default function AdminPanel() {
       maintenanceMode: sysMaintMode
     });
     toast.success('Đã lưu cấu hình hệ thống thành công!');
+  };
+
+  const handleSyncTiktokOrders = async () => {
+    setIsSyncingTiktokOrders(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_BASE || '/api';
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${apiBase}/tiktok/sync-orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ page_size: 100 })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || 'Đồng bộ đơn hàng TikTok từ RioHub thành công!');
+        fetchAdminOrders();
+        fetchAdminStats();
+      } else {
+        toast.error(data.message || 'Đồng bộ đơn hàng TikTok thất bại');
+      }
+    } catch (err: any) {
+      toast.error('Lỗi kết nối khi đồng bộ đơn hàng TikTok: ' + err.message);
+    } finally {
+      setIsSyncingTiktokOrders(false);
+    }
   };
 
   const handleTestAddLiveKey = async () => {
@@ -852,9 +1182,10 @@ export default function AdminPanel() {
           {[
             { id: 'dashboard', icon: <BarChart3 className="h-4.5 w-4.5" />, label: 'Báo cáo thống kê' },
             { id: 'users', icon: <Users className="h-4.5 w-4.5" />, label: 'Quản lý tài khoản' },
-            { id: 'orders', icon: <ShoppingBag className="h-4.5 w-4.5" />, label: 'Quản lý đơn hàng' },
+            { id: 'orders', icon: <ShoppingBag className="h-4.5 w-4.5 text-[#EE4D2D]" />, label: 'Đơn hàng Shopee' },
+            { id: 'tiktok-orders', icon: <TikTokIcon className="h-4.5 w-4.5 text-slate-900" />, label: 'Đơn hàng TikTok' },
             { id: 'withdrawals', icon: <Wallet className="h-4.5 w-4.5" />, label: 'Quản lý rút tiền' },
-            { id: 'reconciliation', icon: <FileSpreadsheet className="h-4.5 w-4.5" />, label: 'Đối soát file dữ liệu' },
+            { id: 'reconciliation', icon: <FileSpreadsheet className="h-4.5 w-4.5" />, label: 'Đối soát file Shopee' },
             { id: 'settings', icon: <Settings2 className="h-4.5 w-4.5" />, label: 'Cài đặt hệ thống' }
           ].map(tab => (
             <button
@@ -868,7 +1199,10 @@ export default function AdminPanel() {
                 <Badge variant="danger" className="py-0 px-2 text-[10px]">{withdrawals.filter(w => w.status === 'pending').length}</Badge>
               )}
               {tab.id === 'orders' && pendingOrdersCount > 0 && (
-                <Badge variant="info" className="py-0 px-2 text-[10px]">{pendingOrdersCount}</Badge>
+                <Badge variant="info" className="py-0 px-2 text-[10px] bg-orange-50 text-[#EE4D2D] border border-orange-200">{pendingOrdersCount}</Badge>
+              )}
+              {tab.id === 'tiktok-orders' && pendingTikTokOrdersCount > 0 && (
+                <Badge variant="warning" className="py-0 px-2 text-[10px] bg-slate-900 text-white border-none">{pendingTikTokOrdersCount}</Badge>
               )}
             </button>
           ))}
@@ -891,25 +1225,54 @@ export default function AdminPanel() {
           {activeTab === 'dashboard' && (
             <div className="flex flex-col gap-8">
 
-              {/* TIME RANGE FILTER HEADER */}
-              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white p-4 rounded-input border border-border">
+              {/* TIME RANGE & PLATFORM FILTER HEADER */}
+              <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4 bg-white p-4 rounded-input border border-border shadow-xs">
                 <div>
                   <h2 className="text-xl font-black text-text">Báo cáo & Thống kê tổng quan</h2>
                   <p className="text-xs text-text-secondary mt-0.5">Theo dõi hiệu suất doanh thu, hoa hồng và các chỉ số hoạt động hệ thống.</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-text-secondary">Khoảng thời gian:</span>
-                  <select
-                    value={statsRange}
-                    onChange={(e) => setStatsRange(e.target.value as any)}
-                    className="bg-bg border border-border text-xs rounded-input py-2 px-3 font-semibold outline-none focus:border-primary"
-                  >
-                    <option value="all">Tất cả thời gian</option>
-                    <option value="today">Hôm nay</option>
-                    <option value="7days">7 ngày qua</option>
-                    <option value="30days">30 ngày qua</option>
-                    <option value="this_month">Tháng này</option>
-                  </select>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* PLATFORM SELECTOR TABS */}
+                  <div className="flex items-center gap-1 bg-bg p-1 rounded-input border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setStatsPlatform('all')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${statsPlatform === 'all' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary hover:text-text'}`}
+                    >
+                      Tất cả sàn
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatsPlatform('shopee')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${statsPlatform === 'shopee' ? 'bg-[#EE4D2D] text-white shadow-xs' : 'text-text-secondary hover:text-text'}`}
+                    >
+                      <ShopeeIcon className="w-3.5 h-3.5" /> Shopee
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatsPlatform('tiktok')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${statsPlatform === 'tiktok' ? 'bg-slate-900 text-white shadow-xs' : 'text-text-secondary hover:text-text'}`}
+                    >
+                      <TikTokIcon className="w-3.5 h-3.5" /> TikTok Shop
+                    </button>
+                  </div>
+
+                  {/* TIME RANGE SELECT */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-text-secondary whitespace-nowrap">Thời gian:</span>
+                    <select
+                      value={statsRange}
+                      onChange={(e) => setStatsRange(e.target.value as any)}
+                      className="bg-bg border border-border text-xs rounded-input py-2 px-3 font-semibold outline-none focus:border-primary"
+                    >
+                      <option value="all">Tất cả thời gian</option>
+                      <option value="today">Hôm nay</option>
+                      <option value="7days">7 ngày qua</option>
+                      <option value="30days">30 ngày qua</option>
+                      <option value="this_month">Tháng này</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -917,8 +1280,8 @@ export default function AdminPanel() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {[
                   { title: "Tổng thành viên", value: totalUsersCount, desc: "Tài khoản người dùng", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" />, tab: 'users' },
-                  { title: "Tổng đơn hàng", value: totalOrdersCount, desc: "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" />, tab: 'orders' },
-                  { title: "Tổng hoa hồng sàn (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Tổng hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
+                  { title: statsPlatform === 'tiktok' ? "Đơn TikTok Shop" : statsPlatform === 'shopee' ? "Đơn Shopee" : "Tổng đơn hàng", value: totalOrdersCount, desc: statsPlatform === 'tiktok' ? "Đơn TikTok Shop" : statsPlatform === 'shopee' ? "Đơn sàn Shopee" : "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" />, tab: statsPlatform === 'tiktok' ? 'tiktok-orders' : 'orders' },
+                  { title: statsPlatform === 'tiktok' ? "Hoa hồng TikTok (100%)" : statsPlatform === 'shopee' ? "Hoa hồng Shopee (100%)" : "Tổng hoa hồng sàn (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Tổng hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
                   { title: "Số tiền còn lại (Lợi nhuận)", value: `${Math.round(adminStats?.summary?.remainingAfterPayout !== undefined ? adminStats.summary.remainingAfterPayout : Math.max(0, (adminStats?.summary?.platformTotalRevenue || 0) - (totalCashbackPaid || 0))).toLocaleString('vi-VN')}đ`, desc: "Sau khi trừ số tiền đã chi trả cho khách", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
                   { title: "Tiền đã & chờ chi", value: `${(totalCashbackPaid).toLocaleString('vi-VN')}đ`, desc: `Chờ duyệt: ${(adminStats?.summary?.pendingWithdrawalsTotal || 0).toLocaleString('vi-VN')}đ`, color: "text-warning", icon: <Wallet className="h-5 w-5 text-warning" />, tab: 'withdrawals' }
                 ].map((card, idx) => (
@@ -937,6 +1300,103 @@ export default function AdminPanel() {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+
+              {/* PLATFORM BREAKDOWN SECTION (SHOPEE vs TIKTOK SHOP) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Shopee Card */}
+                <Card 
+                  onClick={() => setStatsPlatform(statsPlatform === 'shopee' ? 'all' : 'shopee')}
+                  className={`border-border/60 transition-all cursor-pointer hover:shadow-md ${statsPlatform === 'shopee' ? 'ring-2 ring-[#EE4D2D] bg-orange-50/20' : 'bg-white'}`}
+                >
+                  <CardContent className="p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span className="p-2 bg-orange-100 text-[#EE4D2D] rounded-xl">
+                          <ShopeeIcon className="w-5 h-5" />
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="font-bold text-sm text-text">Sàn Shopee</h4>
+                            {statsPlatform === 'shopee' && <Badge className="bg-[#EE4D2D] text-white text-[9px] py-0 px-1.5">Đang lọc</Badge>}
+                          </div>
+                          <p className="text-[10px] text-text-secondary font-medium">Đối soát file Excel / CSV định kỳ</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="border-orange-200 text-[#EE4D2D] bg-orange-50 font-black text-xs px-2.5 py-1">
+                        {adminStats?.platformBreakdown?.shopee?.totalOrders || 0} đơn
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-center">
+                      <div className="bg-bg/60 p-2 rounded-lg">
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng sàn</span>
+                        <span className="text-xs font-black text-blue-600">
+                          {((adminStats?.platformBreakdown?.shopee?.revenue || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                      <div className="bg-bg/60 p-2 rounded-lg">
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoàn trả khách (50%)</span>
+                        <span className="text-xs font-black text-[#EE4D2D]">
+                          {((adminStats?.platformBreakdown?.shopee?.cashback || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                      <div className="bg-bg/60 p-2 rounded-lg">
+                        <span className="text-[10px] text-text-secondary font-bold block">Lợi nhuận giữ lại</span>
+                        <span className="text-xs font-black text-success">
+                          {((adminStats?.platformBreakdown?.shopee?.profit || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* TikTok Shop Card */}
+                <Card 
+                  onClick={() => setStatsPlatform(statsPlatform === 'tiktok' ? 'all' : 'tiktok')}
+                  className={`border-border/60 transition-all cursor-pointer hover:shadow-md ${statsPlatform === 'tiktok' ? 'ring-2 ring-slate-900 bg-slate-50/50' : 'bg-white'}`}
+                >
+                  <CardContent className="p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span className="p-2 bg-slate-900 text-white rounded-xl">
+                          <TikTokIcon className="w-5 h-5" />
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="font-bold text-sm text-text">Sàn TikTok Shop</h4>
+                            {statsPlatform === 'tiktok' && <Badge className="bg-slate-900 text-white text-[9px] py-0 px-1.5">Đang lọc</Badge>}
+                          </div>
+                          <p className="text-[10px] text-text-secondary font-medium">Đồng bộ tự động 100% qua API</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="border-slate-300 text-slate-900 bg-slate-100 font-black text-xs px-2.5 py-1">
+                        {adminStats?.platformBreakdown?.tiktok?.totalOrders || 0} đơn
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-center">
+                      <div className="bg-bg/60 p-2 rounded-lg">
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng sàn</span>
+                        <span className="text-xs font-black text-blue-600">
+                          {((adminStats?.platformBreakdown?.tiktok?.revenue || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                      <div className="bg-bg/60 p-2 rounded-lg">
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoàn trả khách (50%)</span>
+                        <span className="text-xs font-black text-[#EE4D2D]">
+                          {((adminStats?.platformBreakdown?.tiktok?.cashback || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                      <div className="bg-bg/60 p-2 rounded-lg">
+                        <span className="text-[10px] text-text-secondary font-bold block">Lợi nhuận giữ lại</span>
+                        <span className="text-xs font-black text-success">
+                          {((adminStats?.platformBreakdown?.tiktok?.profit || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               {/* GRAPHS AND CHARTS */}
@@ -1063,7 +1523,7 @@ export default function AdminPanel() {
                             contentStyle={{ borderRadius: 12, border: '1px solid #ECECEC', fontSize: '12px' }}
                           />
                           <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
-                          <Area type="monotone" dataKey="DoanhThu" name="Hoa hồng Shopee (100%)" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDailyRevenue)" strokeWidth={2} />
+                          <Area type="monotone" dataKey="DoanhThu" name={statsPlatform === 'tiktok' ? 'Hoa hồng TikTok (100%)' : statsPlatform === 'shopee' ? 'Hoa hồng Shopee (100%)' : 'Hoa hồng sàn (100%)'} stroke="#3B82F6" fillOpacity={1} fill="url(#colorDailyRevenue)" strokeWidth={2} />
                           <Area type="monotone" dataKey="LoiNhuan" name="Lợi nhuận Admin" stroke="#22C55E" fillOpacity={1} fill="url(#colorDailyProfit)" strokeWidth={2} />
                         </AreaChart>
                       </ResponsiveContainer>
@@ -1072,7 +1532,7 @@ export default function AdminPanel() {
                     {/* Daily Detail Data Table */}
                     <div className="border border-border/50 rounded-input overflow-hidden shadow-sm">
                       <div className="bg-bg/80 px-4 py-2.5 border-b border-border text-xs font-bold text-text flex justify-between items-center">
-                        <span>Bảng Thống Kê Chi Tiết Từng Ngày ({adminStats?.selectedMonth ? `Tháng ${adminStats.selectedMonth.substring(5)}/${adminStats.selectedMonth.substring(0, 4)}` : ''})</span>
+                        <span>Bảng Thống Kê Chi Tiết Từng Ngày ({adminStats?.selectedMonth ? `Tháng ${adminStats.selectedMonth.substring(5)}/${adminStats.selectedMonth.substring(0, 4)}` : ''}) - {statsPlatform === 'tiktok' ? 'TikTok Shop' : statsPlatform === 'shopee' ? 'Shopee' : 'Tất cả sàn'}</span>
                         <span className="text-text-secondary text-[11px]">Tổng số: {(adminStats?.dailyAnalytics || []).length} ngày</span>
                       </div>
                       <div className="max-h-[300px] overflow-y-auto">
@@ -1081,7 +1541,7 @@ export default function AdminPanel() {
                             <TableRow>
                               <TableHead>Ngày</TableHead>
                               <TableHead className="text-center">Số Đơn Hàng</TableHead>
-                              <TableHead className="text-right">Hoa Hồng Shopee (100%)</TableHead>
+                              <TableHead className="text-right">{statsPlatform === 'tiktok' ? 'Hoa Hồng TikTok (100%)' : statsPlatform === 'shopee' ? 'Hoa Hồng Shopee (100%)' : 'Hoa Hồng Sàn (100%)'}</TableHead>
                               <TableHead className="text-right">Hoàn Tiền Khách</TableHead>
                               <TableHead className="text-right">Lợi Nhuận Giữ Lại</TableHead>
                             </TableRow>
@@ -1383,8 +1843,8 @@ export default function AdminPanel() {
             <div className="flex flex-col gap-6">
               <div className="flex justify-between items-end">
                 <div>
-                  <h2 className="text-2xl font-black text-text">Quản lý đối soát đơn hàng</h2>
-                  <p className="text-xs text-text-secondary mt-1">Phê duyệt, từ chối đối soát đơn hàng thủ công hoặc cập nhật doanh thu thực nhận bằng file CSV.</p>
+                  <h2 className="text-2xl font-black text-text">Quản lý đối soát đơn hàng Shopee</h2>
+                  <p className="text-xs text-text-secondary mt-1">Phê duyệt, từ chối đối soát đơn hàng Shopee thủ công hoặc cập nhật doanh thu thực nhận bằng file CSV.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -1650,6 +2110,360 @@ export default function AdminPanel() {
                         <button
                           onClick={() => setOrderPage(p => Math.min(totalPages, p + 1))}
                           disabled={orderPage === totalPages}
+                          className="px-3 py-1.5 border border-border rounded-[8px] bg-white hover:bg-bg disabled:opacity-50 transition-all"
+                        >
+                          Sau
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* TAB 3B: TIKTOK ORDER MANAGEMENT */}
+          {activeTab === 'tiktok-orders' && (
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-end gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-slate-900 text-white rounded-xl shadow-xs">
+                      <TikTokIcon className="h-5 w-5" />
+                    </span>
+                    <h2 className="text-2xl font-black text-text">Quản lý đơn hàng TikTok Shop</h2>
+                  </div>
+                  <p className="text-xs text-text-secondary mt-1">
+                    Theo dõi, đối soát và tự động đồng bộ đơn hàng hoàn tiền từ TikTok Shop.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={() => {
+                      setRiohubFilters(prev => ({
+                        ...prev,
+                        creator_username: (settings as any)?.riohubCreatorUsername || 'hungrevieweverything'
+                      }));
+                      setIsRiohubReconcileModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white hover:opacity-95 font-bold text-xs shadow-md border border-indigo-500/30"
+                  >
+                    <Activity className="h-4 w-4 text-emerald-400" />
+                    Đối soát đơn hàng TikTok
+                  </Button>
+                  <Button
+                    onClick={handleSyncTikTokFromRioHub}
+                    disabled={isSyncingTikTok}
+                    variant="outline"
+                    className="flex items-center gap-1.5 border-border bg-white hover:bg-bg font-bold text-xs shadow-xs"
+                    title="Tự động đồng bộ các đơn mới cập nhật gần đây"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isSyncingTikTok ? 'animate-spin' : ''}`} />
+                    {isSyncingTikTok ? 'Đang đồng bộ...' : 'Đồng bộ nhanh'}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setNewTikTokForm({
+                        id: '',
+                        userId: '',
+                        productName: '',
+                        productImage: '',
+                        orderAmount: '',
+                        estimatedCashback: '',
+                        realCashback: '',
+                        tiktokCommission: '',
+                        status: 'pending',
+                        notes: ''
+                      });
+                      setIsCreateTikTokModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm"
+                  >
+                    <Plus className="h-4 w-4" /> Tạo đơn TikTok mới
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsClearUnassignedTikTokModalOpen(true)}
+                    className="flex items-center gap-1.5 border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 font-bold text-xs"
+                    title="Xóa tất cả các đơn TikTok chưa xác định thành viên"
+                  >
+                    <Trash2 className="h-4 w-4 text-amber-600" /> Xóa đơn chưa gán
+                  </Button>
+                  <Button
+                    onClick={() => setIsClearTikTokModalOpen(true)}
+                    className="flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 font-bold text-xs shadow-sm"
+                    title="Xóa tất cả đơn hàng TikTok"
+                  >
+                    <Trash2 className="h-4 w-4" /> Xóa toàn bộ đơn TikTok
+                  </Button>
+                </div>
+              </div>
+
+              {/* STAT WIDGETS FOR TIKTOK */}
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <Card className="border-border/60 shadow-xs">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold text-text-secondary">Tổng đơn TikTok</p>
+                      <h3 className="text-xl font-black text-text mt-0.5">{tiktokStats?.totalOrders || totalAdminTikTokOrders}</h3>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-800">
+                      <ShoppingBag className="w-5 h-5" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/60 shadow-xs">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold text-text-secondary">Đơn hoàn thành</p>
+                      <h3 className="text-xl font-black text-emerald-600 mt-0.5">{tiktokStats?.approvedOrders || 0}</h3>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                      <Check className="w-5 h-5" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/60 shadow-xs">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold text-text-secondary">Doanh số GMV</p>
+                      <h3 className="text-lg font-black text-text mt-0.5">{((tiktokStats?.totalRevenue || 0)).toLocaleString('vi-VN')}đ</h3>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                      <BarChart3 className="w-5 h-5" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/60 shadow-xs">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold text-text-secondary">Hoa hồng sàn (100%)</p>
+                      <h3 className="text-lg font-black text-blue-600 mt-0.5">{((tiktokStats?.totalCommission || 0)).toLocaleString('vi-VN')}đ</h3>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                      <Activity className="w-5 h-5" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/60 shadow-xs">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold text-text-secondary">Hoàn tiền khách</p>
+                      <h3 className="text-lg font-black text-[#EE4D2D] mt-0.5">{((tiktokStats?.totalCashback || 0)).toLocaleString('vi-VN')}đ</h3>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-[#EE4D2D]">
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* SEARCH & FILTER FOR TIKTOK ORDERS */}
+              <div className="bg-white border border-border p-4 rounded-input flex flex-col sm:flex-row gap-4 items-center shadow-xs">
+                <div className="flex-1 w-full flex items-center px-3 border border-border rounded-input bg-bg gap-2">
+                  <Search className="h-4.5 w-4.5 text-text-secondary shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Tìm theo Mã đơn TikTok, tên sản phẩm, SubID hoặc người dùng..."
+                    value={tiktokSearch}
+                    onChange={(e) => setTiktokSearch(e.target.value)}
+                    className="w-full bg-transparent border-none py-2.5 outline-none text-xs"
+                  />
+                </div>
+                <div className="w-full sm:w-48 flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-text-secondary shrink-0" />
+                  <select
+                    value={tiktokStatusFilter}
+                    onChange={(e) => setTiktokStatusFilter(e.target.value)}
+                    className="w-full bg-white border border-border text-xs rounded-input py-2.5 px-3"
+                  >
+                    <option value="all">Tất cả trạng thái</option>
+                    <option value="unassigned">⚠️ Đơn chưa gán User</option>
+                    <option value="pending">Đang chờ xử lý</option>
+                    <option value="approved">Hoàn thành</option>
+                    <option value="rejected">Hủy</option>
+                    <option value="returned">Hoàn hàng</option>
+                    <option value="paid">Đã thanh toán</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* TIKTOK ORDERS LIST TABLE */}
+              <Card className="border-border/50">
+                <CardContent className="p-0">
+                  <TableContainer>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Mã Đơn TikTok</TableHead>
+                        <TableHead>Thành Viên</TableHead>
+                        <TableHead>Sản Phẩm</TableHead>
+                        <TableHead className="text-right">Giá Trị Đơn</TableHead>
+                        <TableHead className="text-right">Hoa Hồng Sàn (100%)</TableHead>
+                        <TableHead className="text-right">Hoàn Tiền Khách</TableHead>
+                        <TableHead>Ngày Đặt</TableHead>
+                        <TableHead>Trạng Thái</TableHead>
+                        <TableHead className="text-center">Thao Tác</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {isLoadingTikTokOrders ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-16 text-xs text-text-secondary font-medium">
+                            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
+                            Đang tải danh sách đơn hàng TikTok...
+                          </TableCell>
+                        </TableRow>
+                      ) : (tiktokOrders || []).length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-16 text-xs text-text-secondary font-medium">
+                            Chưa có đơn hàng TikTok nào hoặc không tìm thấy đơn phù hợp. Nhấn "Đồng bộ nhanh" để tải đơn về!
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        (tiktokOrders || []).map((order) => {
+                          const orderUser = users.find(u => u.id === order.userId);
+                          const userDisplayName = order.userName || orderUser?.name || 'Chưa xác định';
+                          const userDisplayEmail = order.userEmail || orderUser?.email || '';
+
+                          return (
+                            <TableRow key={order.id} className="hover:bg-bg/40">
+                              <TableCell className="font-bold text-slate-900 dark:text-white">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="p-1 bg-slate-900 text-white rounded-md shrink-0">
+                                    <TikTokIcon className="h-3 w-3" />
+                                  </span>
+                                  <span className="font-mono text-xs">{order.id}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {order.userId ? (
+                                  <div>
+                                    <p className="font-bold text-xs text-text">{userDisplayName}</p>
+                                    <p className="text-[10px] text-text-secondary">{userDisplayEmail || order.userId}</p>
+                                  </div>
+                                ) : (
+                                  <Badge variant="warning" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                                    ⚠️ Chưa gán
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="max-w-[220px]">
+                                <div className="flex items-center gap-2">
+                                  {order.productImage ? (
+                                    <img src={order.productImage} alt="" className="w-8 h-8 rounded-md object-cover border border-border shrink-0" />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                                      <TikTokIcon className="w-4 h-4" />
+                                    </div>
+                                  )}
+                                  <div className="truncate">
+                                    <p className="font-semibold text-xs text-text truncate" title={order.productName}>{order.productName}</p>
+                                    {order.subId && <p className="text-[10px] font-mono text-text-secondary truncate">SubID: {order.subId}</p>}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-semibold text-xs">
+                                {Math.floor(order.orderAmount).toLocaleString('vi-VN')}đ
+                              </TableCell>
+                              <TableCell className="text-right font-bold text-xs text-blue-600">
+                                {Math.floor(order.tiktokCommission || order.shopeeCommission || (order.estimatedCashback * 2)).toLocaleString('vi-VN')}đ
+                              </TableCell>
+                              <TableCell className="text-right font-bold text-xs text-[#EE4D2D]">
+                                {order.realCashback ? `${Math.floor(order.realCashback).toLocaleString('vi-VN')}đ` : `${Math.floor(order.estimatedCashback).toLocaleString('vi-VN')}đ (DK)`}
+                              </TableCell>
+                              <TableCell className="text-xs text-text-secondary font-medium whitespace-nowrap">
+                                {order.createdTime ? String(order.createdTime).substring(0, 16) : '-'}
+                              </TableCell>
+                              <TableCell>
+                                {order.status === 'approved' && <Badge variant="success">Hoàn thành</Badge>}
+                                {order.status === 'pending' && <Badge variant="info">Chờ xử lý</Badge>}
+                                {order.status === 'rejected' && <Badge variant="danger">Hủy</Badge>}
+                                {order.status === 'returned' && <Badge variant="warning" className="bg-orange-50 text-orange-600 border-orange-200">Hoàn hàng</Badge>}
+                                {order.status === 'paid' && <Badge variant="warning">Đã thanh toán</Badge>}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  {order.status === 'pending' && (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => updateTikTokOrderStatus(order.id, 'approved', Math.floor(order.estimatedCashback), order.notes, order.userId)}
+                                        className="h-7 w-7 p-0 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-md"
+                                        title="Duyệt hoàn thành"
+                                      >
+                                        <Check className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => updateTikTokOrderStatus(order.id, 'rejected', 0, order.notes, order.userId)}
+                                        className="h-7 w-7 p-0 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-md"
+                                        title="Từ chối/Hủy"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setEditingTikTokOrder(order);
+                                      setEditTikTokStatus(order.status);
+                                      setEditTikTokRealCashback(order.realCashback !== undefined ? String(order.realCashback) : String(order.estimatedCashback));
+                                      setEditTikTokNotes(order.notes || '');
+                                      setEditTikTokUserId(order.userId || '');
+                                    }}
+                                    className="h-7 w-7 p-0 border-border text-text-secondary hover:text-primary rounded-md"
+                                    title="Sửa / Gán User"
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setDeletingTikTokOrder(order)}
+                                    className="h-7 w-7 p-0 border-border text-text-secondary hover:text-danger rounded-md"
+                                    title="Xóa đơn"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </TableContainer>
+
+                  {/* TIKTOK PAGINATION */}
+                  {Math.ceil(totalAdminTikTokOrders / 10) > 1 && (
+                    <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-semibold text-text-secondary">
+                      <p>Hiển thị trang {tiktokPage} trên tổng số {Math.ceil(totalAdminTikTokOrders / 10)} trang ({totalAdminTikTokOrders} đơn TikTok)</p>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setTiktokPage(p => Math.max(1, p - 1))}
+                          disabled={tiktokPage === 1}
+                          className="px-3 py-1.5 border border-border rounded-[8px] bg-white hover:bg-bg disabled:opacity-50 transition-all"
+                        >
+                          Trước
+                        </button>
+                        {getPageNumbers(tiktokPage, Math.ceil(totalAdminTikTokOrders / 10)).map((page, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => typeof page === 'number' && setTiktokPage(page)}
+                            disabled={typeof page !== 'number'}
+                            className={`px-3 py-1.5 border rounded-[8px] transition-all ${tiktokPage === page
+                                ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                                : 'bg-white hover:bg-bg border-border text-text-secondary'
+                              }`}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setTiktokPage(p => Math.min(Math.ceil(totalAdminTikTokOrders / 10), p + 1))}
+                          disabled={tiktokPage === Math.ceil(totalAdminTikTokOrders / 10)}
                           className="px-3 py-1.5 border border-border rounded-[8px] bg-white hover:bg-bg disabled:opacity-50 transition-all"
                         >
                           Sau
@@ -2095,10 +2909,137 @@ export default function AdminPanel() {
                       </div>
 
                       <div className="sm:col-span-2 pt-4 border-t border-border/40">
-                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">🎵 Tiếp thị liên kết TikTok Shop</h3>
+                        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>🎵 Tiếp thị liên kết TikTok Shop qua RioHub</span>
+                            {settings.hasRiohubApiKey && (
+                              <Badge className="bg-emerald-500 text-white text-[9px] py-0 px-2 font-bold">API Hoạt Động</Badge>
+                            )}
+                          </h3>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isSyncingTiktokOrders}
+                            onClick={handleSyncTiktokOrders}
+                            className="text-xs font-bold py-1.5 px-3 border-slate-300"
+                          >
+                            {isSyncingTiktokOrders ? 'Đang đồng bộ...' : '🔄 Đồng bộ đơn RioHub'}
+                          </Button>
+                        </div>
+
+                        {/* RIOHUB API CONFIGURATION */}
+                        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 sm:p-5 mb-4">
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <div className="text-[11px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#00F2FE]" />
+                              <span>Cấu hình RioHub TikTok Affiliate API</span>
+                              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Chuẩn V1</span>
+                            </div>
+                            <a
+                              href="https://riohub.vn/"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                            >
+                              Mở riohub.vn <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-1.5 sm:col-span-2">
+                              <label className="text-xs font-bold text-text/80 flex items-center gap-1.5">
+                                <Key className="w-3.5 h-3.5 text-cyan-600" />
+                                <span>RioHub API Key (Header: X-Riohub-Api-Key)</span>
+                                <span className="text-[10px] bg-cyan-100 text-cyan-800 px-1.5 py-0.5 rounded font-bold uppercase">Bắt buộc</span>
+                              </label>
+
+                              <div className="relative">
+                                <input
+                                  type={showRiohubKey ? "text" : "password"}
+                                  value={sysRiohubApiKey}
+                                  onChange={(e) => setSysRiohubApiKey(e.target.value)}
+                                  className="w-full px-4 py-2.5 pr-10 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-mono"
+                                  placeholder={settings.hasRiohubApiKey ? "•••••••• (Đã lưu key)" : "Nhập API Key từ RioHub mục Developer (X-Riohub-Api-Key)..."}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowRiohubKey(!showRiohubKey)}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-text p-1 cursor-pointer"
+                                  title={showRiohubKey ? "Ẩn Key" : "Hiện Key"}
+                                >
+                                  {showRiohubKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                Hệ thống tự động đính kèm Header <code>X-Riohub-Api-Key</code> và tham số <code>creator_username</code> vào các API khi gọi đến RioHub (không cần test key tại trang admin).
+                              </p>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-xs font-bold text-text/80 flex items-center justify-between">
+                                <span>Creator Username (Tài khoản TikTok Shop đã kết nối)</span>
+                                <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-bold uppercase">Bắt buộc</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={sysRiohubCreatorUsername}
+                                onChange={(e) => setSysRiohubCreatorUsername(e.target.value.replace(/^@/, '').trim())}
+                                className="w-full px-4 py-2.5 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-mono font-semibold"
+                                placeholder="vd: hungrevieweverything"
+                              />
+                              <span className="text-[10px] text-slate-500">
+                                Nhập username đã kết nối với tài khoản RioHub (ví dụ: <strong>hungrevieweverything</strong>). Key tạo ở tài khoản nào chỉ gọi được cho creator đã kết nối ở tài khoản đó.
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-xs font-bold text-text/80">
+                                Webhook Secret <span className="text-slate-400 font-normal">(Xác thực X-Riohub-Signature)</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={sysRiohubWebhookSecret}
+                                onChange={(e) => setSysRiohubWebhookSecret(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-white border border-border text-xs rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-mono"
+                                placeholder="Khóa bảo mật webhook (tùy chọn)..."
+                              />
+                              <span className="text-[10px] text-slate-500">Dùng để chống giả mạo request thông báo đơn từ RioHub.</span>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5 sm:col-span-2">
+                              <label className="text-xs font-bold text-text/80">
+                                Webhook / Postback URL để cài đặt trên RioHub
+                              </label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/tiktok/webhook`}
+                                  className="w-full px-3 py-2 bg-slate-100 border border-border text-xs rounded-input text-slate-600 font-mono select-all"
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`${window.location.origin}/api/tiktok/webhook`);
+                                    toast.success('Đã sao chép link Webhook!');
+                                  }}
+                                  className="text-xs px-3 shrink-0"
+                                >
+                                  Sao chép
+                                </Button>
+                              </div>
+                              <span className="text-[10px] text-slate-500">Cài đặt URL này vào mục Webhook/Postback trên RioHub để hệ thống tự động nhận đơn hàng (order.created, order.updated, order.refunded).</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* FALLBACK COOKIE CONFIGURATION */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-bold text-text/80">TikTok Shop Affiliate ID</label>
+                            <label className="text-xs font-bold text-text/80">TikTok Shop Affiliate ID (Dự phòng)</label>
                             <input
                               type="text"
                               value={sysTiktokAffiliateId}
@@ -2108,7 +3049,7 @@ export default function AdminPanel() {
                             />
                           </div>
                           <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-bold text-text/80">Link Cookie / Deeplink TikTok Shop</label>
+                            <label className="text-xs font-bold text-text/80">Link Cookie / Deeplink TikTok Shop (Dự phòng)</label>
                             <input
                               type="text"
                               value={sysTiktokCookieUrl}
@@ -2699,6 +3640,7 @@ export default function AdminPanel() {
             <TableContainer>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Sàn</TableHead>
                   <TableHead>Mã Đơn</TableHead>
                   <TableHead>Sản Phẩm</TableHead>
                   <TableHead className="text-right">Giá Trị</TableHead>
@@ -2710,20 +3652,31 @@ export default function AdminPanel() {
               <TableBody>
                 {isLoadingUserOrders ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12 text-xs text-text-secondary">
+                    <TableCell colSpan={7} className="text-center py-12 text-xs text-text-secondary">
                       <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
                       Đang tải danh sách đơn hàng của thành viên...
                     </TableCell>
                   </TableRow>
                 ) : userOrdersList.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12 text-xs text-text-secondary font-medium">
+                    <TableCell colSpan={7} className="text-center py-12 text-xs text-text-secondary font-medium">
                       Thành viên này chưa có đơn hàng nào phát sinh trên hệ thống.
                     </TableCell>
                   </TableRow>
                 ) : (
                   userOrdersList.map((o) => (
                     <TableRow key={o.id}>
+                      <TableCell>
+                        {o.platform === 'tiktok' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-slate-900 text-white shadow-xs">
+                            <TikTokIcon className="h-3 w-3" /> TikTok
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-orange-50 text-[#EE4D2D] border border-orange-200 shadow-xs">
+                            <ShopeeIcon className="h-3 w-3" /> Shopee
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="font-bold text-primary text-xs font-mono">{o.id}</TableCell>
                       <TableCell className="max-w-[200px] truncate font-semibold text-xs">
                         <span title={o.productName}>{o.productName}</span>
@@ -3114,6 +4067,748 @@ export default function AdminPanel() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* CREATE TIKTOK ORDER DIALOG */}
+      <Dialog isOpen={isCreateTikTokModalOpen} onClose={() => setIsCreateTikTokModalOpen(false)} className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-slate-900">
+            <span className="p-1 bg-slate-900 text-white rounded-md">
+              <TikTokIcon className="w-4 h-4" />
+            </span>
+            Tạo đơn hàng TikTok Shop mới thủ công
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          <form onSubmit={handleCreateTikTokOrderSubmit} className="flex flex-col gap-4 text-left font-sans text-xs">
+            {/* User Selection */}
+            <div className="flex flex-col gap-1.5 relative">
+              <label className="text-xs font-semibold text-text/80">
+                Gán cho thành viên sở hữu đơn hàng (Tùy chọn)
+              </label>
+              <input
+                type="text"
+                value={newTikTokForm.userId}
+                onChange={(e) => setNewTikTokForm(prev => ({ ...prev, userId: e.target.value }))}
+                placeholder="Gõ User ID (vd: USR101) hoặc Email... Để trống nếu chưa xác định"
+                className="w-full px-4 py-2.5 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold font-mono"
+              />
+              {users && users.length > 0 && newTikTokForm.userId.trim().length > 0 && (
+                <div className="bg-white border border-border rounded-input shadow-lg max-h-[140px] overflow-y-auto p-1 text-xs space-y-1 z-10">
+                  {users
+                    .filter(u =>
+                      u.id.toLowerCase().includes(newTikTokForm.userId.toLowerCase()) ||
+                      u.name.toLowerCase().includes(newTikTokForm.userId.toLowerCase()) ||
+                      (u.email && u.email.toLowerCase().includes(newTikTokForm.userId.toLowerCase()))
+                    )
+                    .slice(0, 5)
+                    .map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => setNewTikTokForm(prev => ({ ...prev, userId: u.id }))}
+                        className="px-3 py-1.5 hover:bg-primary/10 rounded cursor-pointer flex justify-between items-center transition-all"
+                      >
+                        <div>
+                          <span className="font-bold text-text">{u.name}</span>
+                          <span className="text-text-secondary text-[11px] ml-2">({u.email})</span>
+                        </div>
+                        <span className="font-mono text-primary font-bold bg-primary/10 px-2 py-0.5 rounded text-[10px]">
+                          {u.id}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">Mã đơn hàng TikTok (Order ID)</label>
+                <input
+                  type="text"
+                  value={newTikTokForm.id}
+                  onChange={(e) => setNewTikTokForm(prev => ({ ...prev, id: e.target.value }))}
+                  placeholder="Để trống hệ thống sẽ tự sinh mã TT..."
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-mono"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">Trạng thái ban đầu</label>
+                <select
+                  value={newTikTokForm.status}
+                  onChange={(e) => setNewTikTokForm(prev => ({ ...prev, status: e.target.value as any }))}
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold"
+                >
+                  <option value="pending">Đang chờ xử lý (Pending)</option>
+                  <option value="approved">Hoàn thành (Approved)</option>
+                  <option value="rejected">Hủy (Rejected)</option>
+                  <option value="returned">Hoàn hàng (Returned)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-text/80">
+                Tên sản phẩm TikTok Shop <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={newTikTokForm.productName}
+                onChange={(e) => setNewTikTokForm(prev => ({ ...prev, productName: e.target.value }))}
+                placeholder="Nhập tên sản phẩm..."
+                className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary"
+                required
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-text/80">Link ảnh sản phẩm (Image URL)</label>
+              <input
+                type="text"
+                value={newTikTokForm.productImage}
+                onChange={(e) => setNewTikTokForm(prev => ({ ...prev, productImage: e.target.value }))}
+                placeholder="https://..."
+                className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">
+                  Giá trị đơn hàng (₫) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={newTikTokForm.orderAmount}
+                  onChange={(e) => {
+                    const amount = e.target.value;
+                    const comm = Math.floor((Number(amount) || 0) * 0.1);
+                    const cb = Math.floor(comm * ((settings?.cashbackPercentage ?? 50) / 100));
+                    setNewTikTokForm(prev => ({
+                      ...prev,
+                      orderAmount: amount,
+                      tiktokCommission: String(comm),
+                      estimatedCashback: String(cb),
+                      realCashback: String(cb)
+                    }));
+                  }}
+                  placeholder="Vd: 250000"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold"
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">Hoa hồng sàn 100% (₫)</label>
+                <input
+                  type="number"
+                  value={newTikTokForm.tiktokCommission}
+                  onChange={(e) => {
+                    const comm = e.target.value;
+                    const cb = Math.floor((Number(comm) || 0) * ((settings?.cashbackPercentage ?? 50) / 100));
+                    setNewTikTokForm(prev => ({
+                      ...prev,
+                      tiktokCommission: comm,
+                      estimatedCashback: String(cb),
+                      realCashback: String(cb)
+                    }));
+                  }}
+                  placeholder="Vd: 25000"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold text-blue-600"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">Hoàn tiền khách (₫)</label>
+                <input
+                  type="number"
+                  value={newTikTokForm.realCashback || newTikTokForm.estimatedCashback}
+                  onChange={(e) => setNewTikTokForm(prev => ({
+                    ...prev,
+                    realCashback: e.target.value,
+                    estimatedCashback: e.target.value
+                  }))}
+                  placeholder="Vd: 12500"
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold text-[#EE4D2D]"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-text/80">Ghi chú đơn hàng (Tùy chọn)</label>
+              <textarea
+                value={newTikTokForm.notes}
+                onChange={(e) => setNewTikTokForm(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Ghi chú SubID, mã chiến dịch..."
+                className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary min-h-[60px]"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border/40">
+              <Button type="button" variant="ghost" onClick={() => setIsCreateTikTokModalOpen(false)} disabled={isSubmittingTikTokOrder} className="font-bold">
+                Hủy bỏ
+              </Button>
+              <Button type="submit" disabled={isSubmittingTikTokOrder} className="bg-slate-900 hover:bg-slate-800 text-white font-bold flex items-center gap-1.5">
+                {isSubmittingTikTokOrder ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Tạo đơn TikTok
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* EDIT TIKTOK ORDER MODAL */}
+      <Dialog isOpen={editingTikTokOrder !== null} onClose={() => setEditingTikTokOrder(null)}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="p-1 bg-slate-900 text-white rounded-md">
+              <TikTokIcon className="w-4 h-4" />
+            </span>
+            Chỉnh sửa đơn hàng TikTok {editingTikTokOrder?.id}
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          {editingTikTokOrder && (
+            <form onSubmit={handleUpdateTikTokStatus} className="flex flex-col gap-4 text-left font-sans text-xs">
+              <div className="bg-bg border border-border/60 p-3 rounded-input">
+                <p className="font-bold text-text truncate">{editingTikTokOrder.productName}</p>
+                <p className="text-[11px] text-text-secondary mt-0.5">
+                  Giá trị đơn: <b>{Math.floor(editingTikTokOrder.orderAmount).toLocaleString('vi-VN')}đ</b> | Tiền hoàn dự kiến: <b>{Math.floor(editingTikTokOrder.estimatedCashback).toLocaleString('vi-VN')}đ</b>
+                </p>
+              </div>
+
+              {/* Gán User */}
+              <div className="flex flex-col gap-1.5 relative">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-semibold text-text/80">Thành viên sở hữu (Gán User ID)</label>
+                  {editTikTokUserId && (
+                    <button
+                      type="button"
+                      onClick={() => setEditTikTokUserId('')}
+                      className="text-[10px] text-red-500 hover:underline font-bold"
+                    >
+                      Xóa gán thành viên
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={editTikTokUserId}
+                  onChange={(e) => setEditTikTokUserId(e.target.value)}
+                  placeholder="Gõ mã User ID (vd: USR101) hoặc Email... Để trống nếu HỦY GÁN."
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-mono font-semibold"
+                />
+                {users && users.length > 0 && editTikTokUserId.trim().length > 0 && (
+                  <div className="bg-white border border-border rounded-input shadow-lg max-h-[140px] overflow-y-auto p-1 text-xs space-y-1 z-10">
+                    {users
+                      .filter(u =>
+                        u.id.toLowerCase().includes(editTikTokUserId.toLowerCase()) ||
+                        u.name.toLowerCase().includes(editTikTokUserId.toLowerCase()) ||
+                        (u.email && u.email.toLowerCase().includes(editTikTokUserId.toLowerCase()))
+                      )
+                      .slice(0, 5)
+                      .map((u) => (
+                        <div
+                          key={u.id}
+                          onClick={() => setEditTikTokUserId(u.id)}
+                          className="px-3 py-1.5 hover:bg-primary/10 rounded cursor-pointer flex justify-between items-center transition-all"
+                        >
+                          <div>
+                            <span className="font-bold text-text">{u.name}</span>
+                            <span className="text-text-secondary text-[11px] ml-2">({u.email})</span>
+                          </div>
+                          <span className="font-mono text-primary font-bold bg-primary/10 px-2 py-0.5 rounded text-[10px]">
+                            {u.id}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-text/80">Trạng thái đơn hàng</label>
+                  <select
+                    value={editTikTokStatus}
+                    onChange={(e) => {
+                      const newStat = e.target.value as Order['status'];
+                      setEditTikTokStatus(newStat);
+                      if (newStat === 'approved' || newStat === 'paid') {
+                        if (!editTikTokRealCashback || editTikTokRealCashback === '0') {
+                          setEditTikTokRealCashback(String(Math.floor(editingTikTokOrder.estimatedCashback)));
+                        }
+                      } else if (newStat === 'rejected' || newStat === 'returned') {
+                        setEditTikTokRealCashback('0');
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold"
+                  >
+                    <option value="pending">Chờ xử lý (Pending)</option>
+                    <option value="approved">Hoàn thành (Approved)</option>
+                    <option value="rejected">Hủy (Rejected)</option>
+                    <option value="returned">Hoàn hàng (Returned)</option>
+                    <option value="paid">Đã thanh toán (Paid)</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-text/80">Hoàn tiền thực nhận (₫)</label>
+                  <input
+                    type="number"
+                    value={editTikTokRealCashback}
+                    onChange={(e) => setEditTikTokRealCashback(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary font-semibold text-[#EE4D2D]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-text/80">Ghi chú đối soát</label>
+                <textarea
+                  value={editTikTokNotes}
+                  onChange={(e) => setEditTikTokNotes(e.target.value)}
+                  placeholder="Ghi chú..."
+                  className="w-full px-3 py-2 bg-white border border-border text-xs rounded-input outline-none focus:border-primary min-h-[60px]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+                <Button type="button" variant="ghost" onClick={() => setEditingTikTokOrder(null)} className="font-bold">
+                  Hủy bỏ
+                </Button>
+                <Button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white font-bold">
+                  Lưu thay đổi
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION MODAL: DELETE TIKTOK ORDER */}
+      <Dialog isOpen={deletingTikTokOrder !== null} onClose={() => setDeletingTikTokOrder(null)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-danger">
+            <Trash2 className="w-5 h-5 text-danger" />
+            Xóa đơn hàng TikTok {deletingTikTokOrder?.id}
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-4 text-left font-sans text-xs">
+          <p className="text-text-secondary">
+            Bạn có chắc chắn muốn xóa đơn hàng TikTok <b>{deletingTikTokOrder?.id}</b> ({deletingTikTokOrder?.productName})? Nếu đơn đã được cộng tiền hoàn, số dư của thành viên sẽ được tự động tính toán lại.
+          </p>
+          <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+            <Button type="button" variant="ghost" onClick={() => setDeletingTikTokOrder(null)} className="font-bold">
+              Hủy bỏ
+            </Button>
+            <Button type="button" onClick={() => deletingTikTokOrder && handleDeleteTikTokOrder(deletingTikTokOrder.id)} className="bg-danger text-white hover:bg-danger/90 font-bold">
+              Xác nhận xóa
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION MODAL: CLEAR ALL TIKTOK ORDERS */}
+      <Dialog isOpen={isClearTikTokModalOpen} onClose={() => setIsClearTikTokModalOpen(false)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <Trash2 className="w-5 h-5 text-red-600" />
+            Xác Nhận Xóa Toàn Bộ Đơn TikTok
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-4 text-left font-sans text-xs">
+          <p className="text-text-secondary">
+            Hành động này sẽ xóa toàn bộ đơn hàng trong bảng <b>tiktok_orders</b> và tự động đồng bộ lại số dư ví cho các thành viên. Bảng đơn hàng Shopee sẽ không bị ảnh hưởng.
+          </p>
+          <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+            <Button type="button" variant="ghost" onClick={() => setIsClearTikTokModalOpen(false)} className="font-bold">
+              Hủy bỏ
+            </Button>
+            <Button type="button" onClick={handleClearAllTikTokOrders} className="bg-red-600 text-white hover:bg-red-700 font-bold">
+              Đồng ý xóa toàn bộ TikTok
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION MODAL: CLEAR UNASSIGNED TIKTOK ORDERS */}
+      <Dialog isOpen={isClearUnassignedTikTokModalOpen} onClose={() => setIsClearUnassignedTikTokModalOpen(false)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <Trash2 className="w-5 h-5 text-amber-600" />
+            Xóa Đơn TikTok Chưa Gán User
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-4 text-left font-sans text-xs">
+          <p className="text-text-secondary">
+            Hành động này sẽ xóa tất cả các đơn hàng TikTok chưa có thành viên sở hữu (<code>user_id = null</code>). Các đơn TikTok đã gán sẽ được giữ nguyên.
+          </p>
+          <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+            <Button type="button" variant="ghost" onClick={() => setIsClearUnassignedTikTokModalOpen(false)} className="font-bold">
+              Hủy bỏ
+            </Button>
+            <Button type="button" onClick={handleClearUnassignedTikTokOrders} className="bg-amber-600 text-white hover:bg-amber-700 font-bold">
+              Xác nhận xóa
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* TIKTOK ORDERS RECONCILIATION MODAL */}
+      <Dialog isOpen={isRiohubReconcileModalOpen} onClose={() => setIsRiohubReconcileModalOpen(false)} className="max-w-5xl w-full">
+        <DialogHeader>
+          <div className="flex items-center justify-between w-full">
+            <div>
+              <DialogTitle className="flex items-center gap-2 text-text font-black text-lg">
+                <span className="p-1.5 bg-slate-900 text-white rounded-lg">
+                  <TikTokIcon className="h-4 w-4" />
+                </span>
+                Đối Soát Đơn Hàng TikTok Shop
+              </DialogTitle>
+              <p className="text-xs text-text-secondary mt-1">
+                Truy vấn dữ liệu và đối soát trạng thái đơn hàng TikTok Shop tự động vào hệ thống hoàn tiền.
+              </p>
+            </div>
+          </div>
+        </DialogHeader>
+        <DialogContent className="space-y-5 text-left font-sans text-xs max-h-[82vh] overflow-y-auto pr-1">
+          {/* 1. FILTER CONTROLS */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-border/60 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-text uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5 text-primary" />
+                Bộ lọc tìm kiếm đơn hàng TikTok
+              </span>
+              <span className="text-[10px] text-text-secondary">
+                Tối đa 200 đơn / lần tra cứu
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div>
+                <label className="font-bold text-text/80 block mb-1">
+                  Creator Username <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={riohubFilters.creator_username}
+                  onChange={(e) => setRiohubFilters(prev => ({ ...prev, creator_username: e.target.value }))}
+                  placeholder="hungrevieweverything..."
+                  className="w-full px-2.5 py-1.5 bg-white border border-border rounded-input text-xs outline-none focus:border-primary font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-text/80 block mb-1">
+                  Mã đơn hàng (order_id)
+                </label>
+                <input
+                  type="text"
+                  value={riohubFilters.order_id}
+                  onChange={(e) => setRiohubFilters(prev => ({ ...prev, order_id: e.target.value }))}
+                  placeholder="1 hoặc nhiều mã cách nhau dấu phẩy..."
+                  className="w-full px-2.5 py-1.5 bg-white border border-border rounded-input text-xs font-mono outline-none focus:border-primary"
+                  title="Tra cứu 1 hoặc danh sách đơn (tối đa 200) để verify postback"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-text/80 block mb-1">
+                  Trạng thái đơn (status)
+                </label>
+                <select
+                  value={riohubFilters.status}
+                  onChange={(e) => setRiohubFilters(prev => ({ ...prev, status: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 bg-white border border-border rounded-input text-xs outline-none focus:border-primary font-semibold"
+                >
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="1">1: Đang chờ xử lý (Pending)</option>
+                  <option value="2">2: Đã đối soát xong (Settled)</option>
+                  <option value="3">3: Đã hủy / Hoàn tiền (Cancelled/Refunded)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-text/80 block mb-1">
+                  Settlement Status
+                </label>
+                <select
+                  value={riohubFilters.settlement_status}
+                  onChange={(e) => setRiohubFilters(prev => ({ ...prev, settlement_status: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 bg-white border border-border rounded-input text-xs outline-none focus:border-primary font-semibold"
+                >
+                  <option value="">Tất cả</option>
+                  <option value="SETTLED">SETTLED (Đã quyết toán)</option>
+                  <option value="AWAITING PAYMENT">AWAITING PAYMENT (Chờ TT)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-text/80 block mb-1">
+                  Ngày tạo từ (time_start)
+                </label>
+                <input
+                  type="date"
+                  value={riohubFilters.time_start}
+                  onChange={(e) => setRiohubFilters(prev => ({ ...prev, time_start: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 bg-white border border-border rounded-input text-xs outline-none focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-text/80 block mb-1">
+                  Ngày tạo đến (time_end)
+                </label>
+                <input
+                  type="date"
+                  value={riohubFilters.time_end}
+                  onChange={(e) => setRiohubFilters(prev => ({ ...prev, time_end: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 bg-white border border-border rounded-input text-xs outline-none focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-text/80 block mb-1">
+                  Cập nhật sau mốc (update_time_start)
+                </label>
+                <input
+                  type="text"
+                  value={riohubFilters.update_time_start}
+                  onChange={(e) => setRiohubFilters(prev => ({ ...prev, update_time_start: e.target.value }))}
+                  placeholder="Unix timestamp (sync tăng dần)..."
+                  className="w-full px-2.5 py-1.5 bg-white border border-border rounded-input text-xs font-mono outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="font-bold text-text/80 block mb-1">
+                    Số lượng (page_size)
+                  </label>
+                  <select
+                    value={riohubFilters.page_size}
+                    onChange={(e) => setRiohubFilters(prev => ({ ...prev, page_size: e.target.value }))}
+                    className="w-full px-2 py-1.5 bg-white border border-border rounded-input text-xs outline-none focus:border-primary font-semibold"
+                  >
+                    <option value="20">20 đơn</option>
+                    <option value="50">50 đơn</option>
+                    <option value="100">100 đơn</option>
+                    <option value="200">200 đơn</option>
+                  </select>
+                </div>
+                <Button
+                  onClick={handleQueryRiohubOrders}
+                  disabled={isQueryingRiohub}
+                  className="h-8.5 px-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm shrink-0"
+                >
+                  <Search className={`h-3.5 w-3.5 ${isQueryingRiohub ? 'animate-spin' : ''}`} />
+                  {isQueryingRiohub ? 'Đang gọi...' : 'Truy vấn'}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. PREVIEW & RESULTS */}
+          {riohubOrdersResult && (
+            <div className="space-y-3">
+              {/* Summary Metrics */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-2.5 bg-white rounded-xl border border-border/60">
+                  <span className="text-[10px] font-bold text-text-secondary block">Tổng đơn tải về</span>
+                  <span className="text-base font-black text-text">
+                    {riohubOrdersResult.orders.length} <span className="text-[11px] font-normal text-text-secondary">/ {riohubOrdersResult.total || 0}</span>
+                  </span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-border/60">
+                  <span className="text-[10px] font-bold text-text-secondary block">Đơn đã Settled</span>
+                  <span className="text-base font-black text-emerald-600">
+                    {riohubOrdersResult.orders.filter((o: any) => o.status === 2 || String(o.settlement_status).toUpperCase() === 'SETTLED').length}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-border/60">
+                  <span className="text-[10px] font-bold text-text-secondary block">Tổng GMV</span>
+                  <span className="text-base font-black text-text">
+                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(
+                      riohubOrdersResult.orders.reduce((sum: number, o: any) => sum + (Number(o.order_amount) || 0), 0)
+                    )}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-border/60">
+                  <span className="text-[10px] font-bold text-text-secondary block">Tổng hoa hồng sàn</span>
+                  <span className="text-base font-black text-[#EE4D2D]">
+                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(
+                      riohubOrdersResult.orders.reduce((sum: number, o: any) => sum + (Number(o.commission_amount) || 0), 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Table of Orders from RioHub */}
+              <div className="border border-border/60 rounded-xl overflow-hidden bg-white shadow-xs">
+                <div className="p-2.5 bg-slate-100 border-b border-border/60 flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-text">
+                    <input
+                      type="checkbox"
+                      checked={selectedRiohubOrderIds.length > 0 && selectedRiohubOrderIds.length === riohubOrdersResult.orders.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedRiohubOrderIds(riohubOrdersResult.orders.map((o: any) => o.order_id));
+                        } else {
+                          setSelectedRiohubOrderIds([]);
+                        }
+                      }}
+                      className="rounded border-border w-3.5 h-3.5 text-slate-900 cursor-pointer"
+                    />
+                    Chọn tất cả ({selectedRiohubOrderIds.length}/{riohubOrdersResult.orders.length})
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => handleApplyRiohubReconciliation(true)}
+                      disabled={isReconcilingRiohub || selectedRiohubOrderIds.length === 0}
+                      className="h-7.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-xs"
+                    >
+                      <Check className={`h-3.5 w-3.5 ${isReconcilingRiohub ? 'animate-spin' : ''}`} />
+                      {isReconcilingRiohub ? 'Đang đối soát...' : `Đối soát đơn đã chọn (${selectedRiohubOrderIds.length})`}
+                    </Button>
+                    <Button
+                      onClick={() => handleApplyRiohubReconciliation(false)}
+                      disabled={isReconcilingRiohub || riohubOrdersResult.orders.length === 0}
+                      className="h-7.5 px-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1 shadow-xs"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${isReconcilingRiohub ? 'animate-spin' : ''}`} />
+                      Đối soát tất cả
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto max-h-[340px]">
+                  <TableContainer>
+                    <TableHeader className="sticky top-0 bg-slate-50 z-10 text-[11px]">
+                      <TableRow>
+                        <TableHead className="w-8 text-center">#</TableHead>
+                        <TableHead>Mã đơn</TableHead>
+                        <TableHead>Sản phẩm & Shop</TableHead>
+                        <TableHead className="text-right">GMV</TableHead>
+                        <TableHead className="text-right">Hoa hồng sàn</TableHead>
+                        <TableHead className="text-right">Hoàn tiền</TableHead>
+                        <TableHead className="text-center">Trạng thái sàn</TableHead>
+                        <TableHead>Thành viên khớp</TableHead>
+                        <TableHead className="text-center">Database</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="text-xs">
+                      {riohubOrdersResult.orders.map((o: any) => {
+                        const isSelected = selectedRiohubOrderIds.includes(o.order_id);
+                        const isSettled = o.status === 2 || String(o.settlement_status).toUpperCase() === 'SETTLED';
+                        const isCancelled = o.status === 3 || o.fully_refunded === 1 || String(o.settlement_status).toUpperCase().includes('REFUND') || String(o.settlement_status).toUpperCase().includes('CANCEL');
+
+                        return (
+                          <TableRow key={o.order_id} className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-indigo-50/30' : ''}`}>
+                            <TableCell className="text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedRiohubOrderIds(prev => [...prev, o.order_id]);
+                                  } else {
+                                    setSelectedRiohubOrderIds(prev => prev.filter(id => id !== o.order_id));
+                                  }
+                                }}
+                                className="rounded border-border w-3.5 h-3.5 text-slate-900 cursor-pointer"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col font-mono text-[11px]">
+                                <span className="font-bold text-text">{o.order_id}</span>
+                                <span className="text-[10px] text-text-secondary">{o.time_created || 'N/A'}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-[200px]">
+                              <p className="font-bold text-text truncate text-xs" title={o.product_name}>
+                                {o.product_name || 'Sản phẩm TikTok Shop'}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-[10px] text-text-secondary mt-0.5">
+                                <span>{o.shop_name || 'TikTok Shop'}</span>
+                                {o.sub_id && (
+                                  <span className="bg-slate-100 px-1 rounded font-mono truncate max-w-[90px]" title={o.sub_id}>
+                                    {o.sub_id}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-text">
+                              {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(o.order_amount || 0)}
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-emerald-600">
+                              {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(o.commission_amount || 0)}
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-[#EE4D2D]">
+                              {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(o.estimated_cashback || 0)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {isSettled ? (
+                                <Badge className="bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                  SETTLED
+                                </Badge>
+                              ) : isCancelled ? (
+                                <Badge className="bg-red-100 text-red-800 text-[10px] font-bold">
+                                  HỦY / HOÀN
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-amber-100 text-amber-800 text-[10px] font-bold">
+                                  {o.settlement_status || 'PENDING'}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {o.matched_user ? (
+                                <div className="text-[11px]">
+                                  <p className="font-bold text-text">{o.matched_user.name}</p>
+                                  <p className="text-[10px] text-text-secondary truncate max-w-[120px]">{o.matched_user.email}</p>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                  Chưa gán User
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {o.is_imported ? (
+                                <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-300">
+                                  Đã có ({o.local_status})
+                                </Badge>
+                              ) : (
+                                <Badge className="text-[10px] bg-blue-100 text-blue-800 font-bold">
+                                  Đơn Mới
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </TableContainer>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-3 border-t border-border/40">
+            <p className="text-[11px] text-text-secondary">
+              * Đơn <b>SETTLED</b> sẽ tự động kích hoạt tính năng cộng tiền hoàn vào số dư khả dụng của thành viên.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsRiohubReconcileModalOpen(false)}
+              className="font-bold text-xs"
+            >
+              Đóng
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -66,7 +66,6 @@ export default function DealsPage() {
     if (matched) {
       setCheckedProduct(matched);
       setIsSearching(false);
-      toast.success('Đã tìm thấy deal sản phẩm!');
       return;
     }
 
@@ -94,7 +93,6 @@ export default function DealsPage() {
             ? (info.imageUrl.startsWith('http') ? info.imageUrl : `https://cf.shopee.vn/file/${info.imageUrl}`)
             : ''
         });
-        toast.success('Đã tìm thấy thông tin sản phẩm Shopee!');
       } else {
         setCheckedProduct(null);
         toast.error('Sản phẩm không tồn tại hoặc link Shopee không đúng! Vui lòng kiểm tra lại link.');
@@ -169,7 +167,6 @@ export default function DealsPage() {
 
         if (step1ActivatedUrl === checkedProduct.url) {
           // LẦN 2: Người dùng đã bấm Bước 1 (Giấy ăn Top Gia) trước đó -> Mở trực tiếp link sản phẩm thật
-          toast.success('Đang chuyển hướng sang sản phẩm của bạn trên Shopee...');
           setStep1ActivatedUrl(null);
           openUrl(link2);
         } else {
@@ -260,7 +257,6 @@ export default function DealsPage() {
                 onClick={() => {
                   setShopeeLink(prod.url);
                   setCheckedProduct(prod);
-                  toast.success(`Đã chọn: ${prod.name.slice(0, 15)}...`);
                 }}
                 className="px-2.5 py-1 bg-white hover:bg-primary/5 hover:text-primary hover:border-primary/30 border border-border rounded-[8px] transition-all font-medium"
               >
@@ -303,7 +299,7 @@ export default function DealsPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => { toggleFavorite(checkedProduct.url); toast.success('Đã cập nhật yêu thích'); }}
+                          onClick={() => { toggleFavorite(checkedProduct.url); }}
                           className={`p-2 rounded-full border border-border bg-white shadow-sm hover:scale-105 transition-all ${favorites.includes(checkedProduct.url) ? 'text-danger border-danger/25 bg-red-50/50' : 'text-text-secondary hover:text-text'}`}
                         >
                           <Heart className={`h-4.5 w-4.5 ${favorites.includes(checkedProduct.url) ? 'fill-current' : ''}`} />
@@ -464,7 +460,6 @@ export default function DealsPage() {
                       setCheckedProduct(prod);
                       const element = document.getElementById('search-anchor');
                       if (element) element.scrollIntoView({ behavior: 'smooth' });
-                      toast.success(`Đã chọn: ${prod.name.slice(0, 15)}...`);
                     }}
                     className="w-full py-2.5 text-xs font-bold"
                   >

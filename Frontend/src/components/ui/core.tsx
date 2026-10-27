@@ -495,14 +495,14 @@ export const TableContainer = ({ children, className }: { children: React.ReactN
   </div>
 );
 
-export const TableHeader = ({ children }: { children: React.ReactNode }) => (
-  <thead className="bg-border/20 border-b border-border/40 text-text-secondary font-bold text-xs uppercase tracking-wider">
+export const TableHeader = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+  <thead className={cn("bg-border/20 border-b border-border/40 text-text-secondary font-bold text-xs uppercase tracking-wider", className)}>
     {children}
   </thead>
 );
 
-export const TableBody = ({ children }: { children: React.ReactNode }) => (
-  <tbody className="divide-y divide-border/30 text-sm text-text">
+export const TableBody = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+  <tbody className={cn("divide-y divide-border/30 text-sm text-text", className)}>
     {children}
   </tbody>
 );

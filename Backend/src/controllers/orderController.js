@@ -52,28 +52,68 @@ async function logClick(req, res) {
 }
 
 async function getUserOrders(req, res) {
-  const { search, status } = req.query;
+  const { search, status, platform } = req.query;
 
   try {
     const db = await getDatabase();
     
-    let query = 'SELECT * FROM orders WHERE user_id = ?';
-    const params = [req.user.id];
+    // 1. Shopee Orders query
+    let shopeeQuery = `
+      SELECT id, user_id, click_id, product_name, product_image, order_amount,
+             estimated_cashback, real_cashback, shopee_commission, status,
+             screenshot, notes, created_at, updated_at, 'shopee' as platform
+      FROM orders
+      WHERE user_id = ?
+    `;
+    const shopeeParams = [req.user.id];
 
     if (search) {
-      query += ' AND (id LIKE ? OR product_name LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`);
+      shopeeQuery += ' AND (id LIKE ? OR product_name LIKE ?)';
+      shopeeParams.push(`%${search}%`, `%${search}%`);
     }
 
     if (status && status !== 'all') {
-      query += ' AND status = ?';
-      params.push(status);
+      shopeeQuery += ' AND status = ?';
+      shopeeParams.push(status);
     }
 
-    query += ' ORDER BY created_at DESC';
+    // 2. TikTok Orders query
+    let tiktokQuery = `
+      SELECT id, user_id, click_id, product_name, product_image, order_amount,
+             estimated_cashback, real_cashback, tiktok_commission as shopee_commission, status,
+             screenshot, notes, created_at, updated_at, 'tiktok' as platform
+      FROM tiktok_orders
+      WHERE user_id = ?
+    `;
+    const tiktokParams = [req.user.id];
 
-    const orders = await db.all(query, params);
-    res.json(orders);
+    if (search) {
+      tiktokQuery += ' AND (id LIKE ? OR product_name LIKE ?)';
+      tiktokParams.push(`%${search}%`, `%${search}%`);
+    }
+
+    if (status && status !== 'all') {
+      tiktokQuery += ' AND status = ?';
+      tiktokParams.push(status);
+    }
+
+    let allOrders = [];
+    if (!platform || platform === 'all') {
+      const [shopeeList, tiktokList] = await Promise.all([
+        db.all(shopeeQuery, shopeeParams),
+        db.all(tiktokQuery, tiktokParams)
+      ]);
+      allOrders = [...shopeeList, ...tiktokList];
+    } else if (platform === 'shopee') {
+      allOrders = await db.all(shopeeQuery, shopeeParams);
+    } else if (platform === 'tiktok') {
+      allOrders = await db.all(tiktokQuery, tiktokParams);
+    }
+
+    // Sort combined orders by created_at DESC
+    allOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    res.json(allOrders);
   } catch (error) {
     console.error('Get User Orders Error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ khi lấy danh sách đơn hàng' });
@@ -377,7 +417,10 @@ async function updateOrderScreenshot(req, res) {
 
   try {
     const db = await getDatabase();
-    await db.run('UPDATE orders SET screenshot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [screenshot, id]);
+    const result = await db.run('UPDATE orders SET screenshot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [screenshot, id]);
+    if (!result || result.changes === 0) {
+      await db.run('UPDATE tiktok_orders SET screenshot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [screenshot, id]);
+    }
     res.json({ message: 'Đã cập nhật ảnh minh chứng đơn hàng thành công' });
   } catch (error) {
     console.error('Update Screenshot Error:', error);

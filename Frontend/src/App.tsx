@@ -1,18 +1,28 @@
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import PublicLayout from './components/layout/PublicLayout';
 import LandingPage from './features/landing/LandingPage';
-import TrackingPage from './features/landing/TrackingPage';
-import WalletPage from './features/landing/WalletPage';
-import SupportPage from './features/landing/SupportPage';
-import ReferralPage from './features/landing/ReferralPage';
-import AuthPages from './features/auth/AuthPages';
-import AdminPanel from './features/admin/AdminPanel';
 import { useAppStore } from './store/appStore';
 import { RefreshCw } from 'lucide-react';
 import AuthModal from './components/auth/AuthModal';
 import InstallPWA from './components/common/InstallPWA';
+
+// Code-splitting: chỉ tải khi người dùng vào trang tương ứng
+const TrackingPage = lazy(() => import('./features/landing/TrackingPage'));
+const WalletPage = lazy(() => import('./features/landing/WalletPage'));
+const SupportPage = lazy(() => import('./features/landing/SupportPage'));
+const ReferralPage = lazy(() => import('./features/landing/ReferralPage'));
+const AuthPages = lazy(() => import('./features/auth/AuthPages'));
+const AdminPanel = lazy(() => import('./features/admin/AdminPanel'));
+
+function PageFallback() {
+  return (
+    <div className="min-h-[40vh] flex items-center justify-center">
+      <RefreshCw className="w-6 h-6 animate-spin text-primary" />
+    </div>
+  );
+}
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const currentUser = useAppStore(state => state.currentUser);
@@ -109,10 +119,13 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-bg">
+        <Suspense fallback={<PageFallback />}>
         <Routes>
           {/* Public Views sharing Header/Footer Layout */}
           <Route element={<PublicLayout />}>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/shopee" element={<LandingPage />} />
+            <Route path="/tiktok" element={<LandingPage />} />
             <Route path="/tracking" element={<TrackingPage />} />
             <Route path="/wallet" element={<WalletPage />} />
             <Route path="/support" element={<SupportPage />} />
@@ -128,6 +141,7 @@ function App() {
           {/* Fallback route */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
         
         {/* Global Login/Register Popup Modal */}
         <AuthModal />

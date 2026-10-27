@@ -4,13 +4,13 @@
   "description": "Trang web hoàn tiền mua sắm tự động. Dán link sản phẩm Shopee, nhận tiền hoàn hoa hồng cực cao trực tiếp vào ví.",
   "icons": [
     {
-      "src": "/icon.png",
+      "src": "/icon-192.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon.png",
+      "src": "/icon-512.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"

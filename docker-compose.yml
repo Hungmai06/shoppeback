@@ -33,6 +33,9 @@ services:
       - JWT_SECRET=supersecretjwtkey_123456789_shoppe
       - SHOPEE_AFFILIATE_ID=173401900099
       - ADDLIVETAG_API_KEY=${ADDLIVETAG_API_KEY:-}
+      - RIOHUB_API_KEY=${RIOHUB_API_KEY:-}
+      - RIOHUB_CREATOR_USERNAME=${RIOHUB_CREATOR_USERNAME:-hungrevieweverything}
+      - RIOHUB_WEBHOOK_SECRET=${RIOHUB_WEBHOOK_SECRET:-}
       - CLUSTER_MODE=false
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-335312329426-br7u9qiohc9c8a5aqu7e3k4jlrrbptr6.apps.googleusercontent.com}
     volumes:

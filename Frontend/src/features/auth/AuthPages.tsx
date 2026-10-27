@@ -24,6 +24,20 @@ export default function AuthPages() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  React.useEffect(() => {
+    const ref = searchParams.get('ref');
+    if (ref) {
+      const clickedKey = `ref_click_${ref}`;
+      if (!sessionStorage.getItem(clickedKey)) {
+        sessionStorage.setItem(clickedKey, '1');
+        fetch('/api/referrals/click', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refId: ref })
+        }).catch(() => {});
+      }
+    }
+  }, [searchParams]);
 
   const setMode = (newMode: string) => {
     navigate(`/auth?mode=${newMode}`);

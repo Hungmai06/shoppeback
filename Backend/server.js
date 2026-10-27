@@ -105,6 +105,7 @@ if (isClusterEnabled && cluster.isPrimary) {
   app.use('/api/settings', require('./src/routes/settingsRoutes'));
   app.use('/api/referrals', require('./src/routes/referralRoutes'));
   app.use('/api/shopee', require('./src/routes/shopeeRoutes'));
+  app.use('/api/tiktok', require('./src/routes/tiktokRoutes'));
 
   // Root endpoint status check
   app.get('/', (req, res) => {
@@ -134,6 +135,15 @@ if (isClusterEnabled && cluster.isPrimary) {
       await getDatabase();
       app.listen(PORT, () => {
         console.log(`✅ Worker ${process.pid} running high-concurrency API server on port ${PORT}`);
+
+        // Tự động đồng bộ và đối soát đơn hàng TikTok Shop qua API định kỳ mỗi 15 phút
+        const { runAutoSyncTikTokJob } = require('./src/controllers/tiktokController');
+        setTimeout(() => {
+          runAutoSyncTikTokJob().catch(() => {});
+        }, 30 * 1000);
+        setInterval(() => {
+          runAutoSyncTikTokJob().catch(() => {});
+        }, 15 * 60 * 1000);
       });
     } catch (error) {
       console.error('❌ Server startup error:', error);

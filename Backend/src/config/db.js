@@ -109,6 +109,9 @@ async function initializeDatabase() {
       await wrapper.exec('ALTER TABLE users ADD COLUMN referral_earnings REAL DEFAULT 0');
     } catch (e) { }
     try {
+      await wrapper.exec('ALTER TABLE users ADD COLUMN referral_clicks INT DEFAULT 0');
+    } catch (e) { }
+    try {
       await wrapper.exec('ALTER TABLE users ADD COLUMN refresh_token TEXT');
     } catch (e) { }
     try {
@@ -172,6 +175,39 @@ async function initializeDatabase() {
     } catch (e) { }
 
     await wrapper.exec(`
+      CREATE TABLE IF NOT EXISTS tiktok_orders (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NULL,
+        click_id VARCHAR(255) NULL,
+        product_name VARCHAR(255) NOT NULL,
+        product_image TEXT,
+        order_amount REAL NOT NULL,
+        estimated_cashback REAL NOT NULL,
+        real_cashback REAL,
+        tiktok_commission REAL,
+        status VARCHAR(50) DEFAULT 'pending',
+        sub_id VARCHAR(255),
+        screenshot TEXT,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+
+    try {
+      const existingTikTokOrders = await wrapper.all("SELECT * FROM orders WHERE notes LIKE '%TikTok%' OR id LIKE 'TT%' OR click_id LIKE 'TT%'");
+      for (const o of existingTikTokOrders) {
+        await wrapper.run(
+          `INSERT IGNORE INTO tiktok_orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, tiktok_commission, status, screenshot, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [o.id, o.user_id, o.click_id, o.product_name, o.product_image, o.order_amount, o.estimated_cashback, o.real_cashback, o.shopee_commission || 0, o.status, o.screenshot, o.notes, o.created_at, o.updated_at]
+        );
+        await wrapper.run("DELETE FROM orders WHERE id = ?", [o.id]);
+      }
+    } catch (mErr) { }
+
+    await wrapper.exec(`
       CREATE TABLE IF NOT EXISTS withdrawals (
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL,
@@ -220,7 +256,10 @@ async function initializeDatabase() {
       "ALTER TABLE system_settings ADD COLUMN tiktok_affiliate_id VARCHAR(255) DEFAULT ''",
       "ALTER TABLE system_settings ADD COLUMN tiktok_cookie_url VARCHAR(500) DEFAULT 'https://vt.tiktok.com/an_redir'",
       "ALTER TABLE system_settings ADD COLUMN tiki_affiliate_id VARCHAR(255) DEFAULT ''",
-      "ALTER TABLE system_settings ADD COLUMN tiki_cookie_url VARCHAR(500) DEFAULT 'https://tiki.vn/an_redir'"
+      "ALTER TABLE system_settings ADD COLUMN tiki_cookie_url VARCHAR(500) DEFAULT 'https://tiki.vn/an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN riohub_api_key VARCHAR(255) DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN riohub_creator_username VARCHAR(255) DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN riohub_webhook_secret VARCHAR(255) DEFAULT ''"
     ];
 
     for (const alterQuery of mysqlAlterCols) {
@@ -352,11 +391,27 @@ async function initializeDatabase() {
         balance REAL DEFAULT 0,
         total_cashback REAL DEFAULT 0,
         pending_cashback REAL DEFAULT 0,
+        referred_by TEXT,
+        referral_earnings REAL DEFAULT 0,
+        refresh_token TEXT,
+        affiliate_sub_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
+    try {
+      await db.exec('ALTER TABLE users ADD COLUMN referred_by TEXT');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE users ADD COLUMN referral_earnings REAL DEFAULT 0');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE users ADD COLUMN referral_clicks INTEGER DEFAULT 0');
+    } catch (e) { }
+    try {
+      await db.exec('ALTER TABLE users ADD COLUMN refresh_token TEXT');
+    } catch (e) { }
     try {
       await db.exec('ALTER TABLE users ADD COLUMN affiliate_sub_id TEXT');
     } catch (e) { }
@@ -415,6 +470,39 @@ async function initializeDatabase() {
     } catch (e) { }
 
     await db.exec(`
+      CREATE TABLE IF NOT EXISTS tiktok_orders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        click_id TEXT,
+        product_name TEXT NOT NULL,
+        product_image TEXT,
+        order_amount REAL NOT NULL,
+        estimated_cashback REAL NOT NULL,
+        real_cashback REAL,
+        tiktok_commission REAL,
+        status TEXT CHECK(status IN ('pending', 'approved', 'rejected', 'paid', 'returned')) DEFAULT 'pending',
+        sub_id TEXT,
+        screenshot TEXT,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+
+    try {
+      const existingTikTokOrders = await db.all("SELECT * FROM orders WHERE notes LIKE '%TikTok%' OR id LIKE 'TT%' OR click_id LIKE 'TT%'");
+      for (const o of existingTikTokOrders) {
+        await db.run(
+          `INSERT OR IGNORE INTO tiktok_orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, real_cashback, tiktok_commission, status, screenshot, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [o.id, o.user_id, o.click_id, o.product_name, o.product_image, o.order_amount, o.estimated_cashback, o.real_cashback, o.shopee_commission || 0, o.status, o.screenshot, o.notes, o.created_at, o.updated_at]
+        );
+        await db.run("DELETE FROM orders WHERE id = ?", [o.id]);
+      }
+    } catch (mErr) { }
+
+    await db.exec(`
       CREATE TABLE IF NOT EXISTS withdrawals (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -463,7 +551,10 @@ async function initializeDatabase() {
       "ALTER TABLE system_settings ADD COLUMN tiktok_affiliate_id TEXT DEFAULT ''",
       "ALTER TABLE system_settings ADD COLUMN tiktok_cookie_url TEXT DEFAULT 'https://vt.tiktok.com/an_redir'",
       "ALTER TABLE system_settings ADD COLUMN tiki_affiliate_id TEXT DEFAULT ''",
-      "ALTER TABLE system_settings ADD COLUMN tiki_cookie_url TEXT DEFAULT 'https://tiki.vn/an_redir'"
+      "ALTER TABLE system_settings ADD COLUMN tiki_cookie_url TEXT DEFAULT 'https://tiki.vn/an_redir'",
+      "ALTER TABLE system_settings ADD COLUMN riohub_api_key TEXT DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN riohub_creator_username TEXT DEFAULT ''",
+      "ALTER TABLE system_settings ADD COLUMN riohub_webhook_secret TEXT DEFAULT ''"
     ];
 
     for (const alterQuery of sqliteAlterCols) {

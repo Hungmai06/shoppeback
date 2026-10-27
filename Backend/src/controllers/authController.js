@@ -171,8 +171,10 @@ async function getProfile(req, res) {
       return res.status(404).json({ message: 'Không tìm thấy người dùng' });
     }
 
-    // Get order and wallet stats
-    const orders = await db.all('SELECT status, real_cashback, estimated_cashback FROM orders WHERE user_id = ?', [user.id]);
+    // Get order and wallet stats from both Shopee and TikTok
+    const shopeeOrders = await db.all('SELECT status, real_cashback, estimated_cashback FROM orders WHERE user_id = ?', [user.id]);
+    const tiktokOrders = await db.all('SELECT status, real_cashback, estimated_cashback FROM tiktok_orders WHERE user_id = ?', [user.id]);
+    const orders = [...shopeeOrders, ...tiktokOrders];
     const withdrawals = await db.all('SELECT amount, status FROM withdrawals WHERE user_id = ?', [user.id]);
 
     // Calculate balances
@@ -342,11 +344,15 @@ async function adminGetUsers(req, res) {
                 FROM withdrawals w 
                 WHERE w.user_id = u.id AND w.status = 'approved'
               ), 0) as totalWithdrawn,
-              COALESCE((
+              (COALESCE((
                 SELECT SUM(CASE WHEN o.real_cashback IS NOT NULL AND o.real_cashback > 0 THEN o.real_cashback ELSE o.estimated_cashback END)
                 FROM orders o 
                 WHERE o.user_id = u.id AND o.status IN ('approved', 'paid')
-              ), 0) as completedOrderCashback
+              ), 0) + COALESCE((
+                SELECT SUM(CASE WHEN t.real_cashback IS NOT NULL AND t.real_cashback > 0 THEN t.real_cashback ELSE t.estimated_cashback END)
+                FROM tiktok_orders t
+                WHERE t.user_id = u.id AND t.status IN ('approved', 'paid')
+              ), 0)) as completedOrderCashback
        FROM users u
        ORDER BY u.created_at DESC`
     );
@@ -539,6 +545,27 @@ async function refreshToken(req, res) {
 }
 
 /**
+ * Client Google dùng chung (singleton) để cache public cert của Google giữa các lần đăng nhập,
+ * tránh mỗi request lại phải tải cert từ Google (gây chậm).
+ */
+let googleOAuthClient = null;
+function getGoogleOAuthClient(clientId) {
+  if (!googleOAuthClient) {
+    const { OAuth2Client } = require('google-auth-library');
+    googleOAuthClient = new OAuth2Client(clientId);
+  }
+  return googleOAuthClient;
+}
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timeout sau ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Xử lý đăng nhập / đăng ký tự động qua Google OAuth trực tiếp (google-auth-library)
  * Hỗ trợ cả credential (ID token JWT) hoặc accessToken từ @react-oauth/google
  */
@@ -561,13 +588,12 @@ async function loginWithGoogle(req, res) {
     // 1. Nếu gửi credential / idToken: Xác thực bằng OAuth2Client từ google-auth-library
     if (credential || idToken) {
       try {
-        const { OAuth2Client } = require('google-auth-library');
-        const client = new OAuth2Client(googleClientId);
+        const client = getGoogleOAuthClient(googleClientId);
 
-        const ticket = await client.verifyIdToken({
+        const ticket = await withTimeout(client.verifyIdToken({
           idToken: credential || idToken,
           audience: googleClientId || undefined,
-        });
+        }), 6000, 'verifyIdToken');
         const payload = ticket.getPayload();
         if (payload) {
           targetEmail = payload.email ? payload.email.trim().toLowerCase() : '';
@@ -583,7 +609,8 @@ async function loginWithGoogle(req, res) {
     if (!targetEmail && accessToken) {
       try {
         const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${accessToken}` }
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(6000)
         });
 
         if (userinfoRes.ok) {

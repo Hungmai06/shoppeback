@@ -19,6 +19,10 @@ async function getSettings(req, res) {
       tiktokCookieUrl: settings.tiktok_cookie_url || 'https://vt.tiktok.com/an_redir',
       tikiAffiliateId: settings.tiki_affiliate_id || '',
       tikiCookieUrl: settings.tiki_cookie_url || 'https://tiki.vn/an_redir',
+      hasRiohubApiKey: Boolean(settings.riohub_api_key || process.env.RIOHUB_API_KEY),
+      riohubCreatorUsername: settings.riohub_creator_username || process.env.RIOHUB_CREATOR_USERNAME || 'hungrevieweverything',
+      riohubApiKey: settings.riohub_api_key || '',
+      riohubWebhookSecret: settings.riohub_webhook_secret || process.env.RIOHUB_WEBHOOK_SECRET || '',
       commissionPercentage: settings.commission_percentage,
       cashbackPercentage: settings.cashback_percentage,
       telegramNotification: !!settings.telegram_notification,
@@ -46,6 +50,9 @@ async function updateSettings(req, res) {
     tiktokCookieUrl,
     tikiAffiliateId,
     tikiCookieUrl,
+    riohubApiKey,
+    riohubCreatorUsername,
+    riohubWebhookSecret,
     commissionPercentage,
     cashbackPercentage,
     telegramNotification,
@@ -71,6 +78,9 @@ async function updateSettings(req, res) {
            tiktok_cookie_url = COALESCE(?, tiktok_cookie_url),
            tiki_affiliate_id = COALESCE(?, tiki_affiliate_id),
            tiki_cookie_url = COALESCE(?, tiki_cookie_url),
+           riohub_api_key = COALESCE(?, riohub_api_key),
+           riohub_creator_username = COALESCE(?, riohub_creator_username),
+           riohub_webhook_secret = COALESCE(?, riohub_webhook_secret),
            commission_percentage = COALESCE(?, commission_percentage),
            cashback_percentage = COALESCE(?, cashback_percentage),
            telegram_notification = COALESCE(?, telegram_notification),
@@ -92,6 +102,9 @@ async function updateSettings(req, res) {
         tiktokCookieUrl,
         tikiAffiliateId,
         tikiCookieUrl,
+        riohubApiKey !== undefined ? riohubApiKey : null,
+        riohubCreatorUsername !== undefined ? riohubCreatorUsername : null,
+        riohubWebhookSecret !== undefined ? riohubWebhookSecret : null,
         commissionPercentage,
         cashbackPercentage,
         telegramNotification !== undefined ? (telegramNotification ? 1 : 0) : null,
@@ -108,7 +121,7 @@ async function updateSettings(req, res) {
 }
 
 async function adminGetStats(req, res) {
-  const { range = 'all' } = req.query;
+  const { range = 'all', platform = 'all' } = req.query;
 
   try {
     const db = await getDatabase();
@@ -119,7 +132,7 @@ async function adminGetStats(req, res) {
 
     // Users count
     const usersCountResult = await db.get("SELECT COUNT(*) as count FROM users WHERE role = 'user'");
-    const totalUsers = usersCountResult.count;
+    const totalUsers = usersCountResult ? usersCountResult.count : 0;
 
     // Pending withdrawals total
     const pendingWithdrawalsResult = await db.get("SELECT SUM(amount) as total FROM withdrawals WHERE status = 'pending'");
@@ -146,11 +159,64 @@ async function adminGetStats(req, res) {
       dateFilter = ` AND created_at >= '${monthStart} 00:00:00'`;
     }
 
-    // Orders list
-    const ordersList = await db.all(`SELECT id, user_id, product_name, order_amount, real_cashback, estimated_cashback, shopee_commission, status, created_at FROM orders WHERE 1=1 ${dateFilter}`);
+    // Orders list from both Shopee and TikTok
+    const [shopeeList, tiktokList] = await Promise.all([
+      db.all(`SELECT id, user_id, product_name, order_amount, real_cashback, estimated_cashback, shopee_commission, status, created_at, 'shopee' as platform FROM orders WHERE 1=1 ${dateFilter}`),
+      db.all(`SELECT id, user_id, product_name, order_amount, real_cashback, estimated_cashback, tiktok_commission as shopee_commission, status, created_at, 'tiktok' as platform FROM tiktok_orders WHERE 1=1 ${dateFilter}`)
+    ]);
+
+    // Breakdown metrics by platform
+    const calcPlatformMetrics = (list) => {
+      let revenue = 0;
+      let cashback = 0;
+      let orderAmount = 0;
+      let approvedCount = 0;
+      let pendingCount = 0;
+
+      list.forEach(o => {
+        orderAmount += Number(o.order_amount || 0);
+        const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined)
+          ? o.real_cashback
+          : (o.estimated_cashback || 0));
+        const comm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
+          ? o.shopee_commission
+          : (userCb * 2));
+
+        if (o.status === 'approved' || o.status === 'paid') {
+          revenue += comm;
+          cashback += userCb;
+          approvedCount++;
+        } else if (o.status === 'pending') {
+          pendingCount++;
+        }
+      });
+
+      return {
+        totalOrders: list.length,
+        orderAmount,
+        revenue,
+        cashback,
+        profit: Math.max(0, revenue - cashback),
+        approvedCount,
+        pendingCount
+      };
+    };
+
+    const shopeeBreakdown = calcPlatformMetrics(shopeeList);
+    const tiktokBreakdown = calcPlatformMetrics(tiktokList);
+
+    // Apply platform filter if specified
+    let ordersList = [];
+    if (platform === 'shopee') {
+      ordersList = shopeeList;
+    } else if (platform === 'tiktok') {
+      ordersList = tiktokList;
+    } else {
+      ordersList = [...shopeeList, ...tiktokList];
+    }
     const totalOrders = ordersList.length;
 
-    let platformTotalRevenue = 0; // Total 100% Shopee commission
+    let platformTotalRevenue = 0; // Total 100% Commission
     let platformTotalCashbackOwed = 0; // Total user cashback
 
     // Top Users & Products map
@@ -162,12 +228,12 @@ async function adminGetStats(req, res) {
         ? o.real_cashback
         : (o.estimated_cashback || 0));
 
-      const shopeeComm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
+      const comm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
         ? o.shopee_commission
         : (userCb * 2));
 
       if (o.status === 'approved' || o.status === 'paid') {
-        platformTotalRevenue += shopeeComm;
+        platformTotalRevenue += comm;
         platformTotalCashbackOwed += userCb;
 
         if (o.user_id) {
@@ -243,7 +309,9 @@ async function adminGetStats(req, res) {
         name: `T${d.getMonth() + 1}`,
         revenue: 0,
         cashback: 0,
-        profit: 0
+        profit: 0,
+        shopeeRevenue: 0,
+        tiktokRevenue: 0
       };
     }
 
@@ -252,19 +320,20 @@ async function adminGetStats(req, res) {
         ? o.real_cashback
         : (o.estimated_cashback || 0));
 
-      const shopeeComm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
+      const comm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
         ? o.shopee_commission
         : (userCb * 2));
 
       const monthKey = extractYearMonth(o.created_at) || currentMonthKey;
       if (monthlyStatsMap[monthKey]) {
-        monthlyStatsMap[monthKey].revenue += shopeeComm;
+        monthlyStatsMap[monthKey].revenue += comm;
         monthlyStatsMap[monthKey].cashback += userCb;
-        monthlyStatsMap[monthKey].profit += Math.max(0, shopeeComm - userCb);
-      } else if (monthlyStatsMap[currentMonthKey]) {
-        monthlyStatsMap[currentMonthKey].revenue += shopeeComm;
-        monthlyStatsMap[currentMonthKey].cashback += userCb;
-        monthlyStatsMap[currentMonthKey].profit += Math.max(0, shopeeComm - userCb);
+        monthlyStatsMap[monthKey].profit += Math.max(0, comm - userCb);
+        if (o.platform === 'tiktok') {
+          monthlyStatsMap[monthKey].tiktokRevenue += comm;
+        } else {
+          monthlyStatsMap[monthKey].shopeeRevenue += comm;
+        }
       }
     });
 
@@ -290,7 +359,11 @@ async function adminGetStats(req, res) {
         revenue: 0,
         cashback: 0,
         profit: 0,
-        orderCount: 0
+        orderCount: 0,
+        shopeeRevenue: 0,
+        tiktokRevenue: 0,
+        shopeeOrderCount: 0,
+        tiktokOrderCount: 0
       };
     }
 
@@ -320,21 +393,45 @@ async function adminGetStats(req, res) {
     };
 
     const selMonthStart = `${selYear}-${String(selMonth).padStart(2, '0')}-01 00:00:00`;
-    const selMonthEnd = `${selYear}-${String(selMonth).padStart(2, '0')}-${String(daysInSelMonth).padStart(2, '0')} 23:59:59`;
-    const selectedMonthOrders = await db.all(`SELECT real_cashback, estimated_cashback, shopee_commission, status, created_at FROM orders WHERE created_at >= ? AND created_at <= ?`, [selMonthStart, selMonthEnd]);
+    const lastDayOfMonth = new Date(selYear, selMonth, 0).getDate();
+    const selMonthEnd = `${selYear}-${String(selMonth).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')} 23:59:59`;
+
+    const [shopeeMonthOrders, tiktokMonthOrders] = await Promise.all([
+      db.all(`SELECT real_cashback, estimated_cashback, shopee_commission, status, created_at, 'shopee' as platform FROM orders WHERE created_at >= ? AND created_at <= ?`, [selMonthStart, selMonthEnd]),
+      db.all(`SELECT real_cashback, estimated_cashback, tiktok_commission as shopee_commission, status, created_at, 'tiktok' as platform FROM tiktok_orders WHERE created_at >= ? AND created_at <= ?`, [selMonthStart, selMonthEnd])
+    ]);
+
+    let selectedMonthOrders = [];
+    if (platform === 'shopee') {
+      selectedMonthOrders = shopeeMonthOrders;
+    } else if (platform === 'tiktok') {
+      selectedMonthOrders = tiktokMonthOrders;
+    } else {
+      selectedMonthOrders = [...shopeeMonthOrders, ...tiktokMonthOrders];
+    }
 
     selectedMonthOrders.forEach(o => {
       const dateKey = extractYearMonthDay(o.created_at);
       if (dailyMap[dateKey]) {
         const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined) ? o.real_cashback : (o.estimated_cashback || 0));
-        const shopeeComm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined) ? o.shopee_commission : (userCb * 2));
+        const comm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined) ? o.shopee_commission : (userCb * 2));
 
         if (o.status === 'approved' || o.status === 'paid') {
-          dailyMap[dateKey].revenue += shopeeComm;
+          dailyMap[dateKey].revenue += comm;
           dailyMap[dateKey].cashback += userCb;
-          dailyMap[dateKey].profit += Math.max(0, shopeeComm - userCb);
+          dailyMap[dateKey].profit += Math.max(0, comm - userCb);
+          if (o.platform === 'tiktok') {
+            dailyMap[dateKey].tiktokRevenue += comm;
+          } else {
+            dailyMap[dateKey].shopeeRevenue += comm;
+          }
         }
         dailyMap[dateKey].orderCount += 1;
+        if (o.platform === 'tiktok') {
+          dailyMap[dateKey].tiktokOrderCount += 1;
+        } else {
+          dailyMap[dateKey].shopeeOrderCount += 1;
+        }
       }
     });
 
@@ -351,6 +448,11 @@ async function adminGetStats(req, res) {
         netProfit,
         remainingAfterPayout
       },
+      platformBreakdown: {
+        shopee: shopeeBreakdown,
+        tiktok: tiktokBreakdown
+      },
+      currentPlatform: platform,
       statusDistribution: [
         { name: 'Đang chờ xử lý', value: statusCounts.pending },
         { name: 'Hoàn thành', value: statusCounts.approved },
@@ -410,9 +512,60 @@ async function testAddLiveTagKey(req, res) {
   }
 }
 
+async function testRiohubKey(req, res) {
+  const { apiKey, creatorUsername } = req.body;
+  const keyToTest = (apiKey || process.env.RIOHUB_API_KEY || '').trim();
+  if (!keyToTest) {
+    return res.status(400).json({ success: false, message: 'Vui lòng cung cấp RioHub API Key để kiểm tra' });
+  }
+
+  let usernameToTest = (creatorUsername || '').trim().replace(/^@/, '');
+  if (!usernameToTest) {
+    const { getRiohubCreatorUsername } = require('../services/riohubService');
+    usernameToTest = (await getRiohubCreatorUsername()).replace(/^@/, '');
+  }
+
+  if (!usernameToTest) {
+    return res.status(400).json({
+      success: false,
+      message: 'Vui lòng nhập Creator Username (ví dụ: hungrevieweverything) để kiểm tra kết nối'
+    });
+  }
+
+  try {
+    const { executeRiohubRequest } = require('../services/riohubService');
+    const endpoint = `/partner/tiktok/affiliate/links?creator_username=${encodeURIComponent(usernameToTest)}&page=1&page_size=1`;
+    const result = await executeRiohubRequest(endpoint, {
+      apiKey: keyToTest,
+      timeoutMs: 8000
+    });
+
+    return res.json({
+      success: true,
+      message: `Kết nối RioHub API thành công! API Key và Creator (@${usernameToTest}) hợp lệ, hoạt động tốt.`,
+      data: result
+    });
+  } catch (err) {
+    let msg = err.message || 'Lỗi kết nối tới RioHub';
+    if (err.status === 401) {
+      msg = 'RioHub API Key không chính xác hoặc đã hết hạn (401 Unauthorized)';
+    } else if (err.status === 403) {
+      msg = `Creator (@${usernameToTest}) không thuộc quyền quản lý của API key này (403 Forbidden)`;
+    } else if (err.status === 404) {
+      msg = `Creator (@${usernameToTest}) chưa kết nối với RioHub hoặc tài khoản TikTok Shop không tồn tại (404 Not Found)`;
+    }
+    return res.status(err.status || 400).json({
+      success: false,
+      message: msg,
+      status: err.status
+    });
+  }
+}
+
 module.exports = {
   getSettings,
   updateSettings,
   adminGetStats,
-  testAddLiveTagKey
+  testAddLiveTagKey,
+  testRiohubKey
 };

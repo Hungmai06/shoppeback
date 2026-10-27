@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 interface GoogleLoginButtonProps {
@@ -11,6 +11,15 @@ interface GoogleLoginButtonProps {
 export default function GoogleLoginButton({ text, referralCode, disabled }: GoogleLoginButtonProps) {
   const [loading, setLoading] = useState(false);
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+  // Safari (bfcache): khi bấm Back/Cancel từ trang Google, trang được khôi phục nguyên trạng thái -> nút bị kẹt "Đang chuyển..."
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setLoading(false);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
 
   const handleGoogleLogin = () => {
     if (!googleClientId || googleClientId === 'not-configured') {

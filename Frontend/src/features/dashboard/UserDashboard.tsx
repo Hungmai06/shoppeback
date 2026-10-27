@@ -19,6 +19,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
   PieChart, Pie, Cell, Legend
 } from 'recharts';
+import ReferralDashboardView from '../referral/ReferralDashboardView';
 
 interface ReferralStats {
   clicks: number;
@@ -43,11 +44,19 @@ export default function UserDashboard() {
     currentUser, logout, orders, withdrawals, notifications,
     favorites, markNotificationAsRead, markAllNotificationsAsRead,
     addWithdrawalRequest, uploadOrderScreenshot, toggleFavorite,
-    updateProfile
+    updateProfile, fetchUserOrders
   } = useAppStore();
+
+  const TikTokIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 3 15.68a6.34 6.34 0 0 0 10.82 4.49 6.27 6.27 0 0 0 1.94-4.5V8.92a8.28 8.28 0 0 0 4.83 1.57V7.05a4.8 4.8 0 0 1-1-.36z" />
+    </svg>
+  );
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'wallet' | 'withdraw' | 'favorites' | 'notifications' | 'support' | 'settings' | 'referral'>('dashboard');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [userPlatformFilter, setUserPlatformFilter] = useState<'all' | 'shopee' | 'tiktok'>('all');
+  const [userOrderSearch, setUserOrderSearch] = useState('');
 
   // Withdrawal Form States
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -82,6 +91,7 @@ export default function UserDashboard() {
     if (!currentUser) {
       navigate('/auth/login');
     } else {
+      fetchUserOrders();
       // Fetch referral data
       const fetchReferralData = async () => {
         try {
@@ -459,19 +469,67 @@ export default function UserDashboard() {
           {/* TAB 2: ORDER MANAGEMENT */}
           {activeTab === 'orders' && (
             <div className="flex flex-col gap-6">
-              <div>
-                <h2 className="text-2xl font-black text-text">Quản lý đơn hàng hoàn tiền</h2>
-                <p className="text-xs text-text-secondary mt-1">
-                  Nhấn vào từng đơn hàng để xem chi tiết timeline đối soát, thông tin chi tiết và gửi ảnh chụp màn hình đơn hàng để xác minh nhanh.
-                </p>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-black text-text">Quản lý đơn hàng hoàn tiền</h2>
+                  <p className="text-xs text-text-secondary mt-1">
+                    Hệ thống tự động hiển thị và đồng bộ toàn bộ đơn hàng hoàn tiền từ Shopee và TikTok Shop.
+                  </p>
+                </div>
+                {/* Platform Filter Buttons */}
+                <div className="flex items-center gap-1.5 bg-white border border-border p-1 rounded-xl shadow-xs self-start md:self-auto">
+                  <button
+                    onClick={() => setUserPlatformFilter('all')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${userPlatformFilter === 'all' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary hover:text-text'}`}
+                  >
+                    Tất cả đơn ({userOrders.length})
+                  </button>
+                  <button
+                    onClick={() => setUserPlatformFilter('shopee')}
+                    className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${userPlatformFilter === 'shopee' ? 'bg-[#EE4D2D] text-white shadow-xs' : 'text-[#EE4D2D] hover:bg-orange-50'}`}
+                  >
+                    <ShoppingCart className="h-3.5 w-3.5" /> Shopee ({userOrders.filter(o => o.platform !== 'tiktok').length})
+                  </button>
+                  <button
+                    onClick={() => setUserPlatformFilter('tiktok')}
+                    className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${userPlatformFilter === 'tiktok' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-800 hover:bg-slate-100'}`}
+                  >
+                    <TikTokIcon className="h-3.5 w-3.5" /> TikTok ({userOrders.filter(o => o.platform === 'tiktok').length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Search Bar for Orders */}
+              <div className="bg-white border border-border p-3 rounded-input flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Tìm theo Mã đơn hàng hoặc tên sản phẩm..."
+                  value={userOrderSearch}
+                  onChange={(e) => setUserOrderSearch(e.target.value)}
+                  className="w-full bg-transparent border-none text-xs outline-none focus:ring-0"
+                />
+                {userOrderSearch && (
+                  <button onClick={() => setUserOrderSearch('')} className="text-xs text-text-secondary hover:text-text px-2 font-bold">Xóa</button>
+                )}
               </div>
 
               <Card className="border-border/50">
                 <CardContent className="p-0">
-                  {userOrders.length > 0 ? (
+                  {userOrders
+                    .filter(o => {
+                      if (userPlatformFilter === 'shopee') return o.platform !== 'tiktok';
+                      if (userPlatformFilter === 'tiktok') return o.platform === 'tiktok';
+                      return true;
+                    })
+                    .filter(o => {
+                      if (!userOrderSearch.trim()) return true;
+                      const q = userOrderSearch.toLowerCase();
+                      return o.id.toLowerCase().includes(q) || (o.productName && o.productName.toLowerCase().includes(q));
+                    }).length > 0 ? (
                     <TableContainer>
                       <TableHeader>
                         <TableRow>
+                          <TableHead>Sàn</TableHead>
                           <TableHead>Mã Đơn</TableHead>
                           <TableHead>Sản Phẩm</TableHead>
                           <TableHead className="text-right">Số Tiền Đơn</TableHead>
@@ -482,21 +540,43 @@ export default function UserDashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {userOrders.map((order) => (
-                          <TableRow key={order.id} onClick={() => setSelectedOrder(order)}>
-                            <TableCell className="font-bold text-primary">{order.id}</TableCell>
-                            <TableCell className="max-w-[240px] truncate font-semibold">
-                              <span className="truncate">{order.productName}</span>
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">{Math.floor(order.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-right font-bold text-primary">{Math.floor(order.estimatedCashback).toLocaleString('vi-VN')}đ</TableCell>
-                            <TableCell className="text-right font-bold text-success">
-                              {order.realCashback ? `${Math.floor(order.realCashback).toLocaleString('vi-VN')}đ` : '-'}
-                            </TableCell>
-                            <TableCell>{getStatusBadge(order.status)}</TableCell>
-                            <TableCell className="text-xs text-text-secondary font-medium">{order.createdTime}</TableCell>
-                          </TableRow>
-                        ))}
+                        {userOrders
+                          .filter(o => {
+                            if (userPlatformFilter === 'shopee') return o.platform !== 'tiktok';
+                            if (userPlatformFilter === 'tiktok') return o.platform === 'tiktok';
+                            return true;
+                          })
+                          .filter(o => {
+                            if (!userOrderSearch.trim()) return true;
+                            const q = userOrderSearch.toLowerCase();
+                            return o.id.toLowerCase().includes(q) || (o.productName && o.productName.toLowerCase().includes(q));
+                          })
+                          .map((order) => (
+                            <TableRow key={order.id} onClick={() => setSelectedOrder(order)} className="cursor-pointer hover:bg-bg/60">
+                              <TableCell>
+                                {order.platform === 'tiktok' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-900 text-white shadow-xs">
+                                    <TikTokIcon className="h-3 w-3" /> TikTok
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-orange-50 text-[#EE4D2D] border border-orange-200 shadow-xs">
+                                    <ShoppingCart className="h-3 w-3" /> Shopee
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell className="font-bold text-primary">{order.id}</TableCell>
+                              <TableCell className="max-w-[240px] truncate font-semibold">
+                                <span className="truncate">{order.productName}</span>
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">{Math.floor(order.orderAmount).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-bold text-primary">{Math.floor(order.estimatedCashback).toLocaleString('vi-VN')}đ</TableCell>
+                              <TableCell className="text-right font-bold text-success">
+                                {order.realCashback ? `${Math.floor(order.realCashback).toLocaleString('vi-VN')}đ` : '-'}
+                              </TableCell>
+                              <TableCell>{getStatusBadge(order.status)}</TableCell>
+                              <TableCell className="text-xs text-text-secondary font-medium">{order.createdTime}</TableCell>
+                            </TableRow>
+                          ))}
                       </TableBody>
                     </TableContainer>
                   ) : (
@@ -1043,137 +1123,15 @@ export default function UserDashboard() {
                 </CardContent>
               </Card>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card className="border-border/50">
-                  <CardContent className="p-4 flex flex-col gap-3">
-                    <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 shrink-0"><MousePointerClick className="h-4 w-4" /></div>
-                    <div>
-                      <p className="text-[9px] font-bold text-text-secondary uppercase">Lượt click</p>
-                      <p className="text-xl font-black mt-1 text-text">{refStats.clicks}</p>
-                      <p className="text-[9px] text-text-secondary mt-1 line-clamp-1">Tổng lượt truy cập</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/50">
-                  <CardContent className="p-4 flex flex-col gap-3">
-                    <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-500 shrink-0"><UserPlus className="h-4 w-4" /></div>
-                    <div>
-                      <p className="text-[9px] font-bold text-text-secondary uppercase">Giới thiệu F1</p>
-                      <p className="text-xl font-black mt-1 text-text">{refStats.f1Count}</p>
-                      <p className="text-[9px] text-text-secondary mt-1 line-clamp-1">Đăng ký trực tiếp</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/50">
-                  <CardContent className="p-4 flex flex-col gap-3">
-                    <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 shrink-0"><Clock className="h-4 w-4" /></div>
-                    <div>
-                      <p className="text-[9px] font-bold text-text-secondary uppercase">Chờ duyệt</p>
-                      <p className="text-xl font-black mt-1 text-text">{refStats.pendingCommission.toLocaleString('vi-VN')}đ</p>
-                      <p className="text-[9px] text-text-secondary mt-1 line-clamp-1">Đơn gốc đang duyệt</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/50">
-                  <CardContent className="p-4 flex flex-col gap-3">
-                    <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 shrink-0"><Wallet className="h-4 w-4" /></div>
-                    <div>
-                      <p className="text-[9px] font-bold text-text-secondary uppercase">Đã nhận</p>
-                      <p className="text-xl font-black mt-1 text-text">{refStats.approvedCommission.toLocaleString('vi-VN')}đ</p>
-                      <p className="text-[9px] text-text-secondary mt-1 line-clamp-1">Đã cộng vào tài khoản</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Referral History Tabs */}
-              <Card className="border-border/50 mt-2">
-                <CardContent className="p-0">
-                  <div className="flex border-b border-border/50 overflow-x-auto scrollbar-hide">
-                    <button className="px-6 py-4 text-sm font-bold text-danger border-b-2 border-danger whitespace-nowrap">
-                      Lịch sử hoa hồng
-                    </button>
-                    <button className="px-6 py-4 text-sm font-bold text-text-secondary hover:text-text whitespace-nowrap transition-colors">
-                      Đơn hàng thành viên (0)
-                    </button>
-                    <button className="px-6 py-4 text-sm font-bold text-text-secondary hover:text-text whitespace-nowrap transition-colors">
-                      Mạng lưới thành viên (0)
-                    </button>
-                  </div>
-
-                  <div className="p-6">
-                    <div className="flex flex-wrap items-center gap-6 mb-6">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">CẤP:</span>
-                        <select className="px-3 py-1.5 border border-border/80 rounded-[8px] text-xs font-semibold outline-none focus:border-primary bg-bg/50">
-                          <option value="all">Tất cả</option>
-                          <option value="f1">F1</option>
-                        </select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">TRẠNG THÁI:</span>
-                        <select className="px-3 py-1.5 border border-border/80 rounded-[8px] text-xs font-semibold outline-none focus:border-primary bg-bg/50">
-                          <option value="all">Tất cả</option>
-                          <option value="pending">Chờ duyệt</option>
-                          <option value="approved">Đã nhận</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse min-w-[800px]">
-                        <thead>
-                          <tr className="border-b border-border/60 text-text-secondary text-[10px] uppercase tracking-wider font-bold">
-                            <th className="py-4 px-2">THÀNH VIÊN F1</th>
-                            <th className="py-4 px-2 text-center">CẤP HOA HỒNG</th>
-                            <th className="py-4 px-2 text-right">HOA HỒNG GỐC</th>
-                            <th className="py-4 px-2 text-right">TIỀN THƯỞNG NHẬN</th>
-                            <th className="py-4 px-2 text-center">TRẠNG THÁI</th>
-                            <th className="py-4 px-2 text-right">THỜI GIAN</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {refLoading ? (
-                            <tr>
-                              <td colSpan={6} className="text-center py-10">Đang tải dữ liệu...</td>
-                            </tr>
-                          ) : refHistory.length === 0 ? (
-                            <tr>
-                              <td colSpan={6} className="text-center py-20 text-text-secondary/60">
-                                <div className="flex flex-col items-center gap-3">
-                                  <div className="w-16 h-16 bg-bg rounded-full flex items-center justify-center mb-2">
-                                    <Users className="h-8 w-8 opacity-40 text-text-secondary" />
-                                  </div>
-                                  <p className="font-semibold text-sm">Bạn chưa nhận được khoản hoa hồng giới thiệu nào. Hãy chia sẻ link giới thiệu!</p>
-                                </div>
-                              </td>
-                            </tr>
-                          ) : (
-                            refHistory.map(item => (
-                              <tr key={item.id} className="border-b border-border/30 hover:bg-bg/30">
-                                <td className="py-3 px-2 font-medium">{item.f1Name}</td>
-                                <td className="py-3 px-2 text-center">
-                                  <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 font-bold text-[10px]">F1</span>
-                                </td>
-                                <td className="py-3 px-2 text-right">{item.baseCashback.toLocaleString('vi-VN')}đ</td>
-                                <td className="py-3 px-2 text-right font-bold text-primary">+{item.bonus.toLocaleString('vi-VN')}đ</td>
-                                <td className="py-3 px-2 text-center">
-                                  {item.status === 'approved' ? (
-                                    <span className="text-emerald-500 font-bold text-xs bg-emerald-50 px-2 py-1 rounded">Đã nhận</span>
-                                  ) : (
-                                    <span className="text-amber-500 font-bold text-xs bg-amber-50 px-2 py-1 rounded">Chờ duyệt</span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-2 text-right text-text-secondary">{new Date(item.createdAt).toLocaleDateString('vi-VN')}</td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Referral Dashboard View */}
+              <ReferralDashboardView
+                onCopyLink={() => {
+                  if (currentUser) {
+                    navigator.clipboard.writeText(`${window.location.origin}/auth?mode=register&ref=${currentUser.id}`);
+                    toast.success('Đã sao chép link giới thiệu!');
+                  }
+                }}
+              />
             </div>
           )}
 
@@ -1208,7 +1166,7 @@ export default function UserDashboard() {
 
               {/* TIMELINE PROGRESS STATUS */}
               <div className="flex flex-col gap-3">
-                <p className="text-xs font-bold text-text uppercase tracking-wider">Tiến độ đối soát từ sàn Shopee</p>
+                <p className="text-xs font-bold text-text uppercase tracking-wider">Tiến độ đối soát từ sàn {selectedOrder.platform === 'tiktok' ? 'TikTok Shop' : 'Shopee'}</p>
 
                 {selectedOrder.status === 'rejected' || selectedOrder.status === 'returned' ? (
                   <div className="bg-red-50 border border-red-200 text-danger p-4 rounded-input text-xs text-left flex items-start gap-2.5">

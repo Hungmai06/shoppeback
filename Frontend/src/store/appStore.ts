@@ -8,12 +8,15 @@ export interface Order {
   estimatedCashback: number;
   realCashback?: number;
   shopeeCommission?: number;
+  tiktokCommission?: number;
+  platform?: 'shopee' | 'tiktok';
   status: 'pending' | 'approved' | 'rejected' | 'returned' | 'paid';
   createdTime: string;
   userId: string;
   productUrl?: string;
   shopId?: string;
   itemId?: string;
+  subId?: string;
   userName?: string;
   userEmail?: string;
   screenshot?: string;
@@ -83,6 +86,10 @@ export interface SystemSettings {
   tiktokCookieUrl?: string;
   tikiAffiliateId?: string;
   tikiCookieUrl?: string;
+  hasRiohubApiKey?: boolean;
+  riohubCreatorUsername?: string;
+  riohubApiKey?: string;
+  riohubWebhookSecret?: string;
 }
 
 export interface UserStats {
@@ -105,9 +112,14 @@ export interface AdminStats {
     netProfit: number;
     remainingAfterPayout?: number;
   };
+  platformBreakdown?: {
+    shopee?: { totalOrders: number; orderAmount: number; revenue: number; cashback: number; profit: number; approvedCount: number; pendingCount: number };
+    tiktok?: { totalOrders: number; orderAmount: number; revenue: number; cashback: number; profit: number; approvedCount: number; pendingCount: number };
+  };
+  currentPlatform?: string;
   statusDistribution: { name: string; value: number }[];
-  monthlyAnalytics: { name: string; revenue: number; cashback: number; profit: number }[];
-  dailyAnalytics?: { date: string; day: number; dayLabel: string; revenue: number; cashback: number; profit: number; orderCount: number }[];
+  monthlyAnalytics: { name: string; revenue: number; cashback: number; profit: number; shopeeRevenue?: number; tiktokRevenue?: number }[];
+  dailyAnalytics?: { date: string; day: number; dayLabel: string; revenue: number; cashback: number; profit: number; orderCount: number; shopeeRevenue?: number; tiktokRevenue?: number; shopeeOrderCount?: number; tiktokOrderCount?: number }[];
   selectedMonth?: string;
   availableMonths?: { key: string; label: string }[];
   topUsers?: { userId: string; userName: string; earnings: number; orderCount: number }[];
@@ -143,7 +155,7 @@ interface AppState {
   logout: () => void;
   updateProfile: (profile: Partial<UserProfile>) => Promise<boolean>;
 
-  // Orders state
+  // Orders state (Shopee)
   orders: Order[];
   totalAdminOrders: number;
   addOrder: (order: Order) => Promise<void>;
@@ -151,6 +163,26 @@ interface AppState {
   updateOrderStatus: (id: string, status: Order['status'], realCashback?: number, notes?: string, userId?: string) => Promise<void>;
   deleteOrderAdmin: (id: string) => Promise<boolean>;
   uploadOrderScreenshot: (id: string, screenshotUrl: string) => void;
+
+  // TikTok Orders state
+  tiktokOrders: Order[];
+  totalAdminTikTokOrders: number;
+  tiktokStats: { totalOrders: number; approvedOrders: number; totalRevenue: number; totalCommission: number; totalCashback: number } | null;
+  fetchAdminTikTokOrders: (page?: number, limit?: number, search?: string, status?: string) => Promise<void>;
+  updateTikTokOrderStatus: (id: string, status: Order['status'], realCashback?: number, notes?: string, userId?: string) => Promise<void>;
+  createAdminTikTokOrder: (orderData: Partial<Order>) => Promise<boolean>;
+  deleteTikTokOrderAdmin: (id: string) => Promise<boolean>;
+  syncTikTokOrdersAdmin: (filters?: any) => Promise<{ success: boolean; message: string }>;
+  fetchRiohubLiveOrders: (filters?: any) => Promise<{
+    success: boolean;
+    creator_username?: string;
+    page?: number;
+    page_size?: number;
+    total?: number;
+    orders?: any[];
+    message?: string;
+  }>;
+  clearAllTikTokOrdersAdmin: (onlyUnassigned?: boolean) => Promise<boolean>;
 
   // Withdrawals state
   withdrawals: Withdrawal[];
@@ -191,7 +223,7 @@ interface AppState {
   fetchAdminOrders: (page?: number, limit?: number, search?: string, status?: string) => Promise<void>;
   fetchAdminWithdrawals: () => Promise<void>;
   fetchAdminUsers: () => Promise<void>;
-  fetchAdminStats: (range?: string, month?: string) => Promise<void>;
+  fetchAdminStats: (range?: string, month?: string, platform?: string) => Promise<void>;
   exportOrdersCSV: () => void;
   fetchReconciliationLogs: () => Promise<void>;
   uploadReconciliationCSV: (file: File) => Promise<any>;
@@ -212,6 +244,13 @@ const getHeaders = () => {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
+};
+
+// fetch có timeout: tránh request treo vô hạn (iOS Safari hay giữ request pending khi kết nối bị đứt)
+const fetchWithTimeout = (url: string, init: RequestInit = {}, ms = 10000): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 };
 
 const getCachedUser = (): UserProfile | null => {
@@ -246,6 +285,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeAuthModal: () => set({ isAuthModalOpen: false }),
   orders: [],
   totalAdminOrders: 0,
+  tiktokOrders: [],
+  totalAdminTikTokOrders: 0,
+  tiktokStats: null,
   withdrawals: [],
   notifications: [],
   reconciliationHistory: [],
@@ -258,16 +300,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   initializeAuth: async () => {
-    // 1. Fetch public system settings
-    try {
-      const res = await fetch(`${API_BASE}/settings`);
-      if (res.ok) {
-        const data = await res.json();
-        set({ settings: data });
+    // 1. Fetch public system settings (chạy song song, không chặn xác thực profile)
+    void (async () => {
+      try {
+        const res = await fetchWithTimeout(`${API_BASE}/settings`);
+        if (res.ok) {
+          const data = await res.json();
+          set({ settings: data });
+        }
+      } catch (error) {
+        console.error('Fetch settings failed:', error);
       }
-    } catch (error) {
-      console.error('Fetch settings failed:', error);
-    }
+    })();
 
     // 2. Fetch authenticated profile if token exists
     const token = localStorage.getItem('token');
@@ -278,7 +322,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     try {
-      const res = await fetch(`${API_BASE}/auth/profile`, {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/profile`, {
         headers: getHeaders()
       });
 
@@ -371,11 +415,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       }
 
-      const res = await fetch(`${API_BASE}/auth/google`, {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyPayload)
-      });
+      }, 20000);
 
       if (res.ok) {
         const data = await res.json();
@@ -387,7 +431,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           localStorage.setItem('user', JSON.stringify(data.user));
         }
         set({ currentUser: data.user, isAuthLoading: false });
-        await get().initializeAuth();
+        // Không await: user đã có sẵn, đồng bộ dữ liệu chạy nền để đăng nhập Google phản hồi ngay
+        void get().initializeAuth();
         return data.user as UserProfile;
       }
       return null;
@@ -435,6 +480,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       adminStats: null,
       orders: [],
       totalAdminOrders: 0,
+      tiktokOrders: [],
+      totalAdminTikTokOrders: 0,
+      tiktokStats: null,
       withdrawals: [],
       notifications: [],
       users: [],
@@ -476,6 +524,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           estimatedCashback: Math.floor(Number(o.estimated_cashback) || 0),
           realCashback: o.real_cashback !== null && o.real_cashback !== undefined ? Math.floor(Number(o.real_cashback)) : undefined,
           shopeeCommission: o.shopee_commission !== null && o.shopee_commission !== undefined ? Math.floor(Number(o.shopee_commission)) : undefined,
+          platform: o.platform || 'shopee',
           status: o.status,
           createdTime: o.created_at,
           userId: o.user_id,
@@ -774,6 +823,166 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchAdminTikTokOrders: async (page = 1, limit = 10, search = '', status = 'all') => {
+    try {
+      const url = new URL(`${API_BASE}/tiktok/admin/orders`, window.location.origin);
+      url.searchParams.append('page', page.toString());
+      url.searchParams.append('limit', limit.toString());
+      if (search) url.searchParams.append('search', search);
+      if (status && status !== 'all') url.searchParams.append('status', status);
+
+      const res = await fetch(url.toString(), { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        const mappedOrders = (data.orders || []).map((o: any) => ({
+          id: o.id,
+          productName: o.product_name,
+          productImage: o.product_image,
+          orderAmount: Math.floor(Number(o.order_amount) || 0),
+          estimatedCashback: Math.floor(Number(o.estimated_cashback) || 0),
+          realCashback: o.real_cashback !== null && o.real_cashback !== undefined ? Math.floor(Number(o.real_cashback)) : undefined,
+          shopeeCommission: o.shopee_commission !== null && o.shopee_commission !== undefined ? Math.floor(Number(o.shopee_commission)) : undefined,
+          tiktokCommission: o.tiktok_commission !== null && o.tiktok_commission !== undefined ? Math.floor(Number(o.tiktok_commission)) : undefined,
+          platform: 'tiktok' as const,
+          status: o.status,
+          createdTime: o.created_at,
+          userId: o.user_id,
+          userName: o.user_name || undefined,
+          userEmail: o.user_email || undefined,
+          notes: o.notes || undefined,
+          subId: o.sub_id || undefined,
+          screenshot: o.screenshot || undefined
+        }));
+        set({
+          tiktokOrders: mappedOrders,
+          totalAdminTikTokOrders: data.total || 0,
+          tiktokStats: data.stats || null
+        });
+      }
+    } catch (error) {
+      console.error('Fetch admin tiktok orders error:', error);
+    }
+  },
+
+  createAdminTikTokOrder: async (orderData) => {
+    try {
+      const res = await fetch(`${API_BASE}/tiktok/admin/orders`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(orderData)
+      });
+      if (res.ok) {
+        await get().fetchAdminTikTokOrders();
+        await get().fetchAdminStats();
+        return true;
+      }
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Không thể tạo đơn hàng TikTok');
+    } catch (error: any) {
+      console.error('Create admin tiktok order error:', error);
+      throw error;
+    }
+  },
+
+  updateTikTokOrderStatus: async (id, status, realCashback, notes, userId) => {
+    try {
+      const res = await fetch(`${API_BASE}/tiktok/admin/orders/${id}/status`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify({ status, realCashback, notes, userId })
+      });
+      if (res.ok) {
+        await get().fetchAdminTikTokOrders();
+        await get().fetchAdminStats();
+      }
+    } catch (error) {
+      console.error('Update tiktok order status error:', error);
+    }
+  },
+
+  deleteTikTokOrderAdmin: async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/tiktok/admin/orders/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+      if (res.ok) {
+        set((state) => ({
+          tiktokOrders: state.tiktokOrders.filter(o => o.id !== id),
+          totalAdminTikTokOrders: Math.max(0, state.totalAdminTikTokOrders - 1)
+        }));
+        await get().fetchAdminTikTokOrders();
+        await get().fetchAdminStats();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Delete tiktok order error:', error);
+      return false;
+    }
+  },
+
+  syncTikTokOrdersAdmin: async (filters = {}) => {
+    try {
+      const res = await fetch(`${API_BASE}/tiktok/sync-orders`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(filters)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await get().fetchAdminTikTokOrders();
+        await get().fetchAdminStats();
+        return { success: true, message: data.message || 'Đồng bộ đơn hàng TikTok thành công' };
+      }
+      return { success: false, message: data.message || 'Lỗi khi đồng bộ đơn hàng TikTok' };
+    } catch (error: any) {
+      console.error('Sync tiktok orders error:', error);
+      return { success: false, message: error.message || 'Lỗi kết nối khi đồng bộ' };
+    }
+  },
+
+  fetchRiohubLiveOrders: async (filters = {}) => {
+    try {
+      const q = new URLSearchParams();
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && String(v).trim() !== '') {
+          q.append(k, String(v).trim());
+        }
+      });
+      const res = await fetch(`${API_BASE}/tiktok/admin/riohub-orders?${q.toString()}`, {
+        headers: getHeaders()
+      });
+      const data = await res.json();
+      if (res.ok) {
+        return { success: true, ...data };
+      }
+      return { success: false, message: data.message || 'Lỗi truy vấn đơn từ RioHub' };
+    } catch (error: any) {
+      console.error('Fetch RioHub orders error:', error);
+      return { success: false, message: error.message || 'Lỗi kết nối tới máy chủ' };
+    }
+  },
+
+  clearAllTikTokOrdersAdmin: async (onlyUnassigned = false) => {
+    try {
+      const res = await fetch(`${API_BASE}/tiktok/admin/orders/clear-all`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+        body: JSON.stringify({ onlyUnassigned })
+      });
+      if (res.ok) {
+        await get().fetchAdminTikTokOrders();
+        await get().fetchAdminStats();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Clear all tiktok orders error:', error);
+      return false;
+    }
+  },
+
   fetchAdminWithdrawals: async () => {
     try {
       const res = await fetch(`${API_BASE}/withdrawals/admin`, { headers: getHeaders() });
@@ -902,9 +1111,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchAdminStats: async (range = 'all', month = '') => {
+  fetchAdminStats: async (range = 'all', month = '', platform = 'all') => {
     try {
-      let url = `${API_BASE}/settings/admin/stats?range=${range}`;
+      let url = `${API_BASE}/settings/admin/stats?range=${range}&platform=${platform}`;
       if (month) url += `&month=${month}`;
       const res = await fetch(url, { headers: getHeaders() });
       if (res.ok) {
