@@ -173,6 +173,9 @@ async function adminGetStats(req, res) {
       let approvedCount = 0;
       let pendingCount = 0;
 
+      let pendingRevenue = 0;
+      let pendingCashback = 0;
+
       list.forEach(o => {
         orderAmount += Number(o.order_amount || 0);
         const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined)
@@ -188,6 +191,8 @@ async function adminGetStats(req, res) {
           approvedCount++;
         } else if (o.status === 'pending') {
           pendingCount++;
+          pendingRevenue += comm;
+          pendingCashback += userCb;
         }
       });
 
@@ -198,7 +203,9 @@ async function adminGetStats(req, res) {
         cashback,
         profit: Math.max(0, revenue - cashback),
         approvedCount,
-        pendingCount
+        pendingCount,
+        pendingRevenue,
+        pendingCashback
       };
     };
 
@@ -216,8 +223,10 @@ async function adminGetStats(req, res) {
     }
     const totalOrders = ordersList.length;
 
-    let platformTotalRevenue = 0; // Total 100% Commission
-    let platformTotalCashbackOwed = 0; // Total user cashback
+    let platformTotalRevenue = 0; // Total 100% Commission (đã nhận)
+    let platformTotalCashbackOwed = 0; // Total user cashback (đã nhận)
+    let platformPendingRevenue = 0; // Hoa hồng tạm thời (đơn chờ)
+    let platformPendingCashback = 0; // Hoàn tiền tạm thời (đơn chờ)
 
     // Top Users & Products map
     const userEarningsMap = {};
@@ -243,6 +252,9 @@ async function adminGetStats(req, res) {
           userEarningsMap[o.user_id].earnings += userCb;
           userEarningsMap[o.user_id].orderCount += 1;
         }
+      } else if (o.status === 'pending') {
+        platformPendingRevenue += comm;
+        platformPendingCashback += userCb;
       }
 
       if (o.product_name) {
@@ -311,7 +323,9 @@ async function adminGetStats(req, res) {
         cashback: 0,
         profit: 0,
         shopeeRevenue: 0,
-        tiktokRevenue: 0
+        tiktokRevenue: 0,
+        pendingRevenue: 0,
+        pendingCashback: 0
       };
     }
 
@@ -326,13 +340,18 @@ async function adminGetStats(req, res) {
 
       const monthKey = extractYearMonth(o.created_at) || currentMonthKey;
       if (monthlyStatsMap[monthKey]) {
-        monthlyStatsMap[monthKey].revenue += comm;
-        monthlyStatsMap[monthKey].cashback += userCb;
-        monthlyStatsMap[monthKey].profit += Math.max(0, comm - userCb);
-        if (o.platform === 'tiktok') {
-          monthlyStatsMap[monthKey].tiktokRevenue += comm;
-        } else {
-          monthlyStatsMap[monthKey].shopeeRevenue += comm;
+        if (o.status === 'approved' || o.status === 'paid') {
+          monthlyStatsMap[monthKey].revenue += comm;
+          monthlyStatsMap[monthKey].cashback += userCb;
+          monthlyStatsMap[monthKey].profit += Math.max(0, comm - userCb);
+          if (o.platform === 'tiktok') {
+            monthlyStatsMap[monthKey].tiktokRevenue += comm;
+          } else {
+            monthlyStatsMap[monthKey].shopeeRevenue += comm;
+          }
+        } else if (o.status === 'pending') {
+          monthlyStatsMap[monthKey].pendingRevenue += comm;
+          monthlyStatsMap[monthKey].pendingCashback += userCb;
         }
       }
     });
@@ -363,7 +382,9 @@ async function adminGetStats(req, res) {
         shopeeRevenue: 0,
         tiktokRevenue: 0,
         shopeeOrderCount: 0,
-        tiktokOrderCount: 0
+        tiktokOrderCount: 0,
+        pendingRevenue: 0,
+        pendingCashback: 0
       };
     }
 
@@ -425,6 +446,9 @@ async function adminGetStats(req, res) {
           } else {
             dailyMap[dateKey].shopeeRevenue += comm;
           }
+        } else if (o.status === 'pending') {
+          dailyMap[dateKey].pendingRevenue += comm;
+          dailyMap[dateKey].pendingCashback += userCb;
         }
         dailyMap[dateKey].orderCount += 1;
         if (o.platform === 'tiktok') {
@@ -446,6 +470,8 @@ async function adminGetStats(req, res) {
         platformTotalRevenue,
         platformTotalCashbackOwed,
         netProfit,
+        platformPendingRevenue,
+        platformPendingCashback,
         remainingAfterPayout
       },
       platformBreakdown: {

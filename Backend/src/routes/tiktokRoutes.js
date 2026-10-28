@@ -12,7 +12,8 @@ const {
   adminUpdateTikTokOrderStatus,
   adminCreateTikTokOrder,
   adminDeleteTikTokOrder,
-  adminClearAllTikTokOrders
+  adminClearAllTikTokOrders,
+  adminGetTikTokClicks
 } = require('../controllers/tiktokController');
 
 // 1. Chuyển đổi link TikTok Shop có gắn sub_id (cho người dùng hoặc khách)
@@ -40,5 +41,8 @@ router.post('/admin/orders', protect, adminOnly, adminCreateTikTokOrder);
 router.put('/admin/orders/:id/status', protect, adminOnly, adminUpdateTikTokOrderStatus);
 router.delete('/admin/orders/clear-all', protect, adminOnly, adminClearAllTikTokOrders);
 router.delete('/admin/orders/:id', protect, adminOnly, adminDeleteTikTokOrder);
+
+// 7. Quản trị lượt click TikTok (click_logs)
+router.get('/admin/clicks', protect, adminOnly, adminGetTikTokClicks);
 
 module.exports = router;

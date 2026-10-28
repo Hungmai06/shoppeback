@@ -74,7 +74,54 @@ export default function AdminPanel() {
 
   const [isSyncingBalances, setIsSyncingBalances] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'orders' | 'tiktok-orders' | 'withdrawals' | 'reconciliation' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'orders' | 'tiktok-orders' | 'tiktok-clicks' | 'withdrawals' | 'reconciliation' | 'settings'>('dashboard');
+
+  // TikTok Clicks (click_logs) States
+  const [tiktokClicks, setTiktokClicks] = useState<any[]>([]);
+  const [tiktokClicksTotal, setTiktokClicksTotal] = useState(0);
+  const [tiktokClicksStats, setTiktokClicksStats] = useState({ totalClicks: 0, convertedClicks: 0, anonymousClicks: 0 });
+  const [tiktokClickSearch, setTiktokClickSearch] = useState('');
+  const [tiktokClickConverted, setTiktokClickConverted] = useState('all');
+  const [tiktokClickPage, setTiktokClickPage] = useState(1);
+  const [isLoadingTikTokClicks, setIsLoadingTikTokClicks] = useState(false);
+  const tiktokClicksPerPage = 10;
+
+  React.useEffect(() => {
+    setTiktokClickPage(1);
+  }, [tiktokClickSearch, tiktokClickConverted]);
+
+  React.useEffect(() => {
+    if (currentUser?.role !== 'admin' || activeTab !== 'tiktok-clicks') return;
+    setIsLoadingTikTokClicks(true);
+    const delay = setTimeout(async () => {
+      try {
+        const apiBase = import.meta.env.VITE_API_BASE || '/api';
+        const token = localStorage.getItem('token');
+        const qs = new URLSearchParams({
+          page: String(tiktokClickPage),
+          limit: String(tiktokClicksPerPage),
+          search: tiktokClickSearch,
+          converted: tiktokClickConverted
+        });
+        const res = await fetch(`${apiBase}/tiktok/admin/clicks?${qs.toString()}`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setTiktokClicks(data.clicks || []);
+          setTiktokClicksTotal(data.total || 0);
+          if (data.stats) setTiktokClicksStats(data.stats);
+        } else {
+          toast.error(data.message || 'Lỗi tải danh sách click TikTok');
+        }
+      } catch (err) {
+        toast.error('Lỗi kết nối khi tải click TikTok');
+      } finally {
+        setIsLoadingTikTokClicks(false);
+      }
+    }, 300);
+    return () => clearTimeout(delay);
+  }, [activeTab, tiktokClickPage, tiktokClickSearch, tiktokClickConverted, currentUser]);
 
   // Search & Filter States
   const [userSearch, setUserSearch] = useState('');
@@ -415,8 +462,6 @@ export default function AdminPanel() {
   const [sysRiohubWebhookSecret, setSysRiohubWebhookSecret] = useState(settings.riohubWebhookSecret || "");
   const [showRiohubKey, setShowRiohubKey] = useState(false);
   const [isSyncingTiktokOrders, setIsSyncingTiktokOrders] = useState(false);
-  const [sysTikiAffiliateId, setSysTikiAffiliateId] = useState(settings.tikiAffiliateId || "");
-  const [sysTikiCookieUrl, setSysTikiCookieUrl] = useState(settings.tikiCookieUrl || "https://tiki.vn/an_redir");
   const [sysTeleNotify, setSysTeleNotify] = useState(settings.telegramNotification);
   const [sysEmailNotify, setSysEmailNotify] = useState(settings.emailNotification);
   const [sysMaintMode, setSysMaintMode] = useState(settings.maintenanceMode);
@@ -440,8 +485,6 @@ export default function AdminPanel() {
       setSysRiohubApiKey(settings.riohubApiKey || "");
       setSysRiohubCreatorUsername(settings.riohubCreatorUsername || "");
       setSysRiohubWebhookSecret(settings.riohubWebhookSecret || "");
-      setSysTikiAffiliateId(settings.tikiAffiliateId || "");
-      setSysTikiCookieUrl(settings.tikiCookieUrl || "https://tiki.vn/an_redir");
       setSysTeleNotify(settings.telegramNotification);
       setSysEmailNotify(settings.emailNotification);
       setSysMaintMode(settings.maintenanceMode);
@@ -848,8 +891,6 @@ export default function AdminPanel() {
       riohubApiKey: sysRiohubApiKey.trim(),
       riohubCreatorUsername: sysRiohubCreatorUsername.trim(),
       riohubWebhookSecret: sysRiohubWebhookSecret.trim(),
-      tikiAffiliateId: sysTikiAffiliateId,
-      tikiCookieUrl: sysTikiCookieUrl,
       telegramNotification: sysTeleNotify,
       emailNotification: sysEmailNotify,
       maintenanceMode: sysMaintMode
@@ -1081,13 +1122,14 @@ export default function AdminPanel() {
   // Chart Monthly Analytics computed dynamically from real database/orders
   const revenueChartData = useMemo(() => {
     if (adminStats && adminStats.monthlyAnalytics && adminStats.monthlyAnalytics.length > 0) {
-      const hasData = adminStats.monthlyAnalytics.some(a => a.revenue > 0 || a.cashback > 0 || a.profit > 0);
+      const hasData = adminStats.monthlyAnalytics.some(a => a.revenue > 0 || a.cashback > 0 || a.profit > 0 || (a.pendingRevenue || 0) > 0);
       if (hasData) {
         return adminStats.monthlyAnalytics.map(a => ({
           month: a.name,
           DoanhThu: a.revenue,
           HoaHongChi: a.cashback,
-          LoiNhuan: a.profit
+          LoiNhuan: a.profit,
+          TamThoi: a.pendingRevenue || 0
         }));
       }
     }
@@ -1184,6 +1226,7 @@ export default function AdminPanel() {
             { id: 'users', icon: <Users className="h-4.5 w-4.5" />, label: 'Quản lý tài khoản' },
             { id: 'orders', icon: <ShoppingBag className="h-4.5 w-4.5 text-[#EE4D2D]" />, label: 'Đơn hàng Shopee' },
             { id: 'tiktok-orders', icon: <TikTokIcon className="h-4.5 w-4.5 text-slate-900" />, label: 'Đơn hàng TikTok' },
+            { id: 'tiktok-clicks', icon: <Activity className="h-4.5 w-4.5 text-slate-900" />, label: 'Click TikTok' },
             { id: 'withdrawals', icon: <Wallet className="h-4.5 w-4.5" />, label: 'Quản lý rút tiền' },
             { id: 'reconciliation', icon: <FileSpreadsheet className="h-4.5 w-4.5" />, label: 'Đối soát file Shopee' },
             { id: 'settings', icon: <Settings2 className="h-4.5 w-4.5" />, label: 'Cài đặt hệ thống' }
@@ -1281,7 +1324,7 @@ export default function AdminPanel() {
                 {[
                   { title: "Tổng thành viên", value: totalUsersCount, desc: "Tài khoản người dùng", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" />, tab: 'users' },
                   { title: statsPlatform === 'tiktok' ? "Đơn TikTok Shop" : statsPlatform === 'shopee' ? "Đơn Shopee" : "Tổng đơn hàng", value: totalOrdersCount, desc: statsPlatform === 'tiktok' ? "Đơn TikTok Shop" : statsPlatform === 'shopee' ? "Đơn sàn Shopee" : "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" />, tab: statsPlatform === 'tiktok' ? 'tiktok-orders' : 'orders' },
-                  { title: statsPlatform === 'tiktok' ? "Hoa hồng TikTok (100%)" : statsPlatform === 'shopee' ? "Hoa hồng Shopee (100%)" : "Tổng hoa hồng sàn (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Tổng hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
+                  { title: statsPlatform === 'tiktok' ? "Hoa hồng TikTok đã nhận (100%)" : statsPlatform === 'shopee' ? "Hoa hồng Shopee đã nhận (100%)" : "Hoa hồng sàn đã nhận (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: `Tạm thời (đơn chờ): ${((adminStats?.summary as any)?.platformPendingRevenue || 0).toLocaleString('vi-VN')}đ`, color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
                   { title: "Số tiền còn lại (Lợi nhuận)", value: `${Math.round(adminStats?.summary?.remainingAfterPayout !== undefined ? adminStats.summary.remainingAfterPayout : Math.max(0, (adminStats?.summary?.platformTotalRevenue || 0) - (totalCashbackPaid || 0))).toLocaleString('vi-VN')}đ`, desc: "Sau khi trừ số tiền đã chi trả cho khách", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
                   { title: "Tiền đã & chờ chi", value: `${(totalCashbackPaid).toLocaleString('vi-VN')}đ`, desc: `Chờ duyệt: ${(adminStats?.summary?.pendingWithdrawalsTotal || 0).toLocaleString('vi-VN')}đ`, color: "text-warning", icon: <Wallet className="h-5 w-5 text-warning" />, tab: 'withdrawals' }
                 ].map((card, idx) => (
@@ -1328,9 +1371,15 @@ export default function AdminPanel() {
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-center">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-border/50 text-center">
+                      <div className="bg-amber-50 p-2 rounded-lg">
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng tạm thời ({(adminStats?.platformBreakdown?.shopee as any)?.pendingCount || 0} chờ)</span>
+                        <span className="text-xs font-black text-amber-600">
+                          {(((adminStats?.platformBreakdown?.shopee as any)?.pendingRevenue || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
                       <div className="bg-bg/60 p-2 rounded-lg">
-                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng sàn</span>
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng đã nhận</span>
                         <span className="text-xs font-black text-blue-600">
                           {((adminStats?.platformBreakdown?.shopee?.revenue || 0)).toLocaleString('vi-VN')}đ
                         </span>
@@ -1375,9 +1424,15 @@ export default function AdminPanel() {
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-center">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-border/50 text-center">
+                      <div className="bg-amber-50 p-2 rounded-lg">
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng tạm thời ({(adminStats?.platformBreakdown?.tiktok as any)?.pendingCount || 0} chờ)</span>
+                        <span className="text-xs font-black text-amber-600">
+                          {(((adminStats?.platformBreakdown?.tiktok as any)?.pendingRevenue || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
                       <div className="bg-bg/60 p-2 rounded-lg">
-                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng sàn</span>
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng đã nhận</span>
                         <span className="text-xs font-black text-blue-600">
                           {((adminStats?.platformBreakdown?.tiktok?.revenue || 0)).toLocaleString('vi-VN')}đ
                         </span>
@@ -1425,6 +1480,7 @@ export default function AdminPanel() {
                         <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
                         <Area type="monotone" dataKey="DoanhThu" name="Tổng hoa hồng sàn" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDoanhThu)" strokeWidth={2.5} />
                         <Area type="monotone" dataKey="LoiNhuan" name="Hoa hồng giữ lại (Lợi nhuận)" stroke="#22C55E" fillOpacity={1} fill="url(#colorLoiNhuan)" strokeWidth={2.5} />
+                        <Area type="monotone" dataKey="TamThoi" name="Hoa hồng tạm thời (đơn chờ)" stroke="#F59E0B" fillOpacity={0.05} fill="#F59E0B" strokeWidth={2} strokeDasharray="5 4" />
                       </AreaChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -1499,6 +1555,7 @@ export default function AdminPanel() {
                             DoanhThu: d.revenue,
                             HoanTien: d.cashback,
                             LoiNhuan: d.profit,
+                            TamThoi: d.pendingRevenue || 0,
                             DonHang: d.orderCount
                           }))}
                           margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
@@ -1525,6 +1582,7 @@ export default function AdminPanel() {
                           <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
                           <Area type="monotone" dataKey="DoanhThu" name={statsPlatform === 'tiktok' ? 'Hoa hồng TikTok (100%)' : statsPlatform === 'shopee' ? 'Hoa hồng Shopee (100%)' : 'Hoa hồng sàn (100%)'} stroke="#3B82F6" fillOpacity={1} fill="url(#colorDailyRevenue)" strokeWidth={2} />
                           <Area type="monotone" dataKey="LoiNhuan" name="Lợi nhuận Admin" stroke="#22C55E" fillOpacity={1} fill="url(#colorDailyProfit)" strokeWidth={2} />
+                          <Area type="monotone" dataKey="TamThoi" name="Hoa hồng tạm thời (đơn chờ)" stroke="#F59E0B" fillOpacity={0.05} fill="#F59E0B" strokeWidth={2} strokeDasharray="5 4" />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
@@ -1541,7 +1599,8 @@ export default function AdminPanel() {
                             <TableRow>
                               <TableHead>Ngày</TableHead>
                               <TableHead className="text-center">Số Đơn Hàng</TableHead>
-                              <TableHead className="text-right">{statsPlatform === 'tiktok' ? 'Hoa Hồng TikTok (100%)' : statsPlatform === 'shopee' ? 'Hoa Hồng Shopee (100%)' : 'Hoa Hồng Sàn (100%)'}</TableHead>
+                              <TableHead className="text-right">Hoa Hồng Tạm Thời (Đơn Chờ)</TableHead>
+                              <TableHead className="text-right">{statsPlatform === 'tiktok' ? 'Hoa Hồng TikTok Đã Nhận' : statsPlatform === 'shopee' ? 'Hoa Hồng Shopee Đã Nhận' : 'Hoa Hồng Sàn Đã Nhận'}</TableHead>
                               <TableHead className="text-right">Hoàn Tiền Khách</TableHead>
                               <TableHead className="text-right">Lợi Nhuận Giữ Lại</TableHead>
                             </TableRow>
@@ -1558,6 +1617,9 @@ export default function AdminPanel() {
                                       <span className="text-text-secondary font-normal">0</span>
                                     )}
                                   </TableCell>
+                                  <TableCell className="text-right font-bold text-xs text-amber-600">
+                                    {Math.round(dayItem.pendingRevenue || 0).toLocaleString('vi-VN')}đ
+                                  </TableCell>
                                   <TableCell className="text-right font-bold text-xs text-blue-600">
                                     {Math.round(dayItem.revenue).toLocaleString('vi-VN')}đ
                                   </TableCell>
@@ -1571,7 +1633,7 @@ export default function AdminPanel() {
                               ))
                             ) : (
                               <TableRow>
-                                <TableCell colSpan={5} className="text-center py-6 text-xs text-text-secondary">
+                                <TableCell colSpan={6} className="text-center py-6 text-xs text-text-secondary">
                                   Không có dữ liệu cho tháng được chọn
                                 </TableCell>
                               </TableRow>
@@ -1586,7 +1648,8 @@ export default function AdminPanel() {
                           <span>Tổng cộng trong tháng:</span>
                           <div className="flex gap-4">
                             <span>Đơn hàng: <span className="text-primary font-mono">{adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.orderCount || 0), 0)}</span></span>
-                            <span>Hoa hồng sàn: <span className="text-blue-600 font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.revenue || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
+                            <span>Hoa hồng tạm thời: <span className="text-amber-600 font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.pendingRevenue || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
+                            <span>Hoa hồng đã nhận: <span className="text-blue-600 font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.revenue || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
                             <span>Hoàn tiền khách: <span className="text-primary font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.cashback || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
                             <span>Lợi nhuận Admin: <span className="text-success font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.profit || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
                           </div>
@@ -2237,10 +2300,11 @@ export default function AdminPanel() {
                 <Card className="border-border/60 shadow-xs">
                   <CardContent className="p-4 flex items-center justify-between">
                     <div>
-                      <p className="text-[11px] font-bold text-text-secondary">Hoa hồng sàn (100%)</p>
-                      <h3 className="text-lg font-black text-blue-600 mt-0.5">{((tiktokStats?.totalCommission || 0)).toLocaleString('vi-VN')}đ</h3>
+                      <p className="text-[11px] font-bold text-text-secondary">Hoa hồng tạm thời ({tiktokStats?.pendingOrders || 0} đơn chờ)</p>
+                      <h3 className="text-lg font-black text-amber-600 mt-0.5">{((tiktokStats?.pendingCommission || 0)).toLocaleString('vi-VN')}đ</h3>
+                      <p className="text-[10px] text-text-secondary mt-0.5">Hoàn khách: {((tiktokStats?.pendingCashback || 0)).toLocaleString('vi-VN')}đ</p>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
                       <Activity className="w-5 h-5" />
                     </div>
                   </CardContent>
@@ -2248,10 +2312,11 @@ export default function AdminPanel() {
                 <Card className="border-border/60 shadow-xs">
                   <CardContent className="p-4 flex items-center justify-between">
                     <div>
-                      <p className="text-[11px] font-bold text-text-secondary">Hoàn tiền khách</p>
-                      <h3 className="text-lg font-black text-[#EE4D2D] mt-0.5">{((tiktokStats?.totalCashback || 0)).toLocaleString('vi-VN')}đ</h3>
+                      <p className="text-[11px] font-bold text-text-secondary">Hoa hồng đã nhận ({tiktokStats?.approvedOrders || 0} đơn xong)</p>
+                      <h3 className="text-lg font-black text-blue-600 mt-0.5">{((tiktokStats?.totalCommission || 0)).toLocaleString('vi-VN')}đ</h3>
+                      <p className="text-[10px] text-[#EE4D2D] mt-0.5 font-semibold">Hoàn khách: {((tiktokStats?.totalCashback || 0)).toLocaleString('vi-VN')}đ</p>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-[#EE4D2D]">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
                       <Wallet className="w-5 h-5" />
                     </div>
                   </CardContent>
@@ -2464,6 +2529,154 @@ export default function AdminPanel() {
                         <button
                           onClick={() => setTiktokPage(p => Math.min(Math.ceil(totalAdminTikTokOrders / 10), p + 1))}
                           disabled={tiktokPage === Math.ceil(totalAdminTikTokOrders / 10)}
+                          className="px-3 py-1.5 border border-border rounded-[8px] bg-white hover:bg-bg disabled:opacity-50 transition-all"
+                        >
+                          Sau
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* TAB: TIKTOK CLICKS (click_logs) */}
+          {activeTab === 'tiktok-clicks' && (
+            <div className="flex flex-col gap-6">
+              <div>
+                <h2 className="text-2xl font-black text-text">Click TikTok Shop</h2>
+                <p className="text-xs text-text-secondary mt-1">Lượt khách bấm tạo link mua hàng TikTok. Đơn hoàn tiền thật nằm ở tab "Đơn hàng TikTok" (từ API RioHub).</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[
+                  { label: 'Tổng lượt click', value: tiktokClicksStats.totalClicks, color: 'text-text' },
+                  { label: 'Đã phát sinh đơn', value: tiktokClicksStats.convertedClicks, color: 'text-emerald-600' },
+                  { label: 'Click khách vãng lai', value: tiktokClicksStats.anonymousClicks, color: 'text-amber-600' }
+                ].map(s => (
+                  <Card key={s.label} className="border-border/60 shadow-xs">
+                    <CardContent className="p-4">
+                      <p className="text-[11px] font-bold text-text-secondary">{s.label}</p>
+                      <h3 className={`text-xl font-black mt-0.5 ${s.color}`}>{s.value}</h3>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="bg-white border border-border p-4 rounded-input flex flex-col sm:flex-row gap-4 items-center shadow-xs">
+                <div className="flex-1 w-full flex items-center px-3 border border-border rounded-input bg-bg gap-2">
+                  <Search className="h-4.5 w-4.5 text-text-secondary shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Tìm theo mã click, link/sản phẩm, Product ID hoặc người dùng..."
+                    value={tiktokClickSearch}
+                    onChange={(e) => setTiktokClickSearch(e.target.value)}
+                    className="w-full bg-transparent border-none py-2.5 outline-none text-xs"
+                  />
+                </div>
+                <div className="w-full sm:w-52 flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-text-secondary shrink-0" />
+                  <select
+                    value={tiktokClickConverted}
+                    onChange={(e) => setTiktokClickConverted(e.target.value)}
+                    className="w-full bg-white border border-border text-xs rounded-input py-2.5 px-3"
+                  >
+                    <option value="all">Tất cả click</option>
+                    <option value="yes">Đã phát sinh đơn</option>
+                    <option value="no">Chưa có đơn</option>
+                  </select>
+                </div>
+              </div>
+
+              <Card className="border-border/50">
+                <CardContent className="p-0">
+                  <TableContainer>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Mã Click</TableHead>
+                        <TableHead>Thành Viên</TableHead>
+                        <TableHead>Link / Sản Phẩm</TableHead>
+                        <TableHead>Product ID</TableHead>
+                        <TableHead>Thời Gian Click</TableHead>
+                        <TableHead>Đơn Phát Sinh</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {isLoadingTikTokClicks ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-16 text-xs text-text-secondary font-medium">
+                            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
+                            Đang tải danh sách click TikTok...
+                          </TableCell>
+                        </TableRow>
+                      ) : tiktokClicks.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-16 text-xs text-text-secondary font-medium">
+                            Chưa có lượt click TikTok nào phù hợp.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        tiktokClicks.map((c) => (
+                          <TableRow key={c.id} className="hover:bg-bg/40">
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                <span className="p-1 bg-slate-900 text-white rounded-md shrink-0">
+                                  <TikTokIcon className="h-3 w-3" />
+                                </span>
+                                <span className="font-mono text-xs font-bold">{c.id}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {c.user_id ? (
+                                <div>
+                                  <p className="font-bold text-xs text-text">{c.user_name || 'Chưa xác định'}</p>
+                                  <p className="text-[10px] text-text-secondary">{c.user_email || c.user_id}</p>
+                                </div>
+                              ) : (
+                                <Badge variant="warning" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">Khách vãng lai</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="max-w-[260px]">
+                              <p className="text-xs text-text-secondary truncate" title={c.product_url}>{c.product_url || '-'}</p>
+                            </TableCell>
+                            <TableCell className="font-mono text-[11px] text-text-secondary">{c.item_id || '-'}</TableCell>
+                            <TableCell className="text-xs text-text-secondary font-medium whitespace-nowrap">
+                              {c.click_time ? String(c.click_time).substring(0, 16) : '-'}
+                            </TableCell>
+                            <TableCell>
+                              {c.order_id ? (
+                                <button
+                                  onClick={() => { setTiktokSearch(String(c.order_id)); setActiveTab('tiktok-orders'); }}
+                                  className="text-left"
+                                  title="Xem đơn ở tab Đơn hàng TikTok"
+                                >
+                                  <Badge variant="success">{c.order_id}</Badge>
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-text-secondary">Chưa có đơn</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </TableContainer>
+
+                  {Math.ceil(tiktokClicksTotal / tiktokClicksPerPage) > 1 && (
+                    <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-semibold text-text-secondary">
+                      <p>Trang {tiktokClickPage} / {Math.ceil(tiktokClicksTotal / tiktokClicksPerPage)} ({tiktokClicksTotal} click)</p>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setTiktokClickPage(p => Math.max(1, p - 1))}
+                          disabled={tiktokClickPage === 1}
+                          className="px-3 py-1.5 border border-border rounded-[8px] bg-white hover:bg-bg disabled:opacity-50 transition-all"
+                        >
+                          Trước
+                        </button>
+                        <button
+                          onClick={() => setTiktokClickPage(p => Math.min(Math.ceil(tiktokClicksTotal / tiktokClicksPerPage), p + 1))}
+                          disabled={tiktokClickPage >= Math.ceil(tiktokClicksTotal / tiktokClicksPerPage)}
                           className="px-3 py-1.5 border border-border rounded-[8px] bg-white hover:bg-bg disabled:opacity-50 transition-all"
                         >
                           Sau
@@ -3055,32 +3268,6 @@ export default function AdminPanel() {
                               value={sysTiktokCookieUrl}
                               onChange={(e) => setSysTiktokCookieUrl(e.target.value)}
                               placeholder="https://vt.tiktok.com/an_redir"
-                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="sm:col-span-2 pt-4 border-t border-border/40">
-                        <h3 className="text-xs font-bold text-sky-500 uppercase tracking-wider mb-3">🌐 Tiếp thị liên kết Tiki</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-bold text-text/80">Tiki Affiliate ID</label>
-                            <input
-                              type="text"
-                              value={sysTikiAffiliateId}
-                              onChange={(e) => setSysTikiAffiliateId(e.target.value)}
-                              className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
-                              placeholder="Nhập mã Tiki Affiliate..."
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-bold text-text/80">Link Cookie / Deeplink Tiki</label>
-                            <input
-                              type="text"
-                              value={sysTikiCookieUrl}
-                              onChange={(e) => setSysTikiCookieUrl(e.target.value)}
-                              placeholder="https://tiki.vn/an_redir"
                               className="w-full px-4 py-3 bg-white border border-border text-sm rounded-input outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-semibold font-mono"
                             />
                           </div>

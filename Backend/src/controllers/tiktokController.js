@@ -962,15 +962,26 @@ async function adminGetTikTokOrders(req, res) {
     let totalCommission = 0;
     let totalCashback = 0;
     let approvedOrders = 0;
+    let pendingOrders = 0;
+    let pendingRevenue = 0;
+    let pendingCommission = 0;
+    let pendingCashback = 0;
 
     allTikTokOrders.forEach(o => {
-      const cb = Math.floor(o.real_cashback || o.estimated_cashback || 0);
-      const comm = Math.floor(o.tiktok_commission || (cb * 2));
       if (o.status === 'approved' || o.status === 'paid') {
+        const cb = Math.floor(o.real_cashback || o.estimated_cashback || 0);
+        const comm = Math.floor(o.tiktok_commission || (cb * 2));
         totalRevenue += Math.floor(o.order_amount || 0);
         totalCommission += comm;
         totalCashback += cb;
         approvedOrders++;
+      } else if (o.status === 'pending') {
+        const cb = Math.floor(o.estimated_cashback || 0);
+        const comm = Math.floor(o.tiktok_commission || (cb * 2));
+        pendingRevenue += Math.floor(o.order_amount || 0);
+        pendingCommission += comm;
+        pendingCashback += cb;
+        pendingOrders++;
       }
     });
 
@@ -995,7 +1006,11 @@ async function adminGetTikTokOrders(req, res) {
         approvedOrders,
         totalRevenue,
         totalCommission,
-        totalCashback
+        totalCashback,
+        pendingOrders,
+        pendingRevenue,
+        pendingCommission,
+        pendingCashback
       }
     });
   } catch (error) {
@@ -1182,7 +1197,78 @@ async function adminClearAllTikTokOrders(req, res) {
   }
 }
 
+/**
+ * 11. Admin lấy danh sách lượt click TikTok (click_logs có id bắt đầu bằng 'TT')
+ * Route: GET /api/tiktok/admin/clicks
+ */
+async function adminGetTikTokClicks(req, res) {
+  const { search, converted, page = 1, limit = 10 } = req.query;
+
+  try {
+    const db = await getDatabase();
+    const offset = (Number(page) - 1) * Number(limit);
+
+    let where = "WHERE c.id LIKE 'TT%'";
+    const params = [];
+
+    if (search) {
+      where += ' AND (c.id LIKE ? OR c.product_url LIKE ? OR c.item_id LIKE ? OR c.user_id LIKE ? OR u.name LIKE ? OR u.email LIKE ?)';
+      const s = `%${search}%`;
+      params.push(s, s, s, s, s, s);
+    }
+    if (converted === 'yes') {
+      where += ' AND t.id IS NOT NULL';
+    } else if (converted === 'no') {
+      where += ' AND t.id IS NULL';
+    }
+
+    const baseFrom = `
+      FROM click_logs c
+      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN tiktok_orders t ON (t.click_id = c.id OR (c.sub_id IS NOT NULL AND c.sub_id != '' AND t.sub_id = c.sub_id))
+      ${where}
+    `;
+
+    const rows = await db.all(
+      `SELECT c.id, c.user_id, c.product_url, c.sub_id, c.item_id, c.click_time,
+              u.name as user_name, u.email as user_email,
+              t.id as order_id, t.status as order_status
+       ${baseFrom}
+       GROUP BY c.id
+       ORDER BY c.click_time DESC LIMIT ? OFFSET ?`,
+      [...params, Number(limit), Number(offset)]
+    );
+    const totalRow = await db.get(`SELECT COUNT(DISTINCT c.id) as count ${baseFrom}`, params);
+    const total = totalRow ? totalRow.count : 0;
+
+    const statRow = await db.get(
+      `SELECT COUNT(DISTINCT c.id) as total,
+              COUNT(DISTINCT CASE WHEN t.id IS NOT NULL THEN c.id END) as converted,
+              COUNT(DISTINCT CASE WHEN c.user_id IS NULL OR c.user_id = '' THEN c.id END) as anonymous
+       FROM click_logs c
+       LEFT JOIN tiktok_orders t ON (t.click_id = c.id OR (c.sub_id IS NOT NULL AND c.sub_id != '' AND t.sub_id = c.sub_id))
+       WHERE c.id LIKE 'TT%'`
+    );
+
+    res.json({
+      clicks: rows,
+      total,
+      page: Number(page),
+      totalPages: Math.ceil(total / Number(limit)) || 1,
+      stats: {
+        totalClicks: statRow?.total || 0,
+        convertedClicks: statRow?.converted || 0,
+        anonymousClicks: statRow?.anonymous || 0
+      }
+    });
+  } catch (error) {
+    console.error('adminGetTikTokClicks Error:', error);
+    res.status(500).json({ message: 'Lỗi máy chủ khi lấy danh sách click TikTok' });
+  }
+}
+
 module.exports = {
+  adminGetTikTokClicks,
   convertTikTokLink,
   getTikTokProductInfo,
   createTikTokGeneralLinks,

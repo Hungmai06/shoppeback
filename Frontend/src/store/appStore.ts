@@ -118,8 +118,8 @@ export interface AdminStats {
   };
   currentPlatform?: string;
   statusDistribution: { name: string; value: number }[];
-  monthlyAnalytics: { name: string; revenue: number; cashback: number; profit: number; shopeeRevenue?: number; tiktokRevenue?: number }[];
-  dailyAnalytics?: { date: string; day: number; dayLabel: string; revenue: number; cashback: number; profit: number; orderCount: number; shopeeRevenue?: number; tiktokRevenue?: number; shopeeOrderCount?: number; tiktokOrderCount?: number }[];
+  monthlyAnalytics: { name: string; revenue: number; cashback: number; profit: number; shopeeRevenue?: number; tiktokRevenue?: number; pendingRevenue?: number; pendingCashback?: number }[];
+  dailyAnalytics?: { date: string; day: number; dayLabel: string; revenue: number; cashback: number; profit: number; orderCount: number; shopeeRevenue?: number; tiktokRevenue?: number; shopeeOrderCount?: number; tiktokOrderCount?: number; pendingRevenue?: number; pendingCashback?: number }[];
   selectedMonth?: string;
   availableMonths?: { key: string; label: string }[];
   topUsers?: { userId: string; userName: string; earnings: number; orderCount: number }[];
@@ -167,7 +167,7 @@ interface AppState {
   // TikTok Orders state
   tiktokOrders: Order[];
   totalAdminTikTokOrders: number;
-  tiktokStats: { totalOrders: number; approvedOrders: number; totalRevenue: number; totalCommission: number; totalCashback: number } | null;
+  tiktokStats: { totalOrders: number; approvedOrders: number; totalRevenue: number; totalCommission: number; totalCashback: number; pendingOrders?: number; pendingRevenue?: number; pendingCommission?: number; pendingCashback?: number } | null;
   fetchAdminTikTokOrders: (page?: number, limit?: number, search?: string, status?: string) => Promise<void>;
   updateTikTokOrderStatus: (id: string, status: Order['status'], realCashback?: number, notes?: string, userId?: string) => Promise<void>;
   createAdminTikTokOrder: (orderData: Partial<Order>) => Promise<boolean>;
@@ -404,10 +404,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (typeof tokenOrOptions === 'object' && tokenOrOptions !== null) {
         bodyPayload = tokenOrOptions;
       } else {
-        const isCredential = tokenOrOptions?.startsWith('eyJ');
+        const tokenStr: string = typeof tokenOrOptions === 'string' ? tokenOrOptions : '';
+        const isCredential = tokenStr.startsWith('eyJ');
         bodyPayload = {
-          credential: isCredential ? tokenOrOptions : undefined,
-          accessToken: isCredential ? undefined : tokenOrOptions,
+          credential: isCredential ? tokenStr : undefined,
+          accessToken: isCredential ? undefined : (tokenStr || undefined),
           email,
           name,
           avatar,

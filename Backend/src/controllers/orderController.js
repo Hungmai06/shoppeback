@@ -34,15 +34,26 @@ async function logClick(req, res) {
     const amount = Math.floor(Number(orderAmount) || 100000);
     const cashback = Number(estimatedCashback) ? Math.floor(Number(estimatedCashback)) : Math.floor(amount * 0.035);
 
+    // Click TikTok chỉ lưu ở click_logs (tab "Click TikTok" của admin), không tạo đơn ở bảng Shopee/TikTok.
+    // Đơn TikTok thật sẽ do RioHub webhook/sync đưa vào tiktok_orders.
+    const isTikTok = String(req.body.platform || '').toLowerCase() === 'tiktok' || /^TT\d/.test(String(clickId));
+
     try {
-      await db.run(
-        `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, status, shop_id, item_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-        [clickId, userId, clickId, name, img, amount, cashback, finalShopId, finalItemId]
-      );
+      if (isTikTok) {
+        if (req.body.subId) {
+          await db.run('UPDATE click_logs SET sub_id = COALESCE(sub_id, ?) WHERE id = ?', [req.body.subId, clickId]);
+        }
+      } else {
+        await db.run(
+          `INSERT INTO orders (id, user_id, click_id, product_name, product_image, order_amount, estimated_cashback, status, shop_id, item_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+          [clickId, userId, clickId, name, img, amount, cashback, finalShopId, finalItemId]
+        );
+      }
     } catch (oErr) {
       console.warn('Order insertion warning on click:', oErr.message);
     }
+
 
     res.status(201).json({ message: 'Đã ghi nhận lượt click mua hàng', clickId, shopId: finalShopId, itemId: finalItemId });
   } catch (error) {
