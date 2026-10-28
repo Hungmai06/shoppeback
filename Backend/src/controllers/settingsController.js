@@ -175,25 +175,32 @@ async function adminGetStats(req, res) {
 
       list.forEach(o => {
         orderAmount += Number(o.order_amount || 0);
-        const userCb = Math.floor(
-          (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
-            ? Number(o.real_cashback)
-            : (Number(o.estimated_cashback) || 0)
-        );
-        let rawComm = Number(o.shopee_commission || 0);
-        if (rawComm <= 0) {
-          rawComm = userCb > 0 ? userCb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
-        }
-        const comm = Math.floor(rawComm);
+        const isApproved = o.status === 'approved' || o.status === 'paid';
+        const isShopee = o.platform === 'shopee';
 
-        if (o.status !== 'rejected' && o.status !== 'returned') {
+        // Đơn Shopee: BẮT BUỘC CHỈ TÍNH HOA HỒNG KHI ĐƠN ĐÃ HOÀN THÀNH (approved / paid)
+        const shouldCountCommission = isShopee ? isApproved : (o.status !== 'rejected' && o.status !== 'returned');
+
+        if (shouldCountCommission) {
+          const userCb = Math.floor(
+            (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
+              ? Number(o.real_cashback)
+              : (Number(o.estimated_cashback) || 0)
+          );
+          let rawComm = Number(o.shopee_commission || 0);
+          if (rawComm <= 0) {
+            rawComm = userCb > 0 ? userCb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
+          }
+          const comm = Math.floor(rawComm);
+
           revenue += comm;
           cashback += userCb;
-          if (o.status === 'approved' || o.status === 'paid') {
-            approvedCount++;
-          } else {
-            pendingCount++;
-          }
+        }
+
+        if (isApproved) {
+          approvedCount++;
+        } else if (o.status === 'pending') {
+          pendingCount++;
         }
       });
 
@@ -230,19 +237,23 @@ async function adminGetStats(req, res) {
     const productCountMap = {};
 
     ordersList.forEach(o => {
-      const userCb = Math.floor(
-        (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
-          ? Number(o.real_cashback)
-          : (Number(o.estimated_cashback) || 0)
-      );
+      const isApproved = o.status === 'approved' || o.status === 'paid';
+      const isShopee = o.platform === 'shopee';
+      const shouldCount = isShopee ? isApproved : (o.status !== 'rejected' && o.status !== 'returned');
 
-      let rawComm = Number(o.shopee_commission || 0);
-      if (rawComm <= 0) {
-        rawComm = userCb > 0 ? userCb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
-      }
-      const comm = Math.floor(rawComm);
+      if (shouldCount) {
+        const userCb = Math.floor(
+          (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
+            ? Number(o.real_cashback)
+            : (Number(o.estimated_cashback) || 0)
+        );
 
-      if (o.status !== 'rejected' && o.status !== 'returned') {
+        let rawComm = Number(o.shopee_commission || 0);
+        if (rawComm <= 0) {
+          rawComm = userCb > 0 ? userCb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
+        }
+        const comm = Math.floor(rawComm);
+
         platformTotalRevenue += comm;
         platformTotalCashbackOwed += userCb;
 
@@ -338,9 +349,13 @@ async function adminGetStats(req, res) {
       }
       const comm = Math.floor(rawComm);
 
+      const isApproved = o.status === 'approved' || o.status === 'paid';
+      const isShopee = o.platform === 'shopee';
+      const shouldCount = isShopee ? isApproved : (o.status !== 'rejected' && o.status !== 'returned');
+
       const monthKey = extractYearMonth(o.created_at) || currentMonthKey;
       if (monthlyStatsMap[monthKey]) {
-        if (o.status !== 'rejected' && o.status !== 'returned') {
+        if (shouldCount) {
           monthlyStatsMap[monthKey].revenue += comm;
           monthlyStatsMap[monthKey].cashback += userCb;
           monthlyStatsMap[monthKey].profit += Math.max(0, comm - userCb);
@@ -440,7 +455,11 @@ async function adminGetStats(req, res) {
         }
         const comm = Math.floor(rawComm);
 
-        if (o.status !== 'rejected' && o.status !== 'returned') {
+        const isApproved = o.status === 'approved' || o.status === 'paid';
+        const isShopee = o.platform === 'shopee';
+        const shouldCount = isShopee ? isApproved : (o.status !== 'rejected' && o.status !== 'returned');
+
+        if (shouldCount) {
           dailyMap[dateKey].revenue += comm;
           dailyMap[dateKey].cashback += userCb;
           dailyMap[dateKey].profit += Math.max(0, comm - userCb);
