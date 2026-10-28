@@ -1122,14 +1122,13 @@ export default function AdminPanel() {
   // Chart Monthly Analytics computed dynamically from real database/orders
   const revenueChartData = useMemo(() => {
     if (adminStats && adminStats.monthlyAnalytics && adminStats.monthlyAnalytics.length > 0) {
-      const hasData = adminStats.monthlyAnalytics.some(a => a.revenue > 0 || a.cashback > 0 || a.profit > 0 || (a.pendingRevenue || 0) > 0);
+      const hasData = adminStats.monthlyAnalytics.some(a => a.revenue > 0 || a.cashback > 0 || a.profit > 0);
       if (hasData) {
         return adminStats.monthlyAnalytics.map(a => ({
           month: a.name,
           DoanhThu: a.revenue,
           HoaHongChi: a.cashback,
-          LoiNhuan: a.profit,
-          TamThoi: a.pendingRevenue || 0
+          LoiNhuan: a.profit
         }));
       }
     }
@@ -1324,7 +1323,7 @@ export default function AdminPanel() {
                 {[
                   { title: "Tổng thành viên", value: totalUsersCount, desc: "Tài khoản người dùng", color: "text-text", icon: <Users className="h-5 w-5 text-text-secondary" />, tab: 'users' },
                   { title: statsPlatform === 'tiktok' ? "Đơn TikTok Shop" : statsPlatform === 'shopee' ? "Đơn Shopee" : "Tổng đơn hàng", value: totalOrdersCount, desc: statsPlatform === 'tiktok' ? "Đơn TikTok Shop" : statsPlatform === 'shopee' ? "Đơn sàn Shopee" : "Phát sinh trên hệ thống", color: "text-text", icon: <ShoppingBag className="h-5 w-5 text-text-secondary" />, tab: statsPlatform === 'tiktok' ? 'tiktok-orders' : 'orders' },
-                  { title: statsPlatform === 'tiktok' ? "Hoa hồng TikTok đã nhận (100%)" : statsPlatform === 'shopee' ? "Hoa hồng Shopee đã nhận (100%)" : "Hoa hồng sàn đã nhận (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: `Tạm thời (đơn chờ): ${((adminStats?.summary as any)?.platformPendingRevenue || 0).toLocaleString('vi-VN')}đ`, color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
+                  { title: statsPlatform === 'tiktok' ? "Hoa hồng TikTok (100%)" : statsPlatform === 'shopee' ? "Hoa hồng Shopee (100%)" : "Tổng hoa hồng sàn (100%)", value: `${(adminStats?.summary?.platformTotalRevenue || 0).toLocaleString('vi-VN')}đ`, desc: "Tổng hoa hồng nhận từ sàn", color: "text-blue-600", icon: <Activity className="h-5 w-5 text-blue-600" /> },
                   { title: "Số tiền còn lại (Lợi nhuận)", value: `${Math.round(adminStats?.summary?.remainingAfterPayout !== undefined ? adminStats.summary.remainingAfterPayout : Math.max(0, (adminStats?.summary?.platformTotalRevenue || 0) - (totalCashbackPaid || 0))).toLocaleString('vi-VN')}đ`, desc: "Sau khi trừ số tiền đã chi trả cho khách", color: "text-success", icon: <ShieldCheck className="h-5 w-5 text-success" /> },
                   { title: "Tiền đã & chờ chi", value: `${(totalCashbackPaid).toLocaleString('vi-VN')}đ`, desc: `Chờ duyệt: ${(adminStats?.summary?.pendingWithdrawalsTotal || 0).toLocaleString('vi-VN')}đ`, color: "text-warning", icon: <Wallet className="h-5 w-5 text-warning" />, tab: 'withdrawals' }
                 ].map((card, idx) => (
@@ -1371,15 +1370,9 @@ export default function AdminPanel() {
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-border/50 text-center">
-                      <div className="bg-amber-50 p-2 rounded-lg">
-                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng tạm thời ({(adminStats?.platformBreakdown?.shopee as any)?.pendingCount || 0} chờ)</span>
-                        <span className="text-xs font-black text-amber-600">
-                          {(((adminStats?.platformBreakdown?.shopee as any)?.pendingRevenue || 0)).toLocaleString('vi-VN')}đ
-                        </span>
-                      </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-center">
                       <div className="bg-bg/60 p-2 rounded-lg">
-                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng đã nhận</span>
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng sàn</span>
                         <span className="text-xs font-black text-blue-600">
                           {((adminStats?.platformBreakdown?.shopee?.revenue || 0)).toLocaleString('vi-VN')}đ
                         </span>
@@ -1424,15 +1417,9 @@ export default function AdminPanel() {
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-border/50 text-center">
-                      <div className="bg-amber-50 p-2 rounded-lg">
-                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng tạm thời ({(adminStats?.platformBreakdown?.tiktok as any)?.pendingCount || 0} chờ)</span>
-                        <span className="text-xs font-black text-amber-600">
-                          {(((adminStats?.platformBreakdown?.tiktok as any)?.pendingRevenue || 0)).toLocaleString('vi-VN')}đ
-                        </span>
-                      </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-center">
                       <div className="bg-bg/60 p-2 rounded-lg">
-                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng đã nhận</span>
+                        <span className="text-[10px] text-text-secondary font-bold block">Hoa hồng sàn</span>
                         <span className="text-xs font-black text-blue-600">
                           {((adminStats?.platformBreakdown?.tiktok?.revenue || 0)).toLocaleString('vi-VN')}đ
                         </span>
@@ -1480,7 +1467,6 @@ export default function AdminPanel() {
                         <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
                         <Area type="monotone" dataKey="DoanhThu" name="Tổng hoa hồng sàn" stroke="#3B82F6" fillOpacity={1} fill="url(#colorDoanhThu)" strokeWidth={2.5} />
                         <Area type="monotone" dataKey="LoiNhuan" name="Hoa hồng giữ lại (Lợi nhuận)" stroke="#22C55E" fillOpacity={1} fill="url(#colorLoiNhuan)" strokeWidth={2.5} />
-                        <Area type="monotone" dataKey="TamThoi" name="Hoa hồng tạm thời (đơn chờ)" stroke="#F59E0B" fillOpacity={0.05} fill="#F59E0B" strokeWidth={2} strokeDasharray="5 4" />
                       </AreaChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -1555,7 +1541,6 @@ export default function AdminPanel() {
                             DoanhThu: d.revenue,
                             HoanTien: d.cashback,
                             LoiNhuan: d.profit,
-                            TamThoi: d.pendingRevenue || 0,
                             DonHang: d.orderCount
                           }))}
                           margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
@@ -1582,7 +1567,6 @@ export default function AdminPanel() {
                           <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
                           <Area type="monotone" dataKey="DoanhThu" name={statsPlatform === 'tiktok' ? 'Hoa hồng TikTok (100%)' : statsPlatform === 'shopee' ? 'Hoa hồng Shopee (100%)' : 'Hoa hồng sàn (100%)'} stroke="#3B82F6" fillOpacity={1} fill="url(#colorDailyRevenue)" strokeWidth={2} />
                           <Area type="monotone" dataKey="LoiNhuan" name="Lợi nhuận Admin" stroke="#22C55E" fillOpacity={1} fill="url(#colorDailyProfit)" strokeWidth={2} />
-                          <Area type="monotone" dataKey="TamThoi" name="Hoa hồng tạm thời (đơn chờ)" stroke="#F59E0B" fillOpacity={0.05} fill="#F59E0B" strokeWidth={2} strokeDasharray="5 4" />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
@@ -1599,8 +1583,7 @@ export default function AdminPanel() {
                             <TableRow>
                               <TableHead>Ngày</TableHead>
                               <TableHead className="text-center">Số Đơn Hàng</TableHead>
-                              <TableHead className="text-right">Hoa Hồng Tạm Thời (Đơn Chờ)</TableHead>
-                              <TableHead className="text-right">{statsPlatform === 'tiktok' ? 'Hoa Hồng TikTok Đã Nhận' : statsPlatform === 'shopee' ? 'Hoa Hồng Shopee Đã Nhận' : 'Hoa Hồng Sàn Đã Nhận'}</TableHead>
+                              <TableHead className="text-right">{statsPlatform === 'tiktok' ? 'Hoa Hồng TikTok (100%)' : statsPlatform === 'shopee' ? 'Hoa Hồng Shopee (100%)' : 'Hoa Hồng Sàn (100%)'}</TableHead>
                               <TableHead className="text-right">Hoàn Tiền Khách</TableHead>
                               <TableHead className="text-right">Lợi Nhuận Giữ Lại</TableHead>
                             </TableRow>
@@ -1617,9 +1600,6 @@ export default function AdminPanel() {
                                       <span className="text-text-secondary font-normal">0</span>
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-right font-bold text-xs text-amber-600">
-                                    {Math.round(dayItem.pendingRevenue || 0).toLocaleString('vi-VN')}đ
-                                  </TableCell>
                                   <TableCell className="text-right font-bold text-xs text-blue-600">
                                     {Math.round(dayItem.revenue).toLocaleString('vi-VN')}đ
                                   </TableCell>
@@ -1633,7 +1613,7 @@ export default function AdminPanel() {
                               ))
                             ) : (
                               <TableRow>
-                                <TableCell colSpan={6} className="text-center py-6 text-xs text-text-secondary">
+                                <TableCell colSpan={5} className="text-center py-6 text-xs text-text-secondary">
                                   Không có dữ liệu cho tháng được chọn
                                 </TableCell>
                               </TableRow>
@@ -1648,8 +1628,7 @@ export default function AdminPanel() {
                           <span>Tổng cộng trong tháng:</span>
                           <div className="flex gap-4">
                             <span>Đơn hàng: <span className="text-primary font-mono">{adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.orderCount || 0), 0)}</span></span>
-                            <span>Hoa hồng tạm thời: <span className="text-amber-600 font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.pendingRevenue || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
-                            <span>Hoa hồng đã nhận: <span className="text-blue-600 font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.revenue || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
+                            <span>Hoa hồng sàn: <span className="text-blue-600 font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.revenue || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
                             <span>Hoàn tiền khách: <span className="text-primary font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.cashback || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
                             <span>Lợi nhuận Admin: <span className="text-success font-mono">{Math.round(adminStats.dailyAnalytics.reduce((acc: number, d: any) => acc + (d.profit || 0), 0)).toLocaleString('vi-VN')}đ</span></span>
                           </div>
@@ -1660,10 +1639,8 @@ export default function AdminPanel() {
                 </Card>
               </div>
 
-              {/* LEADERBOARDS & TOP PERFORMERS SECTION */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                
-                {/* TOP 5 USERS */}
+              {/* LEADERBOARD: TOP 5 USERS */}
+              <div>
                 <Card className="border-border/50">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
@@ -1704,43 +1681,6 @@ export default function AdminPanel() {
                     )}
                   </CardContent>
                 </Card>
-
-                {/* TOP 5 PRODUCTS */}
-                <Card className="border-border/50">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <ShoppingBag className="h-4.5 w-4.5 text-success" /> Top Sản Phẩm Bán Chạy Nhất
-                    </CardTitle>
-                    <CardDescription>Danh mục sản phẩm được mua nhiều nhất trên sàn</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    {adminStats?.topProducts && adminStats.topProducts.length > 0 ? (
-                      <TableContainer>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Tên Sản Phẩm</TableHead>
-                            <TableHead className="text-center">Số Đơn Mua</TableHead>
-                            <TableHead className="text-right">Tổng Giá Trị Đơn</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {adminStats.topProducts.map((p, i) => (
-                            <TableRow key={i}>
-                              <TableCell className="font-semibold text-xs max-w-[200px] truncate">
-                                <span title={p.name}>{p.name}</span>
-                              </TableCell>
-                              <TableCell className="text-center font-bold text-xs">{p.count} lượt</TableCell>
-                              <TableCell className="text-right font-bold text-xs text-text">{Math.round(p.totalAmount).toLocaleString('vi-VN')}đ</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </TableContainer>
-                    ) : (
-                      <div className="p-6 text-center text-xs text-text-secondary">Chưa có dữ liệu sản phẩm phát sinh đơn hàng</div>
-                    )}
-                  </CardContent>
-                </Card>
-
               </div>
 
             </div>
@@ -2300,11 +2240,10 @@ export default function AdminPanel() {
                 <Card className="border-border/60 shadow-xs">
                   <CardContent className="p-4 flex items-center justify-between">
                     <div>
-                      <p className="text-[11px] font-bold text-text-secondary">Hoa hồng tạm thời ({tiktokStats?.pendingOrders || 0} đơn chờ)</p>
-                      <h3 className="text-lg font-black text-amber-600 mt-0.5">{((tiktokStats?.pendingCommission || 0)).toLocaleString('vi-VN')}đ</h3>
-                      <p className="text-[10px] text-text-secondary mt-0.5">Hoàn khách: {((tiktokStats?.pendingCashback || 0)).toLocaleString('vi-VN')}đ</p>
+                      <p className="text-[11px] font-bold text-text-secondary">Hoa hồng sàn (100%)</p>
+                      <h3 className="text-lg font-black text-blue-600 mt-0.5">{((tiktokStats?.totalCommission || 0)).toLocaleString('vi-VN')}đ</h3>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
                       <Activity className="w-5 h-5" />
                     </div>
                   </CardContent>
@@ -2312,11 +2251,10 @@ export default function AdminPanel() {
                 <Card className="border-border/60 shadow-xs">
                   <CardContent className="p-4 flex items-center justify-between">
                     <div>
-                      <p className="text-[11px] font-bold text-text-secondary">Hoa hồng đã nhận ({tiktokStats?.approvedOrders || 0} đơn xong)</p>
-                      <h3 className="text-lg font-black text-blue-600 mt-0.5">{((tiktokStats?.totalCommission || 0)).toLocaleString('vi-VN')}đ</h3>
-                      <p className="text-[10px] text-[#EE4D2D] mt-0.5 font-semibold">Hoàn khách: {((tiktokStats?.totalCashback || 0)).toLocaleString('vi-VN')}đ</p>
+                      <p className="text-[11px] font-bold text-text-secondary">Hoàn tiền khách</p>
+                      <h3 className="text-lg font-black text-[#EE4D2D] mt-0.5">{((tiktokStats?.totalCashback || 0)).toLocaleString('vi-VN')}đ</h3>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-[#EE4D2D]">
                       <Wallet className="w-5 h-5" />
                     </div>
                   </CardContent>

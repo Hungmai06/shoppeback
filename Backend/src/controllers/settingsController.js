@@ -173,26 +173,27 @@ async function adminGetStats(req, res) {
       let approvedCount = 0;
       let pendingCount = 0;
 
-      let pendingRevenue = 0;
-      let pendingCashback = 0;
-
       list.forEach(o => {
         orderAmount += Number(o.order_amount || 0);
-        const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined)
-          ? o.real_cashback
-          : (o.estimated_cashback || 0));
-        const comm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
-          ? o.shopee_commission
-          : (userCb * 2));
+        const userCb = Math.floor(
+          (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
+            ? Number(o.real_cashback)
+            : (Number(o.estimated_cashback) || 0)
+        );
+        let rawComm = Number(o.shopee_commission || 0);
+        if (rawComm <= 0) {
+          rawComm = userCb > 0 ? userCb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
+        }
+        const comm = Math.floor(rawComm);
 
-        if (o.status === 'approved' || o.status === 'paid') {
+        if (o.status !== 'rejected' && o.status !== 'returned') {
           revenue += comm;
           cashback += userCb;
-          approvedCount++;
-        } else if (o.status === 'pending') {
-          pendingCount++;
-          pendingRevenue += comm;
-          pendingCashback += userCb;
+          if (o.status === 'approved' || o.status === 'paid') {
+            approvedCount++;
+          } else {
+            pendingCount++;
+          }
         }
       });
 
@@ -203,9 +204,7 @@ async function adminGetStats(req, res) {
         cashback,
         profit: Math.max(0, revenue - cashback),
         approvedCount,
-        pendingCount,
-        pendingRevenue,
-        pendingCashback
+        pendingCount
       };
     };
 
@@ -223,25 +222,27 @@ async function adminGetStats(req, res) {
     }
     const totalOrders = ordersList.length;
 
-    let platformTotalRevenue = 0; // Total 100% Commission (đã nhận)
-    let platformTotalCashbackOwed = 0; // Total user cashback (đã nhận)
-    let platformPendingRevenue = 0; // Hoa hồng tạm thời (đơn chờ)
-    let platformPendingCashback = 0; // Hoàn tiền tạm thời (đơn chờ)
+    let platformTotalRevenue = 0; // Total 100% Commission
+    let platformTotalCashbackOwed = 0; // Total user cashback
 
     // Top Users & Products map
     const userEarningsMap = {};
     const productCountMap = {};
 
     ordersList.forEach(o => {
-      const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined)
-        ? o.real_cashback
-        : (o.estimated_cashback || 0));
+      const userCb = Math.floor(
+        (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
+          ? Number(o.real_cashback)
+          : (Number(o.estimated_cashback) || 0)
+      );
 
-      const comm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
-        ? o.shopee_commission
-        : (userCb * 2));
+      let rawComm = Number(o.shopee_commission || 0);
+      if (rawComm <= 0) {
+        rawComm = userCb > 0 ? userCb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
+      }
+      const comm = Math.floor(rawComm);
 
-      if (o.status === 'approved' || o.status === 'paid') {
+      if (o.status !== 'rejected' && o.status !== 'returned') {
         platformTotalRevenue += comm;
         platformTotalCashbackOwed += userCb;
 
@@ -252,9 +253,6 @@ async function adminGetStats(req, res) {
           userEarningsMap[o.user_id].earnings += userCb;
           userEarningsMap[o.user_id].orderCount += 1;
         }
-      } else if (o.status === 'pending') {
-        platformPendingRevenue += comm;
-        platformPendingCashback += userCb;
       }
 
       if (o.product_name) {
@@ -323,24 +321,26 @@ async function adminGetStats(req, res) {
         cashback: 0,
         profit: 0,
         shopeeRevenue: 0,
-        tiktokRevenue: 0,
-        pendingRevenue: 0,
-        pendingCashback: 0
+        tiktokRevenue: 0
       };
     }
 
     ordersList.forEach(o => {
-      const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined)
-        ? o.real_cashback
-        : (o.estimated_cashback || 0));
+      const userCb = Math.floor(
+        (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
+          ? Number(o.real_cashback)
+          : (Number(o.estimated_cashback) || 0)
+      );
 
-      const comm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined)
-        ? o.shopee_commission
-        : (userCb * 2));
+      let rawComm = Number(o.shopee_commission || 0);
+      if (rawComm <= 0) {
+        rawComm = userCb > 0 ? userCb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
+      }
+      const comm = Math.floor(rawComm);
 
       const monthKey = extractYearMonth(o.created_at) || currentMonthKey;
       if (monthlyStatsMap[monthKey]) {
-        if (o.status === 'approved' || o.status === 'paid') {
+        if (o.status !== 'rejected' && o.status !== 'returned') {
           monthlyStatsMap[monthKey].revenue += comm;
           monthlyStatsMap[monthKey].cashback += userCb;
           monthlyStatsMap[monthKey].profit += Math.max(0, comm - userCb);
@@ -349,9 +349,6 @@ async function adminGetStats(req, res) {
           } else {
             monthlyStatsMap[monthKey].shopeeRevenue += comm;
           }
-        } else if (o.status === 'pending') {
-          monthlyStatsMap[monthKey].pendingRevenue += comm;
-          monthlyStatsMap[monthKey].pendingCashback += userCb;
         }
       }
     });
@@ -382,9 +379,7 @@ async function adminGetStats(req, res) {
         shopeeRevenue: 0,
         tiktokRevenue: 0,
         shopeeOrderCount: 0,
-        tiktokOrderCount: 0,
-        pendingRevenue: 0,
-        pendingCashback: 0
+        tiktokOrderCount: 0
       };
     }
 
@@ -434,10 +429,18 @@ async function adminGetStats(req, res) {
     selectedMonthOrders.forEach(o => {
       const dateKey = extractYearMonthDay(o.created_at);
       if (dailyMap[dateKey]) {
-        const userCb = Math.floor((o.real_cashback !== null && o.real_cashback !== undefined) ? o.real_cashback : (o.estimated_cashback || 0));
-        const comm = Math.floor((o.shopee_commission !== null && o.shopee_commission !== undefined) ? o.shopee_commission : (userCb * 2));
+        const userCb = Math.floor(
+          (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
+            ? Number(o.real_cashback)
+            : (Number(o.estimated_cashback) || 0)
+        );
+        let rawComm = Number(o.shopee_commission || 0);
+        if (rawComm <= 0) {
+          rawComm = userCb > 0 ? userCb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
+        }
+        const comm = Math.floor(rawComm);
 
-        if (o.status === 'approved' || o.status === 'paid') {
+        if (o.status !== 'rejected' && o.status !== 'returned') {
           dailyMap[dateKey].revenue += comm;
           dailyMap[dateKey].cashback += userCb;
           dailyMap[dateKey].profit += Math.max(0, comm - userCb);
@@ -446,9 +449,6 @@ async function adminGetStats(req, res) {
           } else {
             dailyMap[dateKey].shopeeRevenue += comm;
           }
-        } else if (o.status === 'pending') {
-          dailyMap[dateKey].pendingRevenue += comm;
-          dailyMap[dateKey].pendingCashback += userCb;
         }
         dailyMap[dateKey].orderCount += 1;
         if (o.platform === 'tiktok') {
@@ -470,8 +470,6 @@ async function adminGetStats(req, res) {
         platformTotalRevenue,
         platformTotalCashbackOwed,
         netProfit,
-        platformPendingRevenue,
-        platformPendingCashback,
         remainingAfterPayout
       },
       platformBreakdown: {

@@ -968,20 +968,27 @@ async function adminGetTikTokOrders(req, res) {
     let pendingCashback = 0;
 
     allTikTokOrders.forEach(o => {
-      if (o.status === 'approved' || o.status === 'paid') {
-        const cb = Math.floor(o.real_cashback || o.estimated_cashback || 0);
-        const comm = Math.floor(o.tiktok_commission || (cb * 2));
-        totalRevenue += Math.floor(o.order_amount || 0);
+      if (o.status !== 'rejected' && o.status !== 'returned') {
+        const cb = Math.floor(
+          (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
+            ? Number(o.real_cashback)
+            : (Number(o.estimated_cashback) || 0)
+        );
+        let rawComm = Number(o.tiktok_commission || 0);
+        if (rawComm <= 0) {
+          rawComm = cb > 0 ? cb * 2 : Math.floor(Number(o.order_amount || 0) * 0.1);
+        }
+        const comm = Math.floor(rawComm);
+
+        totalRevenue += Math.floor(Number(o.order_amount || 0));
         totalCommission += comm;
         totalCashback += cb;
-        approvedOrders++;
-      } else if (o.status === 'pending') {
-        const cb = Math.floor(o.estimated_cashback || 0);
-        const comm = Math.floor(o.tiktok_commission || (cb * 2));
-        pendingRevenue += Math.floor(o.order_amount || 0);
-        pendingCommission += comm;
-        pendingCashback += cb;
-        pendingOrders++;
+
+        if (o.status === 'approved' || o.status === 'paid') {
+          approvedOrders++;
+        } else {
+          pendingOrders++;
+        }
       }
     });
 
