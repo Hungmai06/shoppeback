@@ -968,7 +968,9 @@ async function adminGetTikTokOrders(req, res) {
     let pendingCashback = 0;
 
     allTikTokOrders.forEach(o => {
-      if (o.status !== 'rejected' && o.status !== 'returned') {
+      const isApproved = o.status === 'approved' || o.status === 'paid' || o.status === 'completed';
+
+      if (isApproved) {
         const cb = Math.floor(
           (o.real_cashback !== null && o.real_cashback !== undefined && Number(o.real_cashback) > 0)
             ? Number(o.real_cashback)
@@ -983,12 +985,9 @@ async function adminGetTikTokOrders(req, res) {
         totalRevenue += Math.floor(Number(o.order_amount || 0));
         totalCommission += comm;
         totalCashback += cb;
-
-        if (o.status === 'approved' || o.status === 'paid') {
-          approvedOrders++;
-        } else {
-          pendingOrders++;
-        }
+        approvedOrders++;
+      } else if (o.status === 'pending') {
+        pendingOrders++;
       }
     });
 

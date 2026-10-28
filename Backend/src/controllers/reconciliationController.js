@@ -1468,7 +1468,7 @@ async function uploadAndAnalyze(req, res) {
             subId: targetUserId,
             shopeeStatus: mappedStatus,
             status: 'duplicate',
-            reason: `Đơn hàng đã tồn tại và không có thay đổi mới.`
+            reason: `Đơn hàng đã tồn tại trong hệ thống.`
           });
         } else {
           // State differs, user_id differs, or amounts differ
@@ -1495,7 +1495,7 @@ async function uploadAndAnalyze(req, res) {
             subId: targetUserId,
             shopeeStatus: mappedStatus,
             status: 'matched',
-            reason: changeReason || 'Cập nhật thông tin đơn hàng theo file CSV đối soát'
+            reason: changeReason || 'Đơn hàng đã tồn tại trong hệ thống (Cập nhật đối soát)'
           });
         }
       } else {
@@ -1517,7 +1517,7 @@ async function uploadAndAnalyze(req, res) {
             subId: cleanSubId || targetUserId || '',
             shopeeStatus: mappedStatus,
             status: 'ignored',
-            reason: 'Bỏ qua: Không tìm thấy đơn chờ CLK nào trên web khớp với đơn này (Chỉ đối soát các đơn có phát sinh CLK trên web)'
+            reason: 'Chưa có trong hệ thống: Không tìm thấy đơn chờ CLK nào trên web khớp với đơn này'
           });
           continue;
         }

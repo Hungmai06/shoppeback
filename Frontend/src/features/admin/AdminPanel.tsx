@@ -2036,14 +2036,25 @@ export default function AdminPanel() {
                               </TableCell>
                               <TableCell className="text-center">
                                 <div className="flex items-center justify-center gap-1.5">
-                                  <button
-                                    onClick={() => setSelectedOrderDetail(o)}
-                                    className="px-2.5 py-1.5 text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 rounded-button transition-all flex items-center justify-center gap-1"
-                                    title="Xem minh chứng & Chi tiết"
-                                  >
-                                    <Activity className="h-3.5 w-3.5" />
-                                    Minh chứng
-                                  </button>
+                                  {o.screenshot ? (
+                                    <button
+                                      onClick={() => setSelectedOrderDetail(o)}
+                                      className="px-2.5 py-1.5 text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 rounded-button transition-all flex items-center justify-center gap-1"
+                                      title="Xem ảnh minh chứng & Chi tiết"
+                                    >
+                                      <Activity className="h-3.5 w-3.5" />
+                                      Minh chứng
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => setSelectedOrderDetail(o)}
+                                      className="px-2.5 py-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-button transition-all flex items-center justify-center gap-1 border border-emerald-200"
+                                      title="Đơn đã tồn tại trong hệ thống - Bấm để xem chi tiết"
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                      Tồn tại
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => {
                                       setEditingOrder(o);
@@ -2792,7 +2803,7 @@ export default function AdminPanel() {
                                 <TableHead>Tên Sản Phẩm</TableHead>
                                 <TableHead className="text-right">Số Tiền</TableHead>
                                 <TableHead className="text-right">Hoàn Lại</TableHead>
-                                <TableHead>Kết Quả Quét</TableHead>
+                                <TableHead>Trạng Thái Hệ Thống</TableHead>
                                 <TableHead>Chi Tiết</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -2812,11 +2823,17 @@ export default function AdminPanel() {
                                   <TableCell className="text-right font-semibold text-xs">{row.amount.toLocaleString('vi-VN')}đ</TableCell>
                                   <TableCell className="text-right font-bold text-primary text-xs">{row.cashback.toLocaleString('vi-VN')}đ</TableCell>
                                   <TableCell>
-                                    {row.status === 'matched' && <Badge variant="success">Trùng khớp</Badge>}
-                                    {row.status === 'duplicate' && <Badge variant="warning">Trùng lặp</Badge>}
-                                    {row.status === 'invalid' && <Badge variant="danger">Lỗi dữ liệu</Badge>}
-                                    {row.status === 'missing' && <Badge variant="outline" className="text-danger border-danger/30 bg-red-50/50">Chưa ghi nhận</Badge>}
-                                    {row.status === 'ignored' && <Badge variant="outline" className="text-text-secondary border-border bg-gray-50">Bỏ qua (Không SubID)</Badge>}
+                                    {(row.status === 'matched' || row.status === 'duplicate') ? (
+                                      <Badge className="bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 text-[10px]">
+                                        Tồn tại trong hệ thống
+                                      </Badge>
+                                    ) : row.status === 'invalid' ? (
+                                      <Badge variant="danger" className="text-[10px] font-bold">Lỗi dữ liệu</Badge>
+                                    ) : (
+                                      <Badge className="bg-amber-50 text-amber-800 font-bold border border-amber-300 text-[10px]">
+                                        Chưa có trong hệ thống
+                                      </Badge>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-[10px] text-text-secondary font-medium">{row.reason}</TableCell>
                                 </TableRow>
@@ -3249,20 +3266,36 @@ export default function AdminPanel() {
             <DialogHeader>
               <div className="flex justify-between items-center pr-6">
                 <div>
-                  <DialogTitle>Minh chứng đơn {selectedOrderDetail.id}</DialogTitle>
-                  <p className="text-[10px] text-text-secondary">Thành viên gửi đối soát: {selectedOrderDetail.userId}</p>
+                  <DialogTitle>
+                    {selectedOrderDetail.screenshot ? `Minh chứng đơn ${selectedOrderDetail.id}` : `Chi tiết đơn ${selectedOrderDetail.id}`}
+                  </DialogTitle>
+                  <p className="text-[10px] text-text-secondary">Thành viên: {selectedOrderDetail.userId || 'Chưa gán'}</p>
                 </div>
-                <Badge variant="info">Chờ duyệt ảnh</Badge>
+                {selectedOrderDetail.screenshot ? (
+                  <Badge variant="info">Chờ duyệt ảnh</Badge>
+                ) : (
+                  <Badge variant="success" className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold">
+                    Tồn tại trong hệ thống
+                  </Badge>
+                )}
               </div>
             </DialogHeader>
             <DialogContent className="flex flex-col gap-4 text-left">
-              <p className="text-xs text-text font-bold">Hình ảnh chụp màn hình gửi đối soát:</p>
-
-              <img
-                src={selectedOrderDetail.screenshot}
-                alt="Shopee screenshot"
-                className="w-full h-auto object-contain border border-border rounded-input max-h-[300px]"
-              />
+              {selectedOrderDetail.screenshot ? (
+                <>
+                  <p className="text-xs text-text font-bold">Hình ảnh chụp màn hình gửi đối soát:</p>
+                  <img
+                    src={selectedOrderDetail.screenshot}
+                    alt="Shopee screenshot"
+                    className="w-full h-auto object-contain border border-border rounded-input max-h-[300px]"
+                  />
+                </>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Đơn hàng đã tồn tại trong hệ thống (Được đồng bộ đối soát tự động)</span>
+                </div>
+              )}
 
               <div className="bg-bg p-4 rounded-input border border-border/50 mt-2">
                 <p className="text-xs font-bold text-text">Thông tin đơn hàng đối chiếu:</p>
@@ -3602,7 +3635,7 @@ export default function AdminPanel() {
                       <TableHead className="text-right">Giá Trị</TableHead>
                       <TableHead className="text-right">Hoa Hồng</TableHead>
                       <TableHead>Trạng Thái Shopee</TableHead>
-                      <TableHead>Phân Loại</TableHead>
+                      <TableHead>Trạng Thái Hệ Thống</TableHead>
                       <TableHead>Chi Tiết</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -3639,11 +3672,17 @@ export default function AdminPanel() {
                           {!row.shopeeStatus && <span className="text-xs text-text-secondary">-</span>}
                         </TableCell>
                         <TableCell>
-                          {row.status === 'matched' && <Badge variant="success">Khớp</Badge>}
-                          {row.status === 'duplicate' && <Badge variant="warning">Trùng</Badge>}
-                          {row.status === 'invalid' && <Badge variant="danger">Lỗi</Badge>}
-                          {row.status === 'missing' && <Badge variant="outline" className="text-danger border-danger/30 bg-red-50/50">Thiếu</Badge>}
-                          {row.status === 'ignored' && <Badge variant="outline" className="text-text-secondary border-border bg-gray-50">Bỏ qua</Badge>}
+                          {(row.status === 'matched' || row.status === 'duplicate') ? (
+                            <Badge className="bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 text-[10px]">
+                              Tồn tại trong hệ thống
+                            </Badge>
+                          ) : row.status === 'invalid' ? (
+                            <Badge variant="danger" className="text-[10px] font-bold">Lỗi dữ liệu</Badge>
+                          ) : (
+                            <Badge className="bg-amber-50 text-amber-800 font-bold border border-amber-300 text-[10px]">
+                              Chưa có trong hệ thống
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-[10px] text-text-secondary font-medium min-w-[150px]">{row.reason}</TableCell>
                       </TableRow>
@@ -4820,7 +4859,7 @@ export default function AdminPanel() {
                         <TableHead className="text-right">Hoàn tiền</TableHead>
                         <TableHead className="text-center">Trạng thái sàn</TableHead>
                         <TableHead>Thành viên khớp</TableHead>
-                        <TableHead className="text-center">Database</TableHead>
+                        <TableHead className="text-center">Trạng Thái Hệ Thống</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody className="text-xs">
@@ -4902,12 +4941,12 @@ export default function AdminPanel() {
                             </TableCell>
                             <TableCell className="text-center">
                               {o.is_imported ? (
-                                <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-300">
-                                  Đã có ({o.local_status})
+                                <Badge className="text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                                  Tồn tại trong hệ thống ({o.local_status || 'đã lưu'})
                                 </Badge>
                               ) : (
-                                <Badge className="text-[10px] bg-blue-100 text-blue-800 font-bold">
-                                  Đơn Mới
+                                <Badge className="text-[10px] bg-amber-50 text-amber-800 font-bold border border-amber-300">
+                                  Chưa có trong hệ thống
                                 </Badge>
                               )}
                             </TableCell>
