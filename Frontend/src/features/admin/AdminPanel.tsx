@@ -143,7 +143,6 @@ export default function AdminPanel() {
   const [tiktokStatusFilter, setTiktokStatusFilter] = useState('all');
   const [tiktokPage, setTiktokPage] = useState(1);
   const [isLoadingTikTokOrders, setIsLoadingTikTokOrders] = useState(false);
-  const [isSyncingTikTok, setIsSyncingTikTok] = useState(false);
   const [editingTikTokOrder, setEditingTikTokOrder] = useState<Order | null>(null);
   const [editTikTokStatus, setEditTikTokStatus] = useState<Order['status']>('pending');
   const [editTikTokRealCashback, setEditTikTokRealCashback] = useState('');
@@ -746,22 +745,6 @@ export default function AdminPanel() {
       setIsClearUnassignedTikTokModalOpen(false);
     } else {
       toast.error('Lỗi khi xóa đơn hàng TikTok');
-    }
-  };
-
-  const handleSyncTikTokFromRioHub = async () => {
-    setIsSyncingTikTok(true);
-    try {
-      const res = await syncTikTokOrdersAdmin();
-      if (res.success) {
-        toast.success(res.message);
-      } else {
-        toast.error(res.message);
-      }
-    } catch (err: any) {
-      toast.error('Lỗi kết nối khi đồng bộ: ' + err.message);
-    } finally {
-      setIsSyncingTikTok(false);
     }
   };
 
@@ -2036,25 +2019,6 @@ export default function AdminPanel() {
                               </TableCell>
                               <TableCell className="text-center">
                                 <div className="flex items-center justify-center gap-1.5">
-                                  {o.screenshot ? (
-                                    <button
-                                      onClick={() => setSelectedOrderDetail(o)}
-                                      className="px-2.5 py-1.5 text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 rounded-button transition-all flex items-center justify-center gap-1"
-                                      title="Xem ảnh minh chứng & Chi tiết"
-                                    >
-                                      <Activity className="h-3.5 w-3.5" />
-                                      Minh chứng
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => setSelectedOrderDetail(o)}
-                                      className="px-2.5 py-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-button transition-all flex items-center justify-center gap-1 border border-emerald-200"
-                                      title="Đơn đã tồn tại trong hệ thống - Bấm để xem chi tiết"
-                                    >
-                                      <Check className="h-3.5 w-3.5" />
-                                      Tồn tại
-                                    </button>
-                                  )}
                                   <button
                                     onClick={() => {
                                       setEditingOrder(o);
@@ -2154,29 +2118,6 @@ export default function AdminPanel() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     onClick={() => {
-                      setRiohubFilters(prev => ({
-                        ...prev,
-                        creator_username: (settings as any)?.riohubCreatorUsername || 'hungrevieweverything'
-                      }));
-                      setIsRiohubReconcileModalOpen(true);
-                    }}
-                    className="flex items-center gap-1.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white hover:opacity-95 font-bold text-xs shadow-md border border-indigo-500/30"
-                  >
-                    <Activity className="h-4 w-4 text-emerald-400" />
-                    Đối soát đơn hàng TikTok
-                  </Button>
-                  <Button
-                    onClick={handleSyncTikTokFromRioHub}
-                    disabled={isSyncingTikTok}
-                    variant="outline"
-                    className="flex items-center gap-1.5 border-border bg-white hover:bg-bg font-bold text-xs shadow-xs"
-                    title="Tự động đồng bộ các đơn mới cập nhật gần đây"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${isSyncingTikTok ? 'animate-spin' : ''}`} />
-                    {isSyncingTikTok ? 'Đang đồng bộ...' : 'Đồng bộ nhanh'}
-                  </Button>
-                  <Button
-                    onClick={() => {
                       setNewTikTokForm({
                         id: '',
                         userId: '',
@@ -2194,21 +2135,6 @@ export default function AdminPanel() {
                     className="flex items-center gap-1.5 bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm"
                   >
                     <Plus className="h-4 w-4" /> Tạo đơn TikTok mới
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsClearUnassignedTikTokModalOpen(true)}
-                    className="flex items-center gap-1.5 border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 font-bold text-xs"
-                    title="Xóa tất cả các đơn TikTok chưa xác định thành viên"
-                  >
-                    <Trash2 className="h-4 w-4 text-amber-600" /> Xóa đơn chưa gán
-                  </Button>
-                  <Button
-                    onClick={() => setIsClearTikTokModalOpen(true)}
-                    className="flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 font-bold text-xs shadow-sm"
-                    title="Xóa tất cả đơn hàng TikTok"
-                  >
-                    <Trash2 className="h-4 w-4" /> Xóa toàn bộ đơn TikTok
                   </Button>
                 </div>
               </div>
