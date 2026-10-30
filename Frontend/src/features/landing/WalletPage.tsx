@@ -1,16 +1,55 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/appStore';
 import type { Withdrawal } from '../../store/appStore';
 import { 
-  Lock, Wallet, Landmark, Search
+  Lock, Wallet, Landmark, Search, ArrowDownLeft, ArrowUpRight,
+  ShoppingBag, Users, Gift, Sparkles, Clock, CheckCircle2, XCircle
 } from 'lucide-react';
 import { Button, Card, CardContent, Badge } from '../../components/ui/core';
 import { toast } from 'sonner';
 
+interface ReferralCreditItem {
+  id: string;
+  orderId: string;
+  f1Id: string;
+  f1Name: string;
+  f1Email?: string;
+  productName: string;
+  productImage?: string;
+  platform: 'shopee' | 'tiktok';
+  orderAmount: number;
+  tier: string;
+  baseCashback: number;
+  bonus: number;
+  status: string;
+  isCompleted: boolean;
+  statusLabel: string;
+  createdAt: string;
+}
+
+interface CreditTransaction {
+  id: string;
+  amount: number;
+  sourceType: 'shopee' | 'tiktok' | 'referral' | 'promo';
+  sourceLabel: string;
+  title: string;
+  subtitle: string;
+  status: 'credited' | 'pending' | 'cancelled';
+  createdAt: string;
+}
+
 export default function WalletPage() {
   const navigate = useNavigate();
-  const { currentUser, withdrawals, orders, addWithdrawalRequest, updateProfile } = useAppStore();
+  const {
+    currentUser,
+    withdrawals,
+    orders,
+    addWithdrawalRequest,
+    updateProfile,
+    fetchUserOrders,
+    fetchUserWithdrawals
+  } = useAppStore();
   const isLoggedIn = !!currentUser;
 
   // Form states
@@ -27,9 +66,49 @@ export default function WalletPage() {
   const [walletPhone, setWalletPhone] = useState('');
   const [walletHolder, setWalletHolder] = useState('');
 
-  // Search & Filter states
+  // History Tab State ('withdrawals' | 'credits')
+  const [historyTab, setHistoryTab] = useState<'withdrawals' | 'credits'>('credits');
+
+  // Search & Filter states for Withdrawals
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // Search & Filter states for Credits (Lịch sử cộng tiền)
+  const [creditSearchTerm, setCreditSearchTerm] = useState('');
+  const [creditSourceFilter, setCreditSourceFilter] = useState<'all' | 'shopee' | 'tiktok' | 'referral' | 'promo'>('all');
+  const [creditStatusFilter, setCreditStatusFilter] = useState<'all' | 'credited' | 'pending' | 'cancelled'>('all');
+  const [referralHistory, setReferralHistory] = useState<ReferralCreditItem[]>([]);
+
+  // Fetch latest orders, withdrawals, and referral history when logged in
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setReferralHistory([]);
+      return;
+    }
+
+    fetchUserOrders();
+    fetchUserWithdrawals();
+
+    const loadReferralHistory = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const apiBase = import.meta.env.VITE_API_BASE || '/api';
+        const res = await fetch(`${apiBase}/referrals/history`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setReferralHistory(data);
+          }
+        }
+      } catch {
+        // Ignore network error quietly
+      }
+    };
+
+    loadReferralHistory();
+  }, [isLoggedIn, fetchUserOrders, fetchUserWithdrawals]);
 
   // Load profile data into form fields on mount or user change
   useEffect(() => {
@@ -58,12 +137,28 @@ export default function WalletPage() {
     ? withdrawals.filter(w => w.userId === currentUser.id)
     : [];
 
+  const pendingReferralBonus = isLoggedIn
+    ? referralHistory
+        .filter(r => !r.isCompleted && r.status !== 'rejected' && r.status !== 'cancelled')
+        .reduce((sum, r) => sum + Math.floor(r.bonus || 0), 0)
+    : 0;
+
+  const approvedReferralBonus = isLoggedIn
+    ? (currentUser.referralEarnings && currentUser.referralEarnings > 0
+        ? Math.floor(currentUser.referralEarnings)
+        : referralHistory.filter(r => r.isCompleted).reduce((sum, r) => sum + Math.floor(r.bonus || 0), 0))
+    : 0;
+
   const pendingCashback = isLoggedIn 
-    ? userOrders.filter(o => o.status === 'pending').reduce((sum, o) => sum + o.estimatedCashback, 0)
+    ? userOrders.filter(o => o.status === 'pending').reduce((sum, o) => sum + o.estimatedCashback, 0) + pendingReferralBonus
+    : 0;
+
+  const approvedOrderCashback = isLoggedIn
+    ? userOrders.filter(o => o.status === 'approved' || o.status === 'paid').reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback), 0)
     : 0;
 
   const approvedCashback = isLoggedIn
-    ? userOrders.filter(o => o.status === 'approved' || o.status === 'paid').reduce((sum, o) => sum + (o.realCashback || o.estimatedCashback), 0)
+    ? approvedOrderCashback + approvedReferralBonus
     : 0;
 
   const paidWithdrawals = isLoggedIn
@@ -74,6 +169,170 @@ export default function WalletPage() {
   const availableBalance = isLoggedIn
     ? Math.max(0, currentUser.balance || 0)
     : 0;
+
+  // Build unified list of Credit Transactions (Lịch sử cộng tiền)
+  const creditTransactions = useMemo<CreditTransaction[]>(() => {
+    if (!isLoggedIn) return [];
+
+    const items: CreditTransaction[] = [];
+
+    // 1. Hoàn tiền mua sắm từ đơn Shopee & TikTok Shop
+    userOrders.forEach(o => {
+      const isTikTok = (o as any).platform === 'tiktok' || String(o.id).startsWith('TT');
+      const isBonusOrPromo = Boolean(
+        o.notes && /(ưu đãi|thưởng|khuyến mãi|bonus|promo|event|sự kiện)/i.test(o.notes)
+      );
+      const amount = Math.floor(
+        o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0)
+      );
+
+      let txStatus: CreditTransaction['status'] = 'pending';
+      if (o.status === 'approved' || o.status === 'paid') txStatus = 'credited';
+      else if (o.status === 'rejected' || o.status === 'returned') txStatus = 'cancelled';
+
+      if (isBonusOrPromo) {
+        items.push({
+          id: `ORD-PROMO-${o.id}`,
+          amount,
+          sourceType: 'promo',
+          sourceLabel: 'Chương trình ưu đãi',
+          title: o.productName || 'Thưởng chương trình ưu đãi',
+          subtitle: `Mã tham chiếu: #${o.id}${o.notes ? ` • ${o.notes}` : ''}`,
+          status: txStatus,
+          createdAt: o.createdTime || ''
+        });
+      } else {
+        items.push({
+          id: `ORD-${o.id}`,
+          amount,
+          sourceType: isTikTok ? 'tiktok' : 'shopee',
+          sourceLabel: isTikTok ? 'Hoàn tiền TikTok Shop' : 'Hoàn tiền Shopee',
+          title: o.productName || (isTikTok ? 'Đơn hàng TikTok Shop' : 'Đơn hàng Shopee'),
+          subtitle: `Mã đơn: #${o.id} • Giá trị đơn: ${Math.floor(o.orderAmount || 0).toLocaleString('vi-VN')}đ`,
+          status: txStatus,
+          createdAt: o.createdTime || ''
+        });
+      }
+    });
+
+    // 2. Hoa hồng từ đơn giới thiệu bạn bè (F1 +20%)
+    referralHistory.forEach(r => {
+      const amount = Math.floor(r.bonus || 0);
+      let txStatus: CreditTransaction['status'] = 'pending';
+      if (r.isCompleted || r.status === 'approved' || r.status === 'paid') txStatus = 'credited';
+      else if (r.status === 'rejected' || r.status === 'cancelled' || r.status === 'returned') txStatus = 'cancelled';
+
+      const platformName = r.platform === 'tiktok' ? 'TikTok Shop' : 'Shopee';
+      items.push({
+        id: `REF-${r.id}-${r.orderId}`,
+        amount,
+        sourceType: 'referral',
+        sourceLabel: 'Đơn giới thiệu F1 (+20%)',
+        title: `Hoa hồng giới thiệu từ ${r.f1Name || 'Thành viên F1'}`,
+        subtitle: `Đơn ${platformName} #${r.orderId}: ${r.productName || 'Sản phẩm mua sắm'} • Hoàn gốc F1: ${Math.floor(r.baseCashback || 0).toLocaleString('vi-VN')}đ`,
+        status: txStatus,
+        createdAt: r.createdAt || ''
+      });
+    });
+
+    // 3. Hoàn lại tiền vào ví khi lệnh rút bị từ chối hoặc chương trình hoàn ví
+    activeWithdrawals
+      .filter(w => w.status === 'rejected')
+      .forEach(w => {
+        items.push({
+          id: `REFUND-WD-${w.id}`,
+          amount: Math.floor(w.amount || 0),
+          sourceType: 'promo',
+          sourceLabel: 'Hoàn lại số dư ví',
+          title: `Hoàn lại tiền vào ví từ lệnh rút #${w.id}`,
+          subtitle: `${w.bankName} (${w.accountNumber})${w.notes ? ` • Lý do: ${w.notes}` : ' • Đã cộng trả lại vào số dư ví'}`,
+          status: 'credited',
+          createdAt: w.processedDate || w.requestDate || ''
+        });
+      });
+
+    return items.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    });
+  }, [isLoggedIn, userOrders, referralHistory, activeWithdrawals]);
+
+  const filteredCredits = useMemo(() => {
+    return creditTransactions.filter(tx => {
+      if (creditSourceFilter !== 'all' && tx.sourceType !== creditSourceFilter) return false;
+      if (creditStatusFilter !== 'all' && tx.status !== creditStatusFilter) return false;
+
+      if (creditSearchTerm.trim() !== '') {
+        const q = creditSearchTerm.toLowerCase();
+        const matchTitle = tx.title.toLowerCase().includes(q);
+        const matchSub = tx.subtitle.toLowerCase().includes(q);
+        const matchSource = tx.sourceLabel.toLowerCase().includes(q);
+        if (!matchTitle && !matchSub && !matchSource) return false;
+      }
+
+      return true;
+    });
+  }, [creditTransactions, creditSourceFilter, creditStatusFilter, creditSearchTerm]);
+
+  const getCreditSourceBadge = (sourceType: CreditTransaction['sourceType'], label: string) => {
+    switch (sourceType) {
+      case 'shopee':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-50 text-[#EE4D2D] border border-orange-200/80">
+            <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+            {label}
+          </span>
+        );
+      case 'tiktok':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-900 text-white border border-slate-800">
+            <Sparkles className="w-3.5 h-3.5 text-[#00F2FE] shrink-0" />
+            {label}
+          </span>
+        );
+      case 'referral':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+            <Users className="w-3.5 h-3.5 shrink-0" />
+            {label}
+          </span>
+        );
+      case 'promo':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+            <Gift className="w-3.5 h-3.5 shrink-0" />
+            {label}
+          </span>
+        );
+    }
+  };
+
+  const getCreditStatusBadge = (status: CreditTransaction['status']) => {
+    switch (status) {
+      case 'credited':
+        return (
+          <Badge className="bg-emerald-500 text-white border-none text-[10px] py-0.5 px-2.5 font-bold inline-flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" />
+            Đã cộng vào ví
+          </Badge>
+        );
+      case 'pending':
+        return (
+          <Badge className="bg-amber-500 text-white border-none text-[10px] py-0.5 px-2.5 font-bold inline-flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            Chờ đối soát
+          </Badge>
+        );
+      case 'cancelled':
+        return (
+          <Badge className="bg-rose-500 text-white border-none text-[10px] py-0.5 px-2.5 font-bold inline-flex items-center gap-1">
+            <XCircle className="w-3 h-3" />
+            Đã hủy / Hoàn hàng
+          </Badge>
+        );
+    }
+  };
 
   const handleWithdrawalRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -407,91 +666,302 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {/* BOTTOM SECTION: HISTORY TABLE */}
+      {/* BOTTOM SECTION: DUAL-TAB WALLET HISTORY (LỊCH SỬ CỘNG TIỀN & LỊCH SỬ RÚT TIỀN) */}
       <div className="mt-12 text-left">
-        <Card className="border border-border/50 bg-white shadow-soft rounded-2xl">
+        <Card className="border border-border/50 bg-white shadow-soft rounded-2xl overflow-hidden">
           <CardContent className="p-6 md:p-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-              <h3 className="text-lg font-black text-text">Lịch Sử Rút Tiền</h3>
-              
-              {/* Table search & filters */}
-              <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-                {/* Search box */}
-                <div className="relative w-full sm:w-64">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                    <Search className="h-4 w-4 text-text-secondary" />
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Tìm tên tài khoản, STK, ngân hàng..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 border border-border text-xs rounded-input bg-bg focus:ring-1 focus:ring-primary focus:border-transparent outline-none"
-                  />
-                </div>
-
-                {/* Status dropdown */}
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full sm:w-auto px-4 py-2 border border-border text-xs rounded-input bg-white font-semibold"
-                >
-                  <option value="all">Tất cả trạng thái</option>
-                  <option value="pending">Đang xử lý</option>
-                  <option value="approved">Thành công</option>
-                  <option value="rejected">Bị từ chối</option>
-                </select>
-
-                {/* Search Button */}
+            {/* TOP TABS SWITCHER */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 mb-6 border-b border-border/70">
+              <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/90 border border-slate-200/80 rounded-xl w-full sm:w-auto">
                 <button
                   type="button"
-                  className="w-full sm:w-auto bg-primary text-white hover:bg-primary/90 text-xs font-bold py-2 px-5 rounded-input flex items-center justify-center gap-2.5 transition-all shadow-sm"
+                  onClick={() => setHistoryTab('credits')}
+                  className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-black transition-all ${
+                    historyTab === 'credits'
+                      ? 'bg-white text-emerald-600 shadow-sm ring-1 ring-emerald-500/20'
+                      : 'text-text-secondary hover:text-text'
+                  }`}
                 >
-                  <Search className="h-3.5 w-3.5" />
-                  Tìm kiếm
+                  <ArrowDownLeft className={`w-4 h-4 ${historyTab === 'credits' ? 'text-emerald-600' : 'text-text-secondary'}`} />
+                  <span>Lịch Sử Cộng Tiền</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    historyTab === 'credits'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    {creditTransactions.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHistoryTab('withdrawals')}
+                  className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-black transition-all ${
+                    historyTab === 'withdrawals'
+                      ? 'bg-white text-primary shadow-sm ring-1 ring-primary/20'
+                      : 'text-text-secondary hover:text-text'
+                  }`}
+                >
+                  <ArrowUpRight className={`w-4 h-4 ${historyTab === 'withdrawals' ? 'text-primary' : 'text-text-secondary'}`} />
+                  <span>Lịch Sử Rút Tiền</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    historyTab === 'withdrawals'
+                      ? 'bg-primary/10 text-primary'
+                      : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    {activeWithdrawals.length}
+                  </span>
                 </button>
               </div>
+
+              {/* Dynamic Subtitle */}
+              <p className="text-xs text-text-secondary font-medium">
+                {historyTab === 'credits'
+                  ? 'Chi tiết các khoản cộng tiền từ hoàn tiền đơn hàng Shopee, TikTok Shop, hoa hồng giới thiệu F1 (+20%) và các chương trình ưu đãi.'
+                  : 'Theo dõi trạng thái xử lý và giải ngân các lệnh rút tiền về Ngân hàng / Ví điện tử.'}
+              </p>
             </div>
 
-            {/* Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-border bg-bg/50 font-bold text-text-secondary text-[11px] uppercase tracking-wider">
-                    <th className="py-4 px-4 rounded-l-input">Số tiền rút</th>
-                    <th className="py-4 px-4">Phương thức</th>
-                    <th className="py-4 px-4">Thông tin tài khoản</th>
-                    <th className="py-4 px-4">Trạng thái</th>
-                    <th className="py-4 px-4 rounded-r-input">Ngày tạo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredWithdrawals.length > 0 ? (
-                    filteredWithdrawals.map((item) => (
-                      <tr key={item.id} className="border-b border-border hover:bg-primary/5 transition-colors">
-                        <td className="py-4 px-4 font-black text-text text-sm">{item.amount.toLocaleString('vi-VN')}đ</td>
-                        <td className="py-4 px-4 font-bold text-text-secondary">
-                          {['MoMo', 'ZaloPay', 'Viettel Money', 'ShopeePay'].includes(item.bankName) ? 'Ví điện tử' : 'Ngân hàng'}
-                        </td>
-                        <td className="py-4 px-4 space-y-1">
-                          <p className="font-bold text-text">{item.bankName}</p>
-                          <p className="font-mono text-text-secondary text-[10px]">STK: {item.accountNumber}</p>
-                          <p className="text-[10px] text-text-secondary/80 font-bold uppercase">{item.accountHolder}</p>
-                        </td>
-                        <td className="py-4 px-4">{getWithdrawalBadge(item.status)}</td>
-                        <td className="py-4 px-4 text-text-secondary font-medium">{item.requestDate}</td>
+            {historyTab === 'credits' ? (
+              <>
+                {/* BREAKDOWN PILLS BY SOURCE */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-6">
+                  <div className="p-3.5 rounded-xl border border-orange-200/70 bg-gradient-to-br from-orange-50/60 to-white flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold text-text-secondary uppercase tracking-wide">Hoàn tiền mua sắm (Shopee/TikTok)</p>
+                      <p className="text-base sm:text-lg font-black text-primary mt-0.5">
+                        +{approvedOrderCashback.toLocaleString('vi-VN')}đ
+                      </p>
+                      <span className="text-[10px] text-text-secondary font-medium">
+                        Đã duyệt ({userOrders.filter(o => o.status === 'approved' || o.status === 'paid').length} đơn)
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-orange-100/80 text-primary flex items-center justify-center shrink-0">
+                      <ShoppingBag className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-purple-200/70 bg-gradient-to-br from-purple-50/60 to-white flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold text-text-secondary uppercase tracking-wide">Hoa hồng đơn giới thiệu (F1 +20%)</p>
+                      <p className="text-base sm:text-lg font-black text-purple-700 mt-0.5">
+                        +{approvedReferralBonus.toLocaleString('vi-VN')}đ
+                      </p>
+                      <span className="text-[10px] text-text-secondary font-medium">
+                        Chờ duyệt: +{pendingReferralBonus.toLocaleString('vi-VN')}đ
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-purple-100/80 text-purple-700 flex items-center justify-center shrink-0">
+                      <Users className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/60 to-white flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold text-text-secondary uppercase tracking-wide">Tổng tiền đã cộng vào ví</p>
+                      <p className="text-base sm:text-lg font-black text-emerald-700 mt-0.5">
+                        +{approvedCashback.toLocaleString('vi-VN')}đ
+                      </p>
+                      <span className="text-[10px] text-text-secondary font-medium">
+                        Đang chờ cộng: +{pendingCashback.toLocaleString('vi-VN')}đ
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
+                      <Gift className="w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* CREDITS HEADER & FILTERS */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                  <h3 className="text-lg font-black text-text flex items-center gap-2">
+                    <span>Lịch Sử Cộng Tiền</span>
+                  </h3>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-wrap">
+                    {/* Search box */}
+                    <div className="relative w-full sm:w-64">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <Search className="h-4 w-4 text-text-secondary" />
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="Tìm mã đơn, sản phẩm, người giới thiệu..."
+                        value={creditSearchTerm}
+                        onChange={(e) => setCreditSearchTerm(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 border border-border text-xs rounded-input bg-bg focus:ring-1 focus:ring-primary focus:border-transparent outline-none"
+                      />
+                    </div>
+
+                    {/* Source filter dropdown */}
+                    <select
+                      value={creditSourceFilter}
+                      onChange={(e) => setCreditSourceFilter(e.target.value as any)}
+                      className="w-full sm:w-auto px-3.5 py-2 border border-border text-xs rounded-input bg-white font-semibold"
+                    >
+                      <option value="all">Tất cả nguồn cộng tiền</option>
+                      <option value="shopee">Hoàn tiền đơn Shopee</option>
+                      <option value="tiktok">Hoàn tiền đơn TikTok Shop</option>
+                      <option value="referral">Đơn giới thiệu bạn bè (F1 +20%)</option>
+                      <option value="promo">Chương trình ưu đãi / Hoàn ví</option>
+                    </select>
+
+                    {/* Status filter dropdown */}
+                    <select
+                      value={creditStatusFilter}
+                      onChange={(e) => setCreditStatusFilter(e.target.value as any)}
+                      className="w-full sm:w-auto px-3.5 py-2 border border-border text-xs rounded-input bg-white font-semibold"
+                    >
+                      <option value="all">Tất cả trạng thái</option>
+                      <option value="credited">Đã cộng vào ví</option>
+                      <option value="pending">Chờ đối soát</option>
+                      <option value="cancelled">Đã hủy / Hoàn hàng</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* CREDITS TABLE */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-border bg-bg/50 font-bold text-text-secondary text-[11px] uppercase tracking-wider">
+                        <th className="py-4 px-4 rounded-l-input">Số tiền cộng</th>
+                        <th className="py-4 px-4">Nguồn / Chương trình</th>
+                        <th className="py-4 px-4">Chi tiết giao dịch</th>
+                        <th className="py-4 px-4">Trạng thái</th>
+                        <th className="py-4 px-4 rounded-r-input">Thời gian</th>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="text-center py-16 text-text-secondary/60 font-semibold text-sm">
-                        Bạn chưa thực hiện lệnh rút tiền nào.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {filteredCredits.length > 0 ? (
+                        filteredCredits.map((tx) => (
+                          <tr key={tx.id} className="border-b border-border hover:bg-emerald-50/30 transition-colors">
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              <span className={`font-black text-sm ${
+                                tx.status === 'credited'
+                                  ? 'text-emerald-600'
+                                  : tx.status === 'pending'
+                                    ? 'text-amber-600'
+                                    : 'text-slate-400 line-through'
+                              }`}>
+                                +{tx.amount.toLocaleString('vi-VN')}đ
+                              </span>
+                              {tx.status === 'pending' && (
+                                <span className="block text-[10px] font-semibold text-amber-600/80">Tạm tính</span>
+                              )}
+                            </td>
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              {getCreditSourceBadge(tx.sourceType, tx.sourceLabel)}
+                            </td>
+                            <td className="py-4 px-4 max-w-md">
+                              <p className="font-bold text-text line-clamp-1">{tx.title}</p>
+                              <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-1">{tx.subtitle}</p>
+                            </td>
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              {getCreditStatusBadge(tx.status)}
+                            </td>
+                            <td className="py-4 px-4 text-text-secondary font-medium whitespace-nowrap">
+                              {tx.createdAt || '—'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="text-center py-16 text-text-secondary/60 font-semibold text-sm">
+                            Chưa có lịch sử cộng tiền nào phù hợp với bộ lọc.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* WITHDRAWALS HEADER & FILTERS */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                  <h3 className="text-lg font-black text-text">Lịch Sử Rút Tiền</h3>
+                  
+                  {/* Table search & filters */}
+                  <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                    {/* Search box */}
+                    <div className="relative w-full sm:w-64">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <Search className="h-4 w-4 text-text-secondary" />
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="Tìm tên tài khoản, STK, ngân hàng..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 border border-border text-xs rounded-input bg-bg focus:ring-1 focus:ring-primary focus:border-transparent outline-none"
+                      />
+                    </div>
+
+                    {/* Status dropdown */}
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full sm:w-auto px-4 py-2 border border-border text-xs rounded-input bg-white font-semibold"
+                    >
+                      <option value="all">Tất cả trạng thái</option>
+                      <option value="pending">Đang xử lý</option>
+                      <option value="approved">Thành công</option>
+                      <option value="rejected">Bị từ chối</option>
+                    </select>
+
+                    {/* Search Button */}
+                    <button
+                      type="button"
+                      className="w-full sm:w-auto bg-primary text-white hover:bg-primary/90 text-xs font-bold py-2 px-5 rounded-input flex items-center justify-center gap-2.5 transition-all shadow-sm"
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      Tìm kiếm
+                    </button>
+                  </div>
+                </div>
+
+                {/* WITHDRAWALS TABLE */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-border bg-bg/50 font-bold text-text-secondary text-[11px] uppercase tracking-wider">
+                        <th className="py-4 px-4 rounded-l-input">Số tiền rút</th>
+                        <th className="py-4 px-4">Phương thức</th>
+                        <th className="py-4 px-4">Thông tin tài khoản</th>
+                        <th className="py-4 px-4">Trạng thái</th>
+                        <th className="py-4 px-4 rounded-r-input">Ngày tạo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredWithdrawals.length > 0 ? (
+                        filteredWithdrawals.map((item) => (
+                          <tr key={item.id} className="border-b border-border hover:bg-primary/5 transition-colors">
+                            <td className="py-4 px-4 font-black text-rose-600 text-sm">-{item.amount.toLocaleString('vi-VN')}đ</td>
+                            <td className="py-4 px-4 font-bold text-text-secondary">
+                              {['MoMo', 'ZaloPay', 'Viettel Money', 'ShopeePay'].includes(item.bankName) ? 'Ví điện tử' : 'Ngân hàng'}
+                            </td>
+                            <td className="py-4 px-4 space-y-1">
+                              <p className="font-bold text-text">{item.bankName}</p>
+                              <p className="font-mono text-text-secondary text-[10px]">STK: {item.accountNumber}</p>
+                              <p className="text-[10px] text-text-secondary/80 font-bold uppercase">{item.accountHolder}</p>
+                            </td>
+                            <td className="py-4 px-4">{getWithdrawalBadge(item.status)}</td>
+                            <td className="py-4 px-4 text-text-secondary font-medium">{item.requestDate}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="text-center py-16 text-text-secondary/60 font-semibold text-sm">
+                            Bạn chưa thực hiện lệnh rút tiền nào.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

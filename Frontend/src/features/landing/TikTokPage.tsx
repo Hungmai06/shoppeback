@@ -36,7 +36,7 @@ export default function TikTokPage() {
         if (savedInput && !tiktokLink) {
           setTiktokLink(savedInput);
         }
-      } catch (e) {}
+      } catch {}
     }
   }, [searchParams]);
 
@@ -46,11 +46,11 @@ export default function TikTokPage() {
       try {
         const savedProd = sessionStorage.getItem('checked_tiktok_product');
         const savedInput = sessionStorage.getItem('checked_tiktok_input');
-        if (savedProd && !checkedProduct) {
-          setCheckedProduct(JSON.parse(savedProd));
+        if (savedProd) {
+          setCheckedProduct((prev: any) => prev || JSON.parse(savedProd));
         }
-        if (savedInput && !tiktokLink) {
-          setTiktokLink(savedInput);
+        if (savedInput) {
+          setTiktokLink((prev) => prev || savedInput);
         }
 
         const autoNext = sessionStorage.getItem('pending_auto_next_tiktok');
@@ -63,7 +63,7 @@ export default function TikTokPage() {
             }
           }, 350);
         }
-      } catch (e) {}
+      } catch {}
     }
   }, [currentUser]);
 
@@ -116,7 +116,7 @@ export default function TikTokPage() {
         try {
           sessionStorage.setItem('checked_tiktok_product', JSON.stringify(finalProductObj));
           sessionStorage.setItem('checked_tiktok_input', linkInput);
-        } catch (e) {}
+        } catch {}
       } else {
         toast.error(data.message || 'Không thể lấy thông tin tiền hoàn. Vui lòng kiểm tra lại link TikTok!');
       }
@@ -129,7 +129,7 @@ export default function TikTokPage() {
           const cookieBase = settings.tiktokCookieUrl.trim();
           const separator = cookieBase.includes('?') ? '&' : '?';
           fallbackAffLink = `${cookieBase}${separator}url=${encodeURIComponent(linkInput)}&sub_id=${encodeURIComponent(currentUser?.id || '')}`;
-        } catch (e) {
+        } catch {
           fallbackAffLink = linkInput;
         }
       }
@@ -183,7 +183,7 @@ export default function TikTokPage() {
         sessionStorage.setItem('checked_tiktok_product', JSON.stringify(checkedProduct));
         sessionStorage.setItem('checked_tiktok_input', tiktokLink);
         sessionStorage.setItem('pending_auto_next_tiktok', 'true');
-      } catch (e) {}
+      } catch {}
 
       toast.info('Vui lòng đăng nhập để hệ thống ghi nhận hoa hồng TikTok vào ví của bạn');
       openAuthModal('login');
@@ -206,7 +206,7 @@ export default function TikTokPage() {
         itemId: checkedProduct.productId || ''
       };
       addOrder(newOrder);
-    } catch (e) {}
+    } catch {}
 
     const targetUrl = checkedProduct.affiliateLink;
     const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|FBAN|FBAV|Instagram|Zalo/i.test(navigator.userAgent) || window.innerWidth < 768;
@@ -476,70 +476,8 @@ export default function TikTokPage() {
           )}
         </AnimatePresence>
 
-        {/* 4 STEPS GUIDE SECTION */}
-        <div className="mb-16">
-          <div className="text-center mb-8">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quy trình đơn giản</span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">
-              4 Bước Nhận Tiền Hoàn TikTok Shop
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-            {[
-              {
-                step: '01',
-                title: 'Sao chép link TikTok',
-                desc: 'Mở app TikTok, tìm sản phẩm muốn mua trong giỏ hàng hoặc video, bấm nút Chia sẻ và chọn "Sao chép liên kết".',
-                icon: <Copy className="w-6 h-6 text-slate-900" />,
-                badge: 'Bước 1'
-              },
-              {
-                step: '02',
-                title: 'Tra cứu tiền hoàn',
-                desc: 'Dán link vào ô kiểm tra ở trên để xem số tiền hoàn dự kiến và kích hoạt link mua hàng có gắn mã theo dõi hoa hồng.',
-                icon: <Zap className="w-6 h-6 text-[#FE2C55]" />,
-                badge: 'Bước 2'
-              },
-              {
-                step: '03',
-                title: 'Ấn mua hàng',
-                desc: 'Ấn vào nút "Mua ngay nhận hoàn tiền", hệ thống sẽ chuyển bạn sang ứng dụng TikTok để hoàn tất đặt hàng như bình thường.',
-                icon: <ShoppingCart className="w-6 h-6 text-[#00F2FE]" />,
-                badge: 'Bước 3'
-              },
-              {
-                step: '04',
-                title: 'Nhận tiền về ví',
-                desc: 'Sau khi nhận hàng thành công, tiền hoàn sẽ được cập nhật vào mục Tra cứu & Ví để bạn có thể rút về ngân hàng.',
-                icon: <CheckCircle2 className="w-6 h-6 text-emerald-500" />,
-                badge: 'Bước 4'
-              }
-            ].map((item, idx) => (
-              <div
-                key={idx}
-                className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center font-bold">
-                    {item.icon}
-                  </div>
-                  <span className="text-3xl font-black text-slate-200">{item.step}</span>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{item.badge}</span>
-                  <h3 className="text-base font-bold text-slate-900 mt-0.5 mb-2">{item.title}</h3>
-                  <p className="text-xs text-slate-600 leading-relaxed font-normal">{item.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-
-
-        {/* NOTICE / FAQ CARD */}
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 sm:p-10 text-white relative overflow-hidden shadow-xl">
+        {/* NOTICE / FAQ CARD - PLACED ABOVE STEPS */}
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 sm:p-10 text-white relative overflow-hidden shadow-xl mb-12">
           <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-[#00F2FE]/10 rounded-full blur-3xl pointer-events-none" />
           <div className="relative z-10 max-w-3xl">
             <div className="flex items-center gap-2 mb-3">
@@ -561,6 +499,118 @@ export default function TikTokPage() {
                 <span>Đơn hàng hủy, hoàn hàng hoặc gian lận voucher theo chính sách của TikTok Shop sẽ không được tính hoàn tiền.</span>
               </li>
             </ul>
+          </div>
+        </div>
+
+        {/* 6 STEPS GUIDE SECTION WITH IMAGES 1-5 FROM STEP 2 */}
+        <div className="mb-16">
+          <div className="text-center mb-8">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quy trình đơn giản</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">
+              6 Bước Nhận Tiền Hoàn TikTok Shop
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                step: '01',
+                title: 'Đăng ký / Đăng nhập tài khoản',
+                desc: 'Đăng nhập để hệ thống tự động ghi nhận tiền hoàn vào ví tài khoản của bạn.',
+                icon: <CheckCircle2 className="w-6 h-6 text-[#00F2FE]" />,
+                badge: 'Bước 1',
+                image: null
+              },
+              {
+                step: '02',
+                title: 'Sao chép link sản phẩm TikTok',
+                desc: 'Mở app TikTok, ấn vào nút Chia sẻ ở góc trên sản phẩm để sao chép liên kết.',
+                icon: <Copy className="w-6 h-6 text-slate-900" />,
+                badge: 'Bước 2',
+                image: '/tiktok/1.jpg'
+              },
+              {
+                step: '03',
+                title: 'Dán link & Nhấn Tìm',
+                desc: 'Dán link sản phẩm TikTok vào ô tìm kiếm trên trang chủ rồi nhấn nút Tìm.',
+                icon: <Search className="w-6 h-6 text-[#FE2C55]" />,
+                badge: 'Bước 3',
+                image: '/tiktok/2.jpg'
+              },
+              {
+                step: '04',
+                title: 'Ấn nút Mua hàng nhận hoàn tiền',
+                desc: 'Khi hiện thông tin sản phẩm và tiền hoàn dự kiến, ấn vào nút mua hàng bên dưới.',
+                icon: <ShoppingCart className="w-6 h-6 text-[#00F2FE]" />,
+                badge: 'Bước 4',
+                image: '/tiktok/3.jpg'
+              },
+              {
+                step: '05',
+                title: "Ấn 'Xem mặt hàng' trên TikTok",
+                desc: "Chuyển sang app TikTok, ấn vào nút 'Xem mặt hàng' trên bảng thông báo hiện ra.",
+                icon: <Zap className="w-6 h-6 text-amber-500" />,
+                badge: 'Bước 5',
+                image: '/tiktok/4.jpg'
+              },
+              {
+                step: '06',
+                title: 'Áp mã & Đặt mua bình thường',
+                desc: 'Có mã giảm giá thì áp mã bình thường. Không ấn vào video hay livestream của KOL/KOC khác.',
+                icon: <CheckCircle2 className="w-6 h-6 text-emerald-500" />,
+                badge: 'Bước 6',
+                image: '/tiktok/5.jpg'
+              }
+            ].map((item, idx) => (
+              <div
+                key={idx}
+                className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-black px-3 py-1 rounded-full bg-slate-900 text-white uppercase tracking-wider">
+                      {item.badge}
+                    </span>
+                    <span className="text-xl font-black text-slate-300">{item.step} / 06</span>
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 mb-1.5">{item.title}</h3>
+                  <p className="text-xs text-slate-600 leading-relaxed font-normal mb-3">{item.desc}</p>
+                </div>
+
+                {item.image ? (
+                  <div className="w-full h-72 sm:h-80 bg-slate-50 border border-slate-200/80 rounded-xl overflow-hidden flex items-center justify-center shadow-inner">
+                    <img
+                      src={item.image}
+                      alt={`${item.badge} - ${item.title}`}
+                      loading="lazy"
+                      className="w-full h-full object-contain p-1.5"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col justify-between bg-gradient-to-br from-slate-50 to-cyan-50/30 p-5 rounded-xl border border-slate-200 min-h-[260px]">
+                    <div className="flex flex-col items-center text-center my-auto">
+                      <div className="w-14 h-14 rounded-full bg-slate-900 flex items-center justify-center mb-3 shadow-md">
+                        {item.icon}
+                      </div>
+                      <p className="text-xs font-bold text-slate-800 mb-1">
+                        {currentUser ? `Đã đăng nhập (${currentUser.name})` : 'Chưa đăng nhập tài khoản'}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Hãy đăng nhập trước khi tạo link mua hàng để nhận hoàn tiền tự động.
+                      </p>
+                    </div>
+                    {!currentUser && (
+                      <Button
+                        onClick={() => openAuthModal('login')}
+                        className="w-full bg-slate-900 hover:bg-black text-white font-bold text-xs py-2.5 mt-3"
+                      >
+                        Đăng ký / Đăng nhập ngay
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </section>

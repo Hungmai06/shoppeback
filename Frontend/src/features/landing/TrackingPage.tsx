@@ -97,7 +97,7 @@ export default function TrackingPage() {
       fetchUserOrders();
       fetchUserWithdrawals();
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, fetchUserOrders, fetchUserWithdrawals]);
   
   // Decide which orders array to display
   const activeOrders = isLoggedIn 

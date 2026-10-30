@@ -137,47 +137,49 @@ export default function LandingPage() {
       badge: "BƯỚC 1",
       title: "Đăng ký / Đăng nhập tài khoản",
       desc: "Đăng nhập để hệ thống tự động ghi nhận tiền hoàn vào ví tài khoản của bạn.",
-      isAuth: true
+      isAuth: true,
+      image: null,
+      full: null
     },
     {
       step: 2,
       badge: "BƯỚC 2",
-      title: "Sao chép link TikTok Shop",
-      desc: "Mở app TikTok, tìm sản phẩm muốn mua trong video, livestream hoặc giỏ hàng. Bấm Chia sẻ ➔ chọn 'Sao chép liên kết'.",
-      icon: <Copy className="h-6 w-6 text-[#00F2FE]" />,
-      hint: "Hỗ trợ link vt.tiktok.com, tiktok.com hoặc video có giỏ vàng"
+      title: "Sao chép link sản phẩm TikTok",
+      desc: "Mở app TikTok, ấn vào nút Chia sẻ ở góc trên sản phẩm để sao chép liên kết.",
+      image: "/tiktok/1.jpg",
+      full: "/tiktok/1.jpg"
     },
     {
       step: 3,
       badge: "BƯỚC 3",
-      title: "Dán link & Tra cứu hoàn tiền",
-      desc: "Dán link vào ô tìm kiếm ở đầu trang và bấm 'Tìm'. Hệ thống sẽ tự động kích hoạt mã theo dõi hoa hồng cho bạn.",
-      icon: <Search className="h-6 w-6 text-[#FE2C55]" />,
-      hint: "Kiểm tra mức hoàn tiền và tạo link tiếp thị tự động"
+      title: "Dán link & Nhấn Tìm",
+      desc: "Dán link sản phẩm TikTok vào ô tìm kiếm trên trang chủ rồi nhấn nút Tìm.",
+      image: "/tiktok/2.jpg",
+      full: "/tiktok/2.jpg"
     },
     {
       step: 4,
       badge: "BƯỚC 4",
-      title: "Bấm 'Mua hàng nhận hoàn tiền'",
-      desc: "Nhấn nút 'Ấn vào đây mua hàng để nhận hoàn tiền TikTok'. Hệ thống sẽ tự động mở ứng dụng TikTok trên máy bạn.",
-      icon: <ShoppingCart className="h-6 w-6 text-[#00F2FE]" />,
-      hint: "Tự động chuyển tiếp an toàn sang app TikTok chính thức"
+      title: "Ấn nút Mua hàng nhận hoàn tiền",
+      desc: "Khi hiện thông tin sản phẩm và tiền hoàn dự kiến, ấn vào nút mua hàng bên dưới.",
+      image: "/tiktok/3.jpg",
+      full: "/tiktok/3.jpg"
     },
     {
       step: 5,
       badge: "BƯỚC 5",
-      title: "Thêm giỏ & Thanh toán ngay",
-      desc: "Trong ứng dụng TikTok, thêm sản phẩm vào giỏ và hoàn tất đặt hàng trong 24h. Vẫn áp dụng trọn vẹn voucher TikTok Shop & FreeShip.",
-      icon: <Zap className="h-6 w-6 text-amber-500" />,
-      hint: "Tránh bấm link KOL khác trước khi thanh toán"
+      title: "Ấn 'Xem mặt hàng' trên TikTok",
+      desc: "Chuyển sang app TikTok, ấn vào nút 'Xem mặt hàng' trên bảng thông báo hiện ra.",
+      image: "/tiktok/4.jpg",
+      full: "/tiktok/4.jpg"
     },
     {
       step: 6,
       badge: "BƯỚC 6",
-      title: "Nhận tiền hoàn về ví",
-      desc: "Sau khi đơn hàng giao thành công, tiền hoàn sẽ được ghi nhận vào ví cá nhân của bạn để rút về tài khoản ngân hàng.",
-      icon: <Wallet className="h-6 w-6 text-emerald-500" />,
-      hint: "Rút tiền nhanh chóng về mọi tài khoản ngân hàng Việt Nam"
+      title: "Áp mã & Đặt mua bình thường",
+      desc: "Có mã giảm giá thì áp mã bình thường. Không ấn vào video hay livestream của KOL/KOC khác.",
+      image: "/tiktok/5.jpg",
+      full: "/tiktok/5.jpg"
     }
   ];
 
@@ -286,13 +288,13 @@ export default function LandingPage() {
         try {
           sessionStorage.setItem('checked_shopee_product', JSON.stringify(productObj));
           sessionStorage.setItem('checked_shopee_input', rawInput);
-        } catch (e) {}
+        } catch {}
       } else {
         setCheckedProduct(null);
         try {
           sessionStorage.removeItem('checked_shopee_product');
           sessionStorage.removeItem('checked_shopee_input');
-        } catch (e) {}
+        } catch {}
 
         if (data?.code === 'MISSING_API_KEY' || data?.apiKeyNotice?.status === 'missing') {
           toast.error('Hệ thống chưa cài đặt API Key AddLiveTag. Vui lòng vào Cài đặt Quản trị viên để nhập API Key.');
@@ -308,7 +310,7 @@ export default function LandingPage() {
       try {
         sessionStorage.removeItem('checked_shopee_product');
         sessionStorage.removeItem('checked_shopee_input');
-      } catch (e) {}
+      } catch {}
       toast.error('Không tìm thấy sản phẩm hoặc link không tồn tại. Vui lòng kiểm tra lại link Shopee!');
     } finally {
       setIsSearching(false);
@@ -353,7 +355,7 @@ export default function LandingPage() {
       } else {
         toast.info('Bộ nhớ tạm đang trống. Hãy sao chép link Shopee hoặc TikTok trước.');
       }
-    } catch (e) {
+    } catch {
       toast.info('Vui lòng dán trực tiếp link vào ô tìm kiếm (Ctrl + V)');
     }
   };
@@ -363,22 +365,22 @@ export default function LandingPage() {
     try {
       const savedProd = sessionStorage.getItem('checked_shopee_product');
       const savedInput = sessionStorage.getItem('checked_shopee_input');
-      if (savedProd && !checkedProduct) {
-        setCheckedProduct(JSON.parse(savedProd));
+      if (savedProd) {
+        setCheckedProduct((prev: any) => prev || JSON.parse(savedProd));
       }
-      if (savedInput && !shopeeLink) {
-        setShopeeLink(savedInput);
+      if (savedInput) {
+        setShopeeLink((prev) => prev || savedInput);
       }
 
       const savedTikTokProd = sessionStorage.getItem('checked_tiktok_product');
       const savedTikTokInput = sessionStorage.getItem('checked_tiktok_input');
-      if (savedTikTokProd && !checkedTikTokProduct) {
-        setCheckedTikTokProduct(JSON.parse(savedTikTokProd));
+      if (savedTikTokProd) {
+        setCheckedTikTokProduct((prev: any) => prev || JSON.parse(savedTikTokProd));
       }
-      if (savedTikTokInput && !tiktokLink) {
-        setTiktokLink(savedTikTokInput);
+      if (savedTikTokInput) {
+        setTiktokLink((prev) => prev || savedTikTokInput);
       }
-    } catch (e) {}
+    } catch {}
   }, []);
 
   // Sau khi đăng nhập thành công: Giữ nguyên sản phẩm đã tra cứu trên màn hình để thực hiện bước tiếp theo
@@ -387,11 +389,11 @@ export default function LandingPage() {
       try {
         const savedProd = sessionStorage.getItem('checked_shopee_product');
         const savedInput = sessionStorage.getItem('checked_shopee_input');
-        if (savedProd && !checkedProduct) {
-          setCheckedProduct(JSON.parse(savedProd));
+        if (savedProd) {
+          setCheckedProduct((prev: any) => prev || JSON.parse(savedProd));
         }
-        if (savedInput && !shopeeLink) {
-          setShopeeLink(savedInput);
+        if (savedInput) {
+          setShopeeLink((prev) => prev || savedInput);
         }
 
         const autoNext = sessionStorage.getItem('pending_auto_next_step');
@@ -415,7 +417,7 @@ export default function LandingPage() {
             }
           }, 350);
         }
-      } catch (e) {}
+      } catch {}
     }
   }, [currentUser]);
 
@@ -479,7 +481,7 @@ export default function LandingPage() {
         try {
           sessionStorage.setItem('checked_tiktok_product', JSON.stringify(finalProductObj));
           sessionStorage.setItem('checked_tiktok_input', linkInput);
-        } catch (e) {}
+        } catch {}
       } else {
         toast.error(data.message || 'Không thể lấy thông tin tiền hoàn TikTok. Vui lòng kiểm tra lại link!');
       }
@@ -499,7 +501,7 @@ export default function LandingPage() {
         sessionStorage.setItem('checked_tiktok_product', JSON.stringify(checkedTikTokProduct));
         sessionStorage.setItem('checked_tiktok_input', tiktokLink);
         sessionStorage.setItem('pending_auto_next_tiktok', 'true');
-      } catch (e) {}
+      } catch {}
 
       toast.info('Vui lòng đăng nhập để hệ thống ghi nhận hoa hồng TikTok vào ví của bạn');
       openAuthModal('login');
@@ -520,7 +522,7 @@ export default function LandingPage() {
         platform: 'tiktok'
       };
       addOrder(newOrder);
-    } catch (e) {}
+    } catch {}
 
     window.open(checkedTikTokProduct.affiliateLink, '_blank', 'noopener,noreferrer');
   };
@@ -534,7 +536,7 @@ export default function LandingPage() {
         sessionStorage.setItem('checked_shopee_product', JSON.stringify(checkedProduct));
         sessionStorage.setItem('checked_shopee_input', shopeeLink);
         sessionStorage.setItem('pending_auto_next_step', 'true');
-      } catch (e) {}
+      } catch {}
 
       openAuthModal('login');
       return;
@@ -608,7 +610,7 @@ export default function LandingPage() {
       } else {
         toast.error(data?.message || 'Có lỗi xảy ra khi tạo link hoàn tiền');
       }
-    } catch (err: any) {
+    } catch {
       toast.error('Có lỗi xảy ra khi kết nối máy chủ');
     }
   };
@@ -1094,13 +1096,13 @@ export default function LandingPage() {
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                       guidePlatform === 'tiktok' ? 'bg-cyan-400/20 text-[#00F2FE]' : 'bg-slate-200 text-slate-600'
                     }`}>
-                      Quy trình app
+                      6 Bước
                     </span>
                   </div>
                   <div className={`text-[11px] font-medium hidden sm:block ${
                     guidePlatform === 'tiktok' ? 'text-slate-300' : 'text-slate-500'
                   }`}>
-                    6 bước thao tác & 5 lưu ý
+                    Hướng dẫn có ảnh & 5 lưu ý
                   </div>
                 </div>
               </button>
@@ -1111,6 +1113,89 @@ export default function LandingPage() {
         {/* TAB 1: SHOPEE GUIDE & NOTES */}
         {guidePlatform === 'shopee' && (
           <div className="space-y-8 animate-in fade-in duration-300">
+            {/* IMPORTANT NOTICE FOR CASHBACK ACCURACY (SHOPEE) - PLACED ABOVE STEPS */}
+            <div className="bg-white border border-border/80 rounded-card p-6 md:p-8 card-shadow text-left max-w-7xl mx-auto hover:shadow-soft transition-all duration-300">
+              {/* Header Row */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                <div className="space-y-2">
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1 bg-[#EE4D2D] text-white font-bold text-xs uppercase tracking-wider rounded-full">
+                    📌 Lưu ý quan trọng Shopee
+                  </span>
+                  <h2 className="text-xl md:text-2xl font-black text-text">
+                    Để đơn hàng Shopee được ghi nhận hoàn tiền chính xác
+                  </h2>
+                </div>
+                <p className="text-xs md:text-sm text-text-secondary max-w-md leading-relaxed">
+                  Làm đúng các bước dưới đây để tránh mất lượt hoàn tiền khi mua hàng qua Shopee.
+                </p>
+              </div>
+
+              {/* Steps Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+                {/* Step 1 */}
+                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-primary/30 cursor-pointer">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <ShoppingCart className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-text text-sm mb-1">Giỏ hàng trống</h4>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">Chỉ thêm sản phẩm sau khi bấm link hoàn tiền.</p>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-purple-500/30 cursor-pointer">
+                  <div className="w-10 h-10 rounded-full bg-purple-100/60 flex items-center justify-center shrink-0">
+                    <Link2 className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-text text-sm mb-1">Không mở link khác</h4>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">Tránh click link Facebook, Telegram, YouTube, KOLs trước khi thanh toán.</p>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-amber-500/30 cursor-pointer">
+                  <div className="w-10 h-10 rounded-full bg-amber-100/60 flex items-center justify-center shrink-0">
+                    <Clock className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-text text-sm mb-1">Thanh toán sớm</h4>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">Nên hoàn tất đơn trong vòng 20 - 30 phút.</p>
+                  </div>
+                </div>
+
+                {/* Step 4 */}
+                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-red-500/30 cursor-pointer">
+                  <div className="w-10 h-10 rounded-full bg-red-100/60 flex items-center justify-center shrink-0">
+                    <ShieldAlert className="h-5 w-5 text-red-500" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-text text-sm mb-1">Tắt Adblock</h4>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">Tránh chặn mã theo dõi khiến đơn không được ghi nhận.</p>
+                  </div>
+                </div>
+
+                {/* Step 5 */}
+                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-blue-500/30 cursor-pointer">
+                  <div className="w-10 h-10 rounded-full bg-blue-100/60 flex items-center justify-center shrink-0">
+                    <RefreshCw className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-text text-sm mb-1">Đặt lại đúng cách</h4>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">Hủy đơn thì cần quay lại web lấy link hoàn tiền mới.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Tip Callout */}
+              <div className="bg-[#111111] text-white p-4 rounded-input flex items-center justify-center text-center gap-2">
+                <span className="text-xs md:text-sm font-semibold flex items-center gap-1.5 flex-wrap justify-center">
+                  💡 <span className="text-amber-400 font-bold">Mẹo nhỏ Shopee:</span> Click link hoàn tiền → thêm sản phẩm → thanh toán ngay để tăng tỷ lệ ghi nhận đơn.
+                </span>
+              </div>
+            </div>
+
             {/* 8-STEP CASHBACK PURCHASING GUIDE WITH DIRECT IMAGES (SHOPEE) */}
             <div className="bg-white border border-border/80 rounded-card p-6 md:p-10 card-shadow text-left max-w-7xl mx-auto hover:shadow-soft transition-all duration-300">
               <div className="text-center max-w-3xl mx-auto mb-10">
@@ -1198,229 +1283,13 @@ export default function LandingPage() {
                 ))}
               </div>
             </div>
-
-            {/* LIGHTBOX MODAL FOR FULL-SCREEN IMAGE VIEWING */}
-            <AnimatePresence>
-              {lightboxImage && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setLightboxImage(null)}
-                  className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
-                >
-                  <motion.div
-                    initial={{ scale: 0.85, y: 20 }}
-                    animate={{ scale: 1, y: 0 }}
-                    exit={{ scale: 0.85, y: 20 }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="bg-white rounded-2xl overflow-hidden max-w-4xl max-h-[90vh] shadow-2xl relative flex flex-col cursor-default"
-                  >
-                    <div className="p-4 bg-white border-b border-border flex items-center justify-between">
-                      <span className="font-extrabold text-sm text-text flex items-center gap-2">
-                        <span className="px-3 py-1 bg-primary text-white rounded-full text-xs">
-                          BƯỚC {lightboxImage.step}
-                        </span>
-                        Ảnh minh họa quy trình mua hàng Shopee
-                      </span>
-                      <button
-                        onClick={() => setLightboxImage(null)}
-                        className="w-8 h-8 rounded-full bg-bg hover:bg-border text-text font-bold text-sm flex items-center justify-center transition-colors"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div className="p-4 bg-black flex justify-center items-center overflow-auto">
-                      <img
-                        src={lightboxImage.src}
-                        alt={`Phóng to Bước ${lightboxImage.step}`}
-                        className="max-h-[75vh] w-auto object-contain rounded-lg"
-                      />
-                    </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* IMPORTANT NOTICE FOR CASHBACK ACCURACY (SHOPEE) */}
-            <div className="bg-white border border-border/80 rounded-card p-6 md:p-8 card-shadow text-left max-w-7xl mx-auto hover:shadow-soft transition-all duration-300">
-              {/* Header Row */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                <div className="space-y-2">
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1 bg-[#EE4D2D] text-white font-bold text-xs uppercase tracking-wider rounded-full">
-                    📌 Lưu ý quan trọng Shopee
-                  </span>
-                  <h2 className="text-xl md:text-2xl font-black text-text">
-                    Để đơn hàng Shopee được ghi nhận hoàn tiền chính xác
-                  </h2>
-                </div>
-                <p className="text-xs md:text-sm text-text-secondary max-w-md leading-relaxed">
-                  Làm đúng các bước dưới đây để tránh mất lượt hoàn tiền khi mua hàng qua Shopee.
-                </p>
-              </div>
-
-              {/* Steps Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-                {/* Step 1 */}
-                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-primary/30 cursor-pointer">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <ShoppingCart className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-text text-sm mb-1">Giỏ hàng trống</h4>
-                    <p className="text-[11px] text-text-secondary leading-relaxed">Chỉ thêm sản phẩm sau khi bấm link hoàn tiền.</p>
-                  </div>
-                </div>
-
-                {/* Step 2 */}
-                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-purple-500/30 cursor-pointer">
-                  <div className="w-10 h-10 rounded-full bg-purple-100/60 flex items-center justify-center shrink-0">
-                    <Link2 className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-text text-sm mb-1">Không mở link khác</h4>
-                    <p className="text-[11px] text-text-secondary leading-relaxed">Tránh click link Facebook, Telegram, YouTube, KOLs trước khi thanh toán.</p>
-                  </div>
-                </div>
-
-                {/* Step 3 */}
-                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-amber-500/30 cursor-pointer">
-                  <div className="w-10 h-10 rounded-full bg-amber-100/60 flex items-center justify-center shrink-0">
-                    <Clock className="h-5 w-5 text-amber-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-text text-sm mb-1">Thanh toán sớm</h4>
-                    <p className="text-[11px] text-text-secondary leading-relaxed">Nên hoàn tất đơn trong vòng 20 - 30 phút.</p>
-                  </div>
-                </div>
-
-                {/* Step 4 */}
-                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-red-500/30 cursor-pointer">
-                  <div className="w-10 h-10 rounded-full bg-red-100/60 flex items-center justify-center shrink-0">
-                    <ShieldAlert className="h-5 w-5 text-red-500" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-text text-sm mb-1">Tắt Adblock</h4>
-                    <p className="text-[11px] text-text-secondary leading-relaxed">Tránh chặn mã theo dõi khiến đơn không được ghi nhận.</p>
-                  </div>
-                </div>
-
-                {/* Step 5 */}
-                <div className="bg-white border border-border/60 p-5 rounded-input transition-all duration-300 flex flex-col gap-3 hover:shadow-md hover:-translate-y-1.5 hover:border-blue-500/30 cursor-pointer">
-                  <div className="w-10 h-10 rounded-full bg-blue-100/60 flex items-center justify-center shrink-0">
-                    <RefreshCw className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-text text-sm mb-1">Đặt lại đúng cách</h4>
-                    <p className="text-[11px] text-text-secondary leading-relaxed">Hủy đơn thì cần quay lại web lấy link hoàn tiền mới.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Tip Callout */}
-              <div className="bg-[#111111] text-white p-4 rounded-input flex items-center justify-center text-center gap-2">
-                <span className="text-xs md:text-sm font-semibold flex items-center gap-1.5 flex-wrap justify-center">
-                  💡 <span className="text-amber-400 font-bold">Mẹo nhỏ Shopee:</span> Click link hoàn tiền → thêm sản phẩm → thanh toán ngay để tăng tỷ lệ ghi nhận đơn.
-                </span>
-              </div>
-            </div>
           </div>
         )}
 
         {/* TAB 2: TIKTOK SHOP GUIDE & NOTES */}
         {guidePlatform === 'tiktok' && (
           <div className="space-y-8 animate-in fade-in duration-300">
-            {/* PURCHASING GUIDE (TIKTOK SHOP) */}
-            <div className="bg-white border border-slate-300 rounded-card p-6 md:p-10 card-shadow text-left max-w-7xl mx-auto hover:shadow-soft transition-all duration-300 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-100/30 rounded-full blur-3xl pointer-events-none" />
-              <div className="text-center max-w-3xl mx-auto mb-10 relative z-10">
-                <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white font-extrabold text-xs uppercase tracking-wider rounded-full mb-3 shadow-sm">
-                  <span className="text-[#00F2FE]">TIKTOK</span>
-                  <span className="text-[#FE2C55]">SHOP</span>
-                  <span className="text-slate-400">|</span>
-                  <span>Quy trình hoàn tiền</span>
-                </span>
-                <h2 className="text-2xl md:text-4xl font-black text-slate-900 mb-3 leading-tight">
-                  Hướng Dẫn <span className="bg-gradient-to-r from-[#00F2FE] via-slate-900 to-[#FE2C55] bg-clip-text text-transparent">Quy Trình Mua Hàng TikTok Shop</span>
-                </h2>
-                <p className="text-xs md:text-sm text-slate-500 leading-relaxed font-medium">
-                  Quy trình 6 bước chi tiết giúp bạn mua sắm trên TikTok Shop và nhận tiền hoàn tự động 100% vào ví.
-                </p>
-              </div>
-
-              {/* 6 Steps Grid Layout */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
-                {tiktokPurchasingSteps.map((s) => (
-                  <div
-                    key={s.step}
-                    className="bg-white border border-slate-200/90 hover:border-slate-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden"
-                  >
-                    {/* Card Top Header */}
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="text-xs font-black px-3 py-1 rounded-full bg-slate-900 text-white shadow-xs">
-                        {s.badge}
-                      </span>
-                      <span className="text-xs font-bold text-slate-400 font-mono">
-                        {s.step} / 6
-                      </span>
-                    </div>
-
-                    {/* Card Body */}
-                    {s.isAuth ? (
-                      <div className="flex-1 flex flex-col justify-between bg-gradient-to-br from-slate-50 to-cyan-50/30 p-5 rounded-xl border border-slate-200 min-h-[220px]">
-                        <div className="flex flex-col items-center text-center my-auto">
-                          <div className="w-14 h-14 rounded-full bg-slate-900 flex items-center justify-center text-[#00F2FE] mb-3 shadow-md">
-                            <Users className="h-7 w-7" />
-                          </div>
-                          <h4 className="font-extrabold text-slate-900 text-sm mb-1">{s.title}</h4>
-                          <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
-                            {s.desc}
-                          </p>
-                          {currentUser ? (
-                            <Badge variant="success" className="py-1 px-3 text-[11px] font-bold">
-                              Đã đăng nhập ({currentUser.name})
-                            </Badge>
-                          ) : (
-                            <Badge variant="warning" className="py-1 px-3 text-[11px] font-bold">
-                              Chưa đăng nhập
-                            </Badge>
-                          )}
-                        </div>
-                        <Button
-                          onClick={() => {
-                            if (!currentUser) openAuthModal('login');
-                            else navigate('/dashboard');
-                          }}
-                          className="w-full bg-slate-900 hover:bg-black text-white font-bold text-xs py-2.5 mt-2"
-                        >
-                          {currentUser ? 'Vào Dashboard cá nhân' : 'Đăng ký / Đăng nhập ngay'}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex flex-col justify-between p-2">
-                        <div>
-                          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-                            {s.icon}
-                          </div>
-                          <h4 className="font-extrabold text-slate-900 text-base mb-2">{s.title}</h4>
-                          <p className="text-xs text-slate-600 leading-relaxed mb-4">
-                            {s.desc}
-                          </p>
-                        </div>
-                        <div className="pt-3 border-t border-slate-100">
-                          <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
-                            {s.hint}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* IMPORTANT NOTICE FOR CASHBACK ACCURACY (TIKTOK SHOP) */}
+            {/* IMPORTANT NOTICE FOR CASHBACK ACCURACY (TIKTOK SHOP) - PLACED ABOVE STEPS */}
             <div className="bg-white border border-slate-300 rounded-card p-6 md:p-8 card-shadow text-left max-w-7xl mx-auto hover:shadow-soft transition-all duration-300">
               {/* Header Row */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -1502,8 +1371,149 @@ export default function LandingPage() {
                 </span>
               </div>
             </div>
+
+            {/* PURCHASING GUIDE WITH DIRECT IMAGES (TIKTOK SHOP) */}
+            <div className="bg-white border border-slate-300 rounded-card p-6 md:p-10 card-shadow text-left max-w-7xl mx-auto hover:shadow-soft transition-all duration-300 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-100/30 rounded-full blur-3xl pointer-events-none" />
+              <div className="text-center max-w-3xl mx-auto mb-10 relative z-10">
+                <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white font-extrabold text-xs uppercase tracking-wider rounded-full mb-3 shadow-sm">
+                  <span className="text-[#00F2FE]">TIKTOK</span>
+                  <span className="text-[#FE2C55]">SHOP</span>
+                  <span className="text-slate-400">|</span>
+                  <span>6 Bước Đặt Hàng TikTok Shop</span>
+                </span>
+                <h2 className="text-2xl md:text-4xl font-black text-slate-900 mb-3 leading-tight">
+                  Hướng Dẫn <span className="bg-gradient-to-r from-[#00F2FE] via-slate-900 to-[#FE2C55] bg-clip-text text-transparent">Quy Trình Mua Hàng TikTok Shop</span>
+                </h2>
+                <p className="text-xs md:text-sm text-slate-500 leading-relaxed font-medium">
+                  Các bước lần lượt từ Bước 1 đến Bước 6 với hình ảnh hướng dẫn trực tiếp từ Bước 2. Bấm vào ảnh để phóng to.
+                </p>
+              </div>
+
+              {/* 6 Steps Grid Layout (With Direct Images from Step 2 to Step 6) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                {tiktokPurchasingSteps.map((s) => (
+                  <div
+                    key={s.step}
+                    className="bg-white border border-slate-200/90 hover:border-slate-800 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden"
+                  >
+                    {/* Card Top Header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-black px-3 py-1 rounded-full bg-slate-900 text-white shadow-xs">
+                        {s.badge}
+                      </span>
+                      <span className="text-xs font-bold text-slate-400 font-mono">
+                        {s.step} / 6
+                      </span>
+                    </div>
+
+                    {/* Card Body */}
+                    {s.isAuth ? (
+                      <div className="flex-1 flex flex-col justify-between bg-gradient-to-br from-slate-50 to-cyan-50/30 p-5 rounded-xl border border-slate-200 min-h-[280px]">
+                        <div className="flex flex-col items-center text-center my-auto">
+                          <div className="w-14 h-14 rounded-full bg-slate-900 flex items-center justify-center text-[#00F2FE] mb-3 shadow-md">
+                            <Users className="h-7 w-7" />
+                          </div>
+                          <h4 className="font-extrabold text-slate-900 text-sm mb-1">{s.title}</h4>
+                          <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+                            {s.desc}
+                          </p>
+                          {currentUser ? (
+                            <Badge variant="success" className="py-1 px-3 text-[11px] font-bold">
+                              Đã đăng nhập ({currentUser.name})
+                            </Badge>
+                          ) : (
+                            <Badge variant="warning" className="py-1 px-3 text-[11px] font-bold">
+                              Chưa đăng nhập
+                            </Badge>
+                          )}
+                        </div>
+                        <Button
+                          onClick={() => {
+                            if (!currentUser) openAuthModal('login');
+                            else navigate('/dashboard');
+                          }}
+                          className="w-full bg-slate-900 hover:bg-black text-white font-bold text-xs py-2.5 mt-2"
+                        >
+                          {currentUser ? 'Vào Dashboard cá nhân' : 'Đăng ký / Đăng nhập ngay'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col gap-2.5">
+                        <div>
+                          <h4 className="font-extrabold text-slate-900 text-sm mb-1">{s.title}</h4>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            {s.desc}
+                          </p>
+                        </div>
+                        <div
+                          onClick={() => setLightboxImage({ src: s.full || s.image!, step: s.step })}
+                          className="w-full h-72 sm:h-80 bg-slate-50 border border-slate-200/80 rounded-xl overflow-hidden cursor-pointer relative group/img flex items-center justify-center shadow-inner"
+                        >
+                          <img
+                            src={s.image!}
+                            alt={`Hình ảnh ${s.badge} - ${s.title}`}
+                            loading="lazy"
+                            decoding="async"
+                            width={480}
+                            height={984}
+                            className="w-full h-full object-contain p-1.5 group-hover/img:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1.5">
+                            <Search className="h-4 w-4" /> Phóng to ảnh {s.badge}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
+
+        {/* LIGHTBOX MODAL FOR FULL-SCREEN IMAGE VIEWING (SHOPEE & TIKTOK) */}
+        <AnimatePresence>
+          {lightboxImage && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLightboxImage(null)}
+              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
+            >
+              <motion.div
+                initial={{ scale: 0.85, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.85, y: 20 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white rounded-2xl overflow-hidden max-w-4xl max-h-[90vh] shadow-2xl relative flex flex-col cursor-default"
+              >
+                <div className="p-4 bg-white border-b border-border flex items-center justify-between">
+                  <span className="font-extrabold text-sm text-text flex items-center gap-2">
+                    <span className={`px-3 py-1 text-white rounded-full text-xs ${guidePlatform === 'tiktok' ? 'bg-slate-900' : 'bg-primary'}`}>
+                      BƯỚC {lightboxImage.step}
+                    </span>
+                    Ảnh minh họa quy trình mua hàng {guidePlatform === 'tiktok' ? 'TikTok Shop' : 'Shopee'}
+                  </span>
+                  <button
+                    onClick={() => setLightboxImage(null)}
+                    className="w-8 h-8 rounded-full bg-bg hover:bg-border text-text font-bold text-sm flex items-center justify-center transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="p-4 bg-black flex justify-center items-center overflow-auto">
+                  <img
+                    src={lightboxImage.src}
+                    alt={`Phóng to Bước ${lightboxImage.step}`}
+                    className="max-h-[75vh] w-auto object-contain rounded-lg"
+                  />
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* FEATURE CARDS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-7xl mx-auto mt-8">

@@ -114,7 +114,7 @@ export default function AdminPanel() {
         } else {
           toast.error(data.message || 'Lỗi tải danh sách click TikTok');
         }
-      } catch (err) {
+      } catch {
         toast.error('Lỗi kết nối khi tải click TikTok');
       } finally {
         setIsLoadingTikTokClicks(false);
@@ -133,6 +133,8 @@ export default function AdminPanel() {
   const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>('');
 
   // Order Pagination & Loading states
+  const [isInitialAdminLoading, setIsInitialAdminLoading] = useState(true);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [orderPage, setOrderPage] = useState(1);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const ordersPerPage = 10;
@@ -199,36 +201,69 @@ export default function AdminPanel() {
     setTiktokPage(1);
   }, [tiktokSearch, tiktokStatusFilter]);
 
-  // Fetch paginated and filtered orders & active tab data from backend
+  // Initial full load when entering /admin so numbers are 100% accurate before rendering
   React.useEffect(() => {
-    if (currentUser?.role === 'admin') {
-      if (activeTab === 'dashboard') {
-        fetchAdminStats(statsRange, selectedMonthFilter, statsPlatform);
-      } else if (activeTab === 'users') {
-        fetchAdminUsers();
-      } else if (activeTab === 'orders') {
-        if (users.length === 0) fetchAdminUsers();
-        setIsLoadingOrders(true);
-        const delay = setTimeout(async () => {
-          await fetchAdminOrders(orderPage, ordersPerPage, orderSearch, orderStatusFilter);
-          setIsLoadingOrders(false);
-        }, 300);
-        return () => clearTimeout(delay);
-      } else if (activeTab === 'tiktok-orders') {
-        if (users.length === 0) fetchAdminUsers();
-        setIsLoadingTikTokOrders(true);
-        const delay = setTimeout(async () => {
-          await fetchAdminTikTokOrders(tiktokPage, 10, tiktokSearch, tiktokStatusFilter);
-          setIsLoadingTikTokOrders(false);
-        }, 300);
-        return () => clearTimeout(delay);
-      } else if (activeTab === 'withdrawals') {
-        fetchAdminWithdrawals();
-      } else if (activeTab === 'reconciliation') {
-        fetchReconciliationLogs();
+    if (isAuthLoading || currentUser?.role !== 'admin') return;
+    let cancelled = false;
+
+    const initAdminDashboard = async () => {
+      setIsInitialAdminLoading(true);
+      try {
+        await Promise.all([
+          fetchAdminStats(statsRange, selectedMonthFilter, statsPlatform),
+          fetchAdminUsers(),
+          fetchAdminWithdrawals(),
+          fetchAdminOrders(1, ordersPerPage, '', 'all'),
+          fetchAdminTikTokOrders(1, 10, '', 'all')
+        ]);
+      } finally {
+        if (!cancelled) {
+          setIsInitialAdminLoading(false);
+        }
       }
+    };
+
+    initAdminDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthLoading, currentUser?.id, currentUser?.role]);
+
+  // Fetch paginated and filtered orders & active tab data from backend after initial load
+  React.useEffect(() => {
+    if (isInitialAdminLoading || currentUser?.role !== 'admin') return;
+
+    if (activeTab === 'dashboard') {
+      let cancelled = false;
+      setIsLoadingStats(true);
+      fetchAdminStats(statsRange, selectedMonthFilter, statsPlatform).finally(() => {
+        if (!cancelled) setIsLoadingStats(false);
+      });
+      return () => { cancelled = true; };
+    } else if (activeTab === 'users') {
+      fetchAdminUsers();
+    } else if (activeTab === 'orders') {
+      if (users.length === 0) fetchAdminUsers();
+      setIsLoadingOrders(true);
+      const delay = setTimeout(async () => {
+        await fetchAdminOrders(orderPage, ordersPerPage, orderSearch, orderStatusFilter);
+        setIsLoadingOrders(false);
+      }, 300);
+      return () => clearTimeout(delay);
+    } else if (activeTab === 'tiktok-orders') {
+      if (users.length === 0) fetchAdminUsers();
+      setIsLoadingTikTokOrders(true);
+      const delay = setTimeout(async () => {
+        await fetchAdminTikTokOrders(tiktokPage, 10, tiktokSearch, tiktokStatusFilter);
+        setIsLoadingTikTokOrders(false);
+      }, 300);
+      return () => clearTimeout(delay);
+    } else if (activeTab === 'withdrawals') {
+      fetchAdminWithdrawals();
+    } else if (activeTab === 'reconciliation') {
+      fetchReconciliationLogs();
     }
-  }, [activeTab, orderPage, orderSearch, orderStatusFilter, tiktokPage, tiktokSearch, tiktokStatusFilter, statsRange, selectedMonthFilter, statsPlatform, currentUser]);
+  }, [isInitialAdminLoading, activeTab, orderPage, orderSearch, orderStatusFilter, tiktokPage, tiktokSearch, tiktokStatusFilter, statsRange, selectedMonthFilter, statsPlatform, currentUser]);
 
   // Selected items for Modals
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
@@ -296,7 +331,7 @@ export default function AdminPanel() {
         const err = await res.json();
         toast.error(err.message || 'Có lỗi xảy ra khi xóa toàn bộ đơn hàng');
       }
-    } catch (err: any) {
+    } catch {
       toast.error('Lỗi khi gửi yêu cầu xóa đơn hàng');
     } finally {
       setIsClearingOrders(false);
@@ -325,7 +360,7 @@ export default function AdminPanel() {
         const err = await res.json();
         toast.error(err.message || 'Có lỗi xảy ra khi xóa đơn hàng chưa gán');
       }
-    } catch (err: any) {
+    } catch {
       toast.error('Lỗi khi gửi yêu cầu xóa đơn hàng chưa gán');
     } finally {
       setIsClearingOrders(false);
@@ -500,6 +535,66 @@ export default function AdminPanel() {
     }
   }, [currentUser, isAuthLoading, navigate]);
 
+  // Chart Monthly Analytics computed dynamically from real database/orders
+  const revenueChartData = useMemo(() => {
+    if (adminStats && adminStats.monthlyAnalytics && adminStats.monthlyAnalytics.length > 0) {
+      return adminStats.monthlyAnalytics.map(a => ({
+        month: a.name,
+        DoanhThu: a.revenue,
+        HoaHongChi: a.cashback,
+        LoiNhuan: a.profit
+      }));
+    }
+
+    const monthlyMap: Record<string, { month: string; DoanhThu: number; HoaHongChi: number; LoiNhuan: number }> = {};
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthlyMap[key] = {
+        month: `T${d.getMonth() + 1}`,
+        DoanhThu: 0,
+        HoaHongChi: 0,
+        LoiNhuan: 0
+      };
+    }
+
+    const extractMonthKey = (val: string) => {
+      if (!val) return '';
+      const str = String(val).trim();
+      const matchIso = str.match(/^(\d{4})[/-](\d{1,2})/);
+      if (matchIso) return `${matchIso[1]}-${String(matchIso[2]).padStart(2, '0')}`;
+      const matchVn = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+      if (matchVn) return `${matchVn[3]}-${String(matchVn[2]).padStart(2, '0')}`;
+      const num = Number(str);
+      if (!isNaN(num) && num > 20000 && num < 100000) {
+        const d = new Date((num - 25569) * 86400 * 1000);
+        if (!isNaN(d.getTime())) return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
+      return '';
+    };
+
+    orders.forEach(o => {
+      const cb = Math.floor(o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0));
+      const comm = Math.floor((o as any).shopeeCommission !== undefined && (o as any).shopeeCommission !== null ? (o as any).shopeeCommission : (cb * 2));
+      const mKey = extractMonthKey(o.createdTime) || currentMonthKey;
+
+      if (monthlyMap[mKey]) {
+        monthlyMap[mKey].DoanhThu += comm;
+        monthlyMap[mKey].HoaHongChi += cb;
+        monthlyMap[mKey].LoiNhuan += Math.max(0, comm - cb);
+      } else if (monthlyMap[currentMonthKey]) {
+        monthlyMap[currentMonthKey].DoanhThu += comm;
+        monthlyMap[currentMonthKey].HoaHongChi += cb;
+        monthlyMap[currentMonthKey].LoiNhuan += Math.max(0, comm - cb);
+      }
+    });
+
+    return Object.values(monthlyMap);
+  }, [adminStats, orders]);
+
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center font-sans">
@@ -522,11 +617,23 @@ export default function AdminPanel() {
     );
   }
 
+  if (isInitialAdminLoading || !adminStats) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm font-bold text-text-secondary">Đang tải dữ liệu thống kê hệ thống...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Statistics calculation
   const totalUsersCount = adminStats?.summary?.totalUsers ?? users.length;
   const totalOrdersCount = adminStats?.summary?.totalOrders ?? 0;
   const pendingOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Đang chờ xử lý')?.value || 0;
-  const pendingTikTokOrdersCount = tiktokOrders.filter(o => o.status === 'pending').length;
+  const pendingShopeeOrdersCount = adminStats?.platformBreakdown?.shopee?.pendingCount ?? 0;
+  const pendingTikTokOrdersCount = adminStats?.platformBreakdown?.tiktok?.pendingCount ?? tiktokOrders.filter(o => o.status === 'pending').length;
   const approvedOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Hoàn thành')?.value || 0;
   const rejectedOrdersCount = adminStats?.statusDistribution?.find(s => s.name === 'Hủy' || s.name === 'Hoàn hàng')?.value || 0;
   const cashbackPaidCount = adminStats?.statusDistribution?.find(s => s.name === 'Đã thanh toán')?.value || 0;
@@ -584,7 +691,7 @@ export default function AdminPanel() {
       await updateOrderStatus(editingOrder.id, editOrderStatus, cashbackVal, editOrderNotes, editOrderUserId);
       toast.success(`Đã cập nhật đơn hàng ${editingOrder.id} thành công!`);
       setEditingOrder(null);
-    } catch (err: any) {
+    } catch {
       toast.error('Lỗi khi cập nhật đơn hàng');
     }
   };
@@ -663,7 +770,7 @@ export default function AdminPanel() {
       );
       toast.success(`Đã cập nhật đơn hàng TikTok ${editingTikTokOrder.id} thành công!`);
       setEditingTikTokOrder(null);
-    } catch (err: any) {
+    } catch {
       toast.error('Lỗi khi cập nhật đơn hàng TikTok');
     }
   };
@@ -1102,68 +1209,6 @@ export default function AdminPanel() {
     }
   };
 
-  // Chart Monthly Analytics computed dynamically from real database/orders
-  const revenueChartData = useMemo(() => {
-    if (adminStats && adminStats.monthlyAnalytics && adminStats.monthlyAnalytics.length > 0) {
-      const hasData = adminStats.monthlyAnalytics.some(a => a.revenue > 0 || a.cashback > 0 || a.profit > 0);
-      if (hasData) {
-        return adminStats.monthlyAnalytics.map(a => ({
-          month: a.name,
-          DoanhThu: a.revenue,
-          HoaHongChi: a.cashback,
-          LoiNhuan: a.profit
-        }));
-      }
-    }
-
-    const monthlyMap: Record<string, { month: string; DoanhThu: number; HoaHongChi: number; LoiNhuan: number }> = {};
-    const now = new Date();
-    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      monthlyMap[key] = {
-        month: `T${d.getMonth() + 1}`,
-        DoanhThu: 0,
-        HoaHongChi: 0,
-        LoiNhuan: 0
-      };
-    }
-
-    const extractMonthKey = (val: string) => {
-      if (!val) return '';
-      const str = String(val).trim();
-      const matchIso = str.match(/^(\d{4})[\/\-](\d{1,2})/);
-      if (matchIso) return `${matchIso[1]}-${String(matchIso[2]).padStart(2, '0')}`;
-      const matchVn = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-      if (matchVn) return `${matchVn[3]}-${String(matchVn[2]).padStart(2, '0')}`;
-      const num = Number(str);
-      if (!isNaN(num) && num > 20000 && num < 100000) {
-        const d = new Date((num - 25569) * 86400 * 1000);
-        if (!isNaN(d.getTime())) return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      }
-      return '';
-    };
-
-    orders.forEach(o => {
-      const cb = Math.floor(o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0));
-      const comm = Math.floor((o as any).shopeeCommission !== undefined && (o as any).shopeeCommission !== null ? (o as any).shopeeCommission : (cb * 2));
-      const mKey = extractMonthKey(o.createdTime) || currentMonthKey;
-      
-      if (monthlyMap[mKey]) {
-        monthlyMap[mKey].DoanhThu += comm;
-        monthlyMap[mKey].HoaHongChi += cb;
-        monthlyMap[mKey].LoiNhuan += Math.max(0, comm - cb);
-      } else if (monthlyMap[currentMonthKey]) {
-        monthlyMap[currentMonthKey].DoanhThu += comm;
-        monthlyMap[currentMonthKey].HoaHongChi += cb;
-        monthlyMap[currentMonthKey].LoiNhuan += Math.max(0, comm - cb);
-      }
-    });
-
-    return Object.values(monthlyMap);
-  }, [adminStats, orders]);
   return (
     <div className="min-h-screen bg-bg flex flex-col font-poppins">
 
@@ -1223,8 +1268,8 @@ export default function AdminPanel() {
               {tab.id === 'withdrawals' && withdrawals.filter(w => w.status === 'pending').length > 0 && (
                 <Badge variant="danger" className="py-0 px-2 text-[10px]">{withdrawals.filter(w => w.status === 'pending').length}</Badge>
               )}
-              {tab.id === 'orders' && pendingOrdersCount > 0 && (
-                <Badge variant="info" className="py-0 px-2 text-[10px] bg-orange-50 text-[#EE4D2D] border border-orange-200">{pendingOrdersCount}</Badge>
+              {tab.id === 'orders' && pendingShopeeOrdersCount > 0 && (
+                <Badge variant="info" className="py-0 px-2 text-[10px] bg-orange-50 text-[#EE4D2D] border border-orange-200">{pendingShopeeOrdersCount}</Badge>
               )}
               {tab.id === 'tiktok-orders' && pendingTikTokOrdersCount > 0 && (
                 <Badge variant="warning" className="py-0 px-2 text-[10px] bg-slate-900 text-white border-none">{pendingTikTokOrdersCount}</Badge>
@@ -1253,7 +1298,14 @@ export default function AdminPanel() {
               {/* TIME RANGE & PLATFORM FILTER HEADER */}
               <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4 bg-white p-4 rounded-input border border-border shadow-xs">
                 <div>
-                  <h2 className="text-xl font-black text-text">Báo cáo & Thống kê tổng quan</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-black text-text">Báo cáo & Thống kê tổng quan</h2>
+                    {isLoadingStats && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-primary bg-primary/10 px-2.5 py-0.5 rounded-full">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Đang cập nhật...
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-text-secondary mt-0.5">Theo dõi hiệu suất doanh thu, hoa hồng và các chỉ số hoạt động hệ thống.</p>
                 </div>
                 

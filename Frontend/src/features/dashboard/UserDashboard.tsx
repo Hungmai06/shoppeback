@@ -117,7 +117,7 @@ export default function UserDashboard() {
       };
       fetchReferralData();
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, navigate, fetchUserOrders]);
 
   if (!currentUser) return null;
 
@@ -224,7 +224,7 @@ export default function UserDashboard() {
       if (updatedOrder) {
         setSelectedOrder({ ...updatedOrder, screenshot: mockScreenshotUrl });
       }
-    } catch (err) {
+    } catch {
       toast.error('Lỗi khi tải ảnh minh chứng');
     } finally {
       setUploadingOrderId(null);

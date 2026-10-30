@@ -257,7 +257,7 @@ const getCachedUser = (): UserProfile | null => {
   try {
     const raw = localStorage.getItem('user');
     return raw ? JSON.parse(raw) : null;
-  } catch (e) {
+  } catch {
     return null;
   }
 };
@@ -340,14 +340,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         Promise.allSettled([
           get().fetchUserOrders(),
           get().fetchUserWithdrawals(),
-          get().fetchNotifications(),
-          ...(profile.role === 'admin' ? [
-            get().fetchAdminOrders(),
-            get().fetchAdminWithdrawals(),
-            get().fetchAdminUsers(),
-            get().fetchAdminStats(),
-            get().fetchReconciliationLogs()
-          ] : [])
+          get().fetchNotifications()
         ]).catch(err => console.warn('Background sync error:', err));
       } else {
         // Token không hợp lệ hoặc đã hết hạn

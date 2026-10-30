@@ -97,7 +97,7 @@ export default function DealsPage() {
         setCheckedProduct(null);
         toast.error('Sản phẩm không tồn tại hoặc link Shopee không đúng! Vui lòng kiểm tra lại link.');
       }
-    } catch (err) {
+    } catch {
       setCheckedProduct(null);
       toast.error('Không tìm thấy sản phẩm hoặc link không tồn tại. Vui lòng kiểm tra lại!');
     } finally {
@@ -181,7 +181,7 @@ export default function DealsPage() {
       } else {
         toast.error(data?.message || 'Có lỗi xảy ra khi tạo link hoàn tiền');
       }
-    } catch (err: any) {
+    } catch {
       toast.error('Có lỗi xảy ra khi kết nối máy chủ');
     }
   };
