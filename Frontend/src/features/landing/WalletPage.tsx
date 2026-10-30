@@ -4,7 +4,7 @@ import { useAppStore } from '../../store/appStore';
 import type { Withdrawal } from '../../store/appStore';
 import { 
   Lock, Wallet, Landmark, Search, ArrowDownLeft, ArrowUpRight,
-  ShoppingBag, Users, Gift, Sparkles, Clock, CheckCircle2, XCircle
+  ShoppingBag, Users, Gift, Sparkles, CheckCircle2
 } from 'lucide-react';
 import { Button, Card, CardContent, Badge } from '../../components/ui/core';
 import { toast } from 'sonner';
@@ -35,7 +35,7 @@ interface CreditTransaction {
   sourceLabel: string;
   title: string;
   subtitle: string;
-  status: 'credited' | 'pending' | 'cancelled';
+  status: 'credited';
   createdAt: string;
 }
 
@@ -76,7 +76,6 @@ export default function WalletPage() {
   // Search & Filter states for Credits (Lịch sử cộng tiền)
   const [creditSearchTerm, setCreditSearchTerm] = useState('');
   const [creditSourceFilter, setCreditSourceFilter] = useState<'all' | 'shopee' | 'tiktok' | 'referral' | 'promo'>('all');
-  const [creditStatusFilter, setCreditStatusFilter] = useState<'all' | 'credited' | 'pending' | 'cancelled'>('all');
   const [referralHistory, setReferralHistory] = useState<ReferralCreditItem[]>([]);
 
   // Fetch latest orders, withdrawals, and referral history when logged in
@@ -170,70 +169,66 @@ export default function WalletPage() {
     ? Math.max(0, currentUser.balance || 0)
     : 0;
 
-  // Build unified list of Credit Transactions (Lịch sử cộng tiền)
+  // Build unified list of Credit Transactions (Lịch sử cộng tiền - CHỈ TÍNH ĐƠN ĐÃ HOÀN THÀNH)
   const creditTransactions = useMemo<CreditTransaction[]>(() => {
     if (!isLoggedIn) return [];
 
     const items: CreditTransaction[] = [];
 
-    // 1. Hoàn tiền mua sắm từ đơn Shopee & TikTok Shop
-    userOrders.forEach(o => {
-      const isTikTok = (o as any).platform === 'tiktok' || String(o.id).startsWith('TT');
-      const isBonusOrPromo = Boolean(
-        o.notes && /(ưu đãi|thưởng|khuyến mãi|bonus|promo|event|sự kiện)/i.test(o.notes)
-      );
-      const amount = Math.floor(
-        o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0)
-      );
+    // 1. Hoàn tiền mua sắm từ đơn Shopee & TikTok Shop ĐÃ HOÀN THÀNH (approved / paid)
+    userOrders
+      .filter(o => o.status === 'approved' || o.status === 'paid')
+      .forEach(o => {
+        const isTikTok = (o as any).platform === 'tiktok' || String(o.id).startsWith('TT');
+        const isBonusOrPromo = Boolean(
+          o.notes && /(ưu đãi|thưởng|khuyến mãi|bonus|promo|event|sự kiện)/i.test(o.notes)
+        );
+        const amount = Math.floor(
+          o.realCashback !== undefined && o.realCashback !== null ? o.realCashback : (o.estimatedCashback || 0)
+        );
 
-      let txStatus: CreditTransaction['status'] = 'pending';
-      if (o.status === 'approved' || o.status === 'paid') txStatus = 'credited';
-      else if (o.status === 'rejected' || o.status === 'returned') txStatus = 'cancelled';
-
-      if (isBonusOrPromo) {
-        items.push({
-          id: `ORD-PROMO-${o.id}`,
-          amount,
-          sourceType: 'promo',
-          sourceLabel: 'Chương trình ưu đãi',
-          title: o.productName || 'Thưởng chương trình ưu đãi',
-          subtitle: `Mã tham chiếu: #${o.id}${o.notes ? ` • ${o.notes}` : ''}`,
-          status: txStatus,
-          createdAt: o.createdTime || ''
-        });
-      } else {
-        items.push({
-          id: `ORD-${o.id}`,
-          amount,
-          sourceType: isTikTok ? 'tiktok' : 'shopee',
-          sourceLabel: isTikTok ? 'Hoàn tiền TikTok Shop' : 'Hoàn tiền Shopee',
-          title: o.productName || (isTikTok ? 'Đơn hàng TikTok Shop' : 'Đơn hàng Shopee'),
-          subtitle: `Mã đơn: #${o.id} • Giá trị đơn: ${Math.floor(o.orderAmount || 0).toLocaleString('vi-VN')}đ`,
-          status: txStatus,
-          createdAt: o.createdTime || ''
-        });
-      }
-    });
-
-    // 2. Hoa hồng từ đơn giới thiệu bạn bè (F1 +20%)
-    referralHistory.forEach(r => {
-      const amount = Math.floor(r.bonus || 0);
-      let txStatus: CreditTransaction['status'] = 'pending';
-      if (r.isCompleted || r.status === 'approved' || r.status === 'paid') txStatus = 'credited';
-      else if (r.status === 'rejected' || r.status === 'cancelled' || r.status === 'returned') txStatus = 'cancelled';
-
-      const platformName = r.platform === 'tiktok' ? 'TikTok Shop' : 'Shopee';
-      items.push({
-        id: `REF-${r.id}-${r.orderId}`,
-        amount,
-        sourceType: 'referral',
-        sourceLabel: 'Đơn giới thiệu F1 (+20%)',
-        title: `Hoa hồng giới thiệu từ ${r.f1Name || 'Thành viên F1'}`,
-        subtitle: `Đơn ${platformName} #${r.orderId}: ${r.productName || 'Sản phẩm mua sắm'} • Hoàn gốc F1: ${Math.floor(r.baseCashback || 0).toLocaleString('vi-VN')}đ`,
-        status: txStatus,
-        createdAt: r.createdAt || ''
+        if (isBonusOrPromo) {
+          items.push({
+            id: `ORD-PROMO-${o.id}`,
+            amount,
+            sourceType: 'promo',
+            sourceLabel: 'Chương trình ưu đãi',
+            title: o.productName || 'Thưởng chương trình ưu đãi',
+            subtitle: `Mã tham chiếu: #${o.id}${o.notes ? ` • ${o.notes}` : ''}`,
+            status: 'credited',
+            createdAt: o.createdTime || ''
+          });
+        } else {
+          items.push({
+            id: `ORD-${o.id}`,
+            amount,
+            sourceType: isTikTok ? 'tiktok' : 'shopee',
+            sourceLabel: isTikTok ? 'Hoàn tiền TikTok Shop' : 'Hoàn tiền Shopee',
+            title: o.productName || (isTikTok ? 'Đơn hàng TikTok Shop' : 'Đơn hàng Shopee'),
+            subtitle: `Mã đơn: #${o.id} • Giá trị đơn: ${Math.floor(o.orderAmount || 0).toLocaleString('vi-VN')}đ`,
+            status: 'credited',
+            createdAt: o.createdTime || ''
+          });
+        }
       });
-    });
+
+    // 2. Hoa hồng từ đơn giới thiệu bạn bè (F1 +20%) ĐÃ HOÀN THÀNH
+    referralHistory
+      .filter(r => r.isCompleted || r.status === 'approved' || r.status === 'paid')
+      .forEach(r => {
+        const amount = Math.floor(r.bonus || 0);
+        const platformName = r.platform === 'tiktok' ? 'TikTok Shop' : 'Shopee';
+        items.push({
+          id: `REF-${r.id}-${r.orderId}`,
+          amount,
+          sourceType: 'referral',
+          sourceLabel: 'Đơn giới thiệu F1 (+20%)',
+          title: `Hoa hồng giới thiệu từ ${r.f1Name || 'Thành viên F1'}`,
+          subtitle: `Đơn ${platformName} #${r.orderId}: ${r.productName || 'Sản phẩm mua sắm'} • Hoàn gốc F1: ${Math.floor(r.baseCashback || 0).toLocaleString('vi-VN')}đ`,
+          status: 'credited',
+          createdAt: r.createdAt || ''
+        });
+      });
 
     // 3. Hoàn lại tiền vào ví khi lệnh rút bị từ chối hoặc chương trình hoàn ví
     activeWithdrawals
@@ -261,7 +256,6 @@ export default function WalletPage() {
   const filteredCredits = useMemo(() => {
     return creditTransactions.filter(tx => {
       if (creditSourceFilter !== 'all' && tx.sourceType !== creditSourceFilter) return false;
-      if (creditStatusFilter !== 'all' && tx.status !== creditStatusFilter) return false;
 
       if (creditSearchTerm.trim() !== '') {
         const q = creditSearchTerm.toLowerCase();
@@ -273,7 +267,7 @@ export default function WalletPage() {
 
       return true;
     });
-  }, [creditTransactions, creditSourceFilter, creditStatusFilter, creditSearchTerm]);
+  }, [creditTransactions, creditSourceFilter, creditSearchTerm]);
 
   const getCreditSourceBadge = (sourceType: CreditTransaction['sourceType'], label: string) => {
     switch (sourceType) {
@@ -308,31 +302,12 @@ export default function WalletPage() {
     }
   };
 
-  const getCreditStatusBadge = (status: CreditTransaction['status']) => {
-    switch (status) {
-      case 'credited':
-        return (
-          <Badge className="bg-emerald-500 text-white border-none text-[10px] py-0.5 px-2.5 font-bold inline-flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" />
-            Đã cộng vào ví
-          </Badge>
-        );
-      case 'pending':
-        return (
-          <Badge className="bg-amber-500 text-white border-none text-[10px] py-0.5 px-2.5 font-bold inline-flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            Chờ đối soát
-          </Badge>
-        );
-      case 'cancelled':
-        return (
-          <Badge className="bg-rose-500 text-white border-none text-[10px] py-0.5 px-2.5 font-bold inline-flex items-center gap-1">
-            <XCircle className="w-3 h-3" />
-            Đã hủy / Hoàn hàng
-          </Badge>
-        );
-    }
-  };
+  const getCreditStatusBadge = () => (
+    <Badge className="bg-emerald-500 text-white border-none text-[10px] py-0.5 px-2.5 font-bold inline-flex items-center gap-1">
+      <CheckCircle2 className="w-3 h-3" />
+      Đã cộng vào ví
+    </Badge>
+  );
 
   const handleWithdrawalRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -670,19 +645,19 @@ export default function WalletPage() {
       <div className="mt-12 text-left">
         <Card className="border border-border/50 bg-white shadow-soft rounded-2xl overflow-hidden">
           <CardContent className="p-6 md:p-8">
-            {/* TOP TABS SWITCHER */}
+            {/* TOP TABS SWITCHER - LUÔN TRÊN 1 HÀNG */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 mb-6 border-b border-border/70">
-              <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/90 border border-slate-200/80 rounded-xl w-full sm:w-auto">
+              <div className="inline-flex items-center gap-1.5 p-1.5 bg-slate-100/90 border border-slate-200/80 rounded-xl w-fit max-w-full overflow-x-auto shrink-0">
                 <button
                   type="button"
                   onClick={() => setHistoryTab('credits')}
-                  className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-black transition-all ${
+                  className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap shrink-0 transition-all ${
                     historyTab === 'credits'
                       ? 'bg-white text-emerald-600 shadow-sm ring-1 ring-emerald-500/20'
                       : 'text-text-secondary hover:text-text'
                   }`}
                 >
-                  <ArrowDownLeft className={`w-4 h-4 ${historyTab === 'credits' ? 'text-emerald-600' : 'text-text-secondary'}`} />
+                  <ArrowDownLeft className={`w-4 h-4 shrink-0 ${historyTab === 'credits' ? 'text-emerald-600' : 'text-text-secondary'}`} />
                   <span>Lịch Sử Cộng Tiền</span>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                     historyTab === 'credits'
@@ -696,13 +671,13 @@ export default function WalletPage() {
                 <button
                   type="button"
                   onClick={() => setHistoryTab('withdrawals')}
-                  className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-black transition-all ${
+                  className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap shrink-0 transition-all ${
                     historyTab === 'withdrawals'
                       ? 'bg-white text-primary shadow-sm ring-1 ring-primary/20'
                       : 'text-text-secondary hover:text-text'
                   }`}
                 >
-                  <ArrowUpRight className={`w-4 h-4 ${historyTab === 'withdrawals' ? 'text-primary' : 'text-text-secondary'}`} />
+                  <ArrowUpRight className={`w-4 h-4 shrink-0 ${historyTab === 'withdrawals' ? 'text-primary' : 'text-text-secondary'}`} />
                   <span>Lịch Sử Rút Tiền</span>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                     historyTab === 'withdrawals'
@@ -717,7 +692,7 @@ export default function WalletPage() {
               {/* Dynamic Subtitle */}
               <p className="text-xs text-text-secondary font-medium">
                 {historyTab === 'credits'
-                  ? 'Chi tiết các khoản cộng tiền từ hoàn tiền đơn hàng Shopee, TikTok Shop, hoa hồng giới thiệu F1 (+20%) và các chương trình ưu đãi.'
+                  ? 'Chỉ những đơn hàng đã hoàn thành mới được ghi nhận cộng tiền vào ví.'
                   : 'Theo dõi trạng thái xử lý và giải ngân các lệnh rút tiền về Ngân hàng / Ví điện tử.'}
               </p>
             </div>
@@ -733,7 +708,7 @@ export default function WalletPage() {
                         +{approvedOrderCashback.toLocaleString('vi-VN')}đ
                       </p>
                       <span className="text-[10px] text-text-secondary font-medium">
-                        Đã duyệt ({userOrders.filter(o => o.status === 'approved' || o.status === 'paid').length} đơn)
+                        Đơn hoàn thành ({userOrders.filter(o => o.status === 'approved' || o.status === 'paid').length} đơn)
                       </span>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-orange-100/80 text-primary flex items-center justify-center shrink-0">
@@ -748,7 +723,7 @@ export default function WalletPage() {
                         +{approvedReferralBonus.toLocaleString('vi-VN')}đ
                       </p>
                       <span className="text-[10px] text-text-secondary font-medium">
-                        Chờ duyệt: +{pendingReferralBonus.toLocaleString('vi-VN')}đ
+                        Đơn F1 hoàn thành ({referralHistory.filter(r => r.isCompleted || r.status === 'approved' || r.status === 'paid').length} đơn)
                       </span>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-purple-100/80 text-purple-700 flex items-center justify-center shrink-0">
@@ -763,7 +738,7 @@ export default function WalletPage() {
                         +{approvedCashback.toLocaleString('vi-VN')}đ
                       </p>
                       <span className="text-[10px] text-text-secondary font-medium">
-                        Đang chờ cộng: +{pendingCashback.toLocaleString('vi-VN')}đ
+                        Tổng các khoản đã hoàn thành ({creditTransactions.length} khoản)
                       </span>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
@@ -805,18 +780,6 @@ export default function WalletPage() {
                       <option value="referral">Đơn giới thiệu bạn bè (F1 +20%)</option>
                       <option value="promo">Chương trình ưu đãi / Hoàn ví</option>
                     </select>
-
-                    {/* Status filter dropdown */}
-                    <select
-                      value={creditStatusFilter}
-                      onChange={(e) => setCreditStatusFilter(e.target.value as any)}
-                      className="w-full sm:w-auto px-3.5 py-2 border border-border text-xs rounded-input bg-white font-semibold"
-                    >
-                      <option value="all">Tất cả trạng thái</option>
-                      <option value="credited">Đã cộng vào ví</option>
-                      <option value="pending">Chờ đối soát</option>
-                      <option value="cancelled">Đã hủy / Hoàn hàng</option>
-                    </select>
                   </div>
                 </div>
 
@@ -837,18 +800,9 @@ export default function WalletPage() {
                         filteredCredits.map((tx) => (
                           <tr key={tx.id} className="border-b border-border hover:bg-emerald-50/30 transition-colors">
                             <td className="py-4 px-4 whitespace-nowrap">
-                              <span className={`font-black text-sm ${
-                                tx.status === 'credited'
-                                  ? 'text-emerald-600'
-                                  : tx.status === 'pending'
-                                    ? 'text-amber-600'
-                                    : 'text-slate-400 line-through'
-                              }`}>
+                              <span className="font-black text-sm text-emerald-600">
                                 +{tx.amount.toLocaleString('vi-VN')}đ
                               </span>
-                              {tx.status === 'pending' && (
-                                <span className="block text-[10px] font-semibold text-amber-600/80">Tạm tính</span>
-                              )}
                             </td>
                             <td className="py-4 px-4 whitespace-nowrap">
                               {getCreditSourceBadge(tx.sourceType, tx.sourceLabel)}
@@ -858,7 +812,7 @@ export default function WalletPage() {
                               <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-1">{tx.subtitle}</p>
                             </td>
                             <td className="py-4 px-4 whitespace-nowrap">
-                              {getCreditStatusBadge(tx.status)}
+                              {getCreditStatusBadge()}
                             </td>
                             <td className="py-4 px-4 text-text-secondary font-medium whitespace-nowrap">
                               {tx.createdAt || '—'}
@@ -868,7 +822,7 @@ export default function WalletPage() {
                       ) : (
                         <tr>
                           <td colSpan={5} className="text-center py-16 text-text-secondary/60 font-semibold text-sm">
-                            Chưa có lịch sử cộng tiền nào phù hợp với bộ lọc.
+                            Chưa có khoản cộng tiền hoàn thành nào được ghi nhận vào ví.
                           </td>
                         </tr>
                       )}
